@@ -292,29 +292,49 @@ function renderScoreCard(score, createdAt) {
   </aside>`;
 }
 
+function chartPeriodTabs() {
+  const cur = state.klinePeriod || 'day';
+  return `<div class="kline-tabs" role="tablist" aria-label="K 线周期">${[['day', '日K'], ['week', '周K'], ['month', '月K']]
+    .map(
+      ([p, label]) =>
+        `<button class="kline-tab ${cur === p ? 'active' : ''}" type="button" role="tab" aria-selected="${cur === p}" data-action="kline-period" data-period="${p}">${label}</button>`
+    )
+    .join('')}</div>`;
+}
+
 function renderChartSection(kline) {
-  const m = kline.metrics;
+  /* 指标事实区始终基于日线数据（周/月线仅用于蜡烛展示） */
+  const dayK = (state.periodKlines && state.periodKlines.day) || (state.core && state.core.kline) || null;
+  const m = dayK && dayK.metrics;
   const pts = kline.points;
+  const period = kline.period || 'day';
+  const periodLabel = { day: '日K', week: '周K', month: '月K' }[period] || '日K';
   const first = pts[0];
   const last = pts[pts.length - 1];
+  /* FR-3.6：蜡烛渲染条件不满足时降级为原有 sparkline */
+  const candles = renderCandlestick(pts, { window: period === 'day' ? 240 : period === 'week' ? 260 : 140 });
+  const chartBody = candles
+    ? `<div class="kline-wrap">${candles}</div>`
+    : `<div class="spark-wrap">${renderSparkline(pts)}</div>`;
+  const facts = m
+    ? `<div class="chart-facts">
+    <div class="chart-fact"><label>近 20 日</label><strong class="${pctClass(m.r20)}">${fmtPct(m.r20)}</strong></div>
+    <div class="chart-fact"><label>近 60 日</label><strong class="${pctClass(m.r60)}">${fmtPct(m.r60)}</strong></div>
+    <div class="chart-fact"><label>近 120 日</label><strong class="${pctClass(m.r120)}">${fmtPct(m.r120)}</strong></div>
+    <div class="chart-fact"><label>最大回撤</label><strong class="down">${fmtPct(m.maxDrawdown)}</strong></div>
+    <div class="chart-fact"><label>均线形态</label><strong>${esc(m.trend)}</strong></div>
+    <div class="chart-fact"><label>年化波动</label><strong>${ratioText(m.volatility)}</strong></div>
+    <div class="chart-fact"><label>区间位置</label><strong>${fmtPrice(m.last)}</strong></div>
+  </div>`
+    : '';
   return `<article class="card chart-card">
     <div>
-      <div class="chart-head"><strong>近一年股价走势</strong><span>${esc(fmtDate(first.date))} — ${esc(
-    fmtDate(last.date)
-  )} · 前复权 · ${m.points} 个交易日</span></div>
-      <div class="spark-wrap">${renderSparkline(pts)}</div>
-      <div class="chart-axis"><span>${esc(first.date)}</span><span>年化波动 ${ratioText(m.volatility)}</span><span>${esc(
-    last.date
-  )}</span></div>
+      <div class="chart-head"><strong>股价 K 线</strong>${chartPeriodTabs()}
+        <span class="kline-legend" aria-hidden="true"><i class="ma20"></i>MA20<i class="ma60"></i>MA60</span>
+        <span>${esc(fmtDate(first.date))} — ${esc(fmtDate(last.date))} · ${period === 'day' ? '前复权 · ' : ''}${pts.length} 根${periodLabel}</span></div>
+      ${chartBody}
     </div>
-    <div class="chart-facts">
-      <div class="chart-fact"><label>近 20 日</label><strong class="${pctClass(m.r20)}">${fmtPct(m.r20)}</strong></div>
-      <div class="chart-fact"><label>近 60 日</label><strong class="${pctClass(m.r60)}">${fmtPct(m.r60)}</strong></div>
-      <div class="chart-fact"><label>近 120 日</label><strong class="${pctClass(m.r120)}">${fmtPct(m.r120)}</strong></div>
-      <div class="chart-fact"><label>最大回撤</label><strong class="down">${fmtPct(m.maxDrawdown)}</strong></div>
-      <div class="chart-fact"><label>均线形态</label><strong>${esc(m.trend)}</strong></div>
-      <div class="chart-fact"><label>区间位置</label><strong>${fmtPrice(m.last)}</strong></div>
-    </div>
+    ${facts}
   </article>`;
 }
 
@@ -328,6 +348,7 @@ function renderOverview(score, kline) {
     kline ? renderChartSection(kline) : emptyState({ icon: 'chart', title: '历史行情不足', desc: '无法绘制近一年走势，技术面维度已按不可用处理。' })
   }</div>`;
   hydrateIcons(overview);
+  hydrateCandles(overview);
 }
 
 function updateHeaderIndustry(profile) {
@@ -337,14 +358,17 @@ function updateHeaderIndustry(profile) {
   el.innerHTML = industry ? `<span class="badge">${esc(industry)}</span>` : '';
 }
 
-function updateChart(kline) {
+function updateChart(kline, loading = false) {
   const slot = $('#chartSlot') || $('#chartSection');
   if (!slot) return;
   if (!kline) {
-    slot.innerHTML = emptyState({ icon: 'chart', title: '历史行情不足', desc: '无法绘制近一年走势，技术面维度将按不可用处理。' });
+    slot.innerHTML = loading
+      ? `<article class="card chart-card"><div class="kline-loading"><span class="spinner"></span>正在获取 K 线数据…</div></article>`
+      : emptyState({ icon: 'chart', title: '历史行情不足', desc: '无法绘制近一年走势，技术面维度将按不可用处理。' });
     return;
   }
   slot.innerHTML = renderChartSection(kline);
+  hydrateCandles(slot);
 }
 
 /* ---------------- reports ---------------- */

@@ -17,6 +17,8 @@ const state = {
   industryName: '',
   industryStarted: false,
   pendingStock: null,
+  klinePeriod: 'day',
+  periodKlines: {},
   search: { items: [], active: -1, query: '', seq: 0 },
 };
 
@@ -220,6 +222,8 @@ async function analyzeStock(inputStock, opts = {}) {
   state.industryName = '';
   state.industryCode = '';
   state.industryStarted = false;
+  state.klinePeriod = 'day';
+  state.periodKlines = {};
   renderAnalysisSkeleton(stock);
   if (!opts.keepScroll) scrollTopSmooth();
 
@@ -261,6 +265,7 @@ function bindCoreData(token, quote) {
   getKline(stock, quote)
     .then((kline) => {
       if (token !== state.token) return;
+      state.periodKlines.day = kline;
       markCoreSettled('kline', kline);
       updateChart(kline);
     })
@@ -354,6 +359,35 @@ function refreshScore() {
   });
   state.score = score;
   renderOverview(score, state.core.kline);
+}
+
+/* ---------------- K 线周期切换（FR-3.2 / FR-3.6） ---------------- */
+function switchKlinePeriod(period) {
+  const p = normalizeKlinePeriod(period);
+  if (!state.stock || p === state.klinePeriod) return;
+  state.klinePeriod = p;
+  const token = state.token;
+  const cachedKline = state.periodKlines[p];
+  if (cachedKline) {
+    updateChart(cachedKline);
+    return;
+  }
+  const dayK = state.periodKlines.day || state.core.kline;
+  updateChart(null, true);
+  getKline(state.stock, state.quote, p)
+    .then((kline) => {
+      if (token !== state.token) return;
+      state.periodKlines[p] = kline;
+      updateChart(kline);
+    })
+    .catch(() => {
+      /* FR-3.6：周/月获取失败降级回日K */
+      if (token !== state.token) return;
+      toast(`${p === 'week' ? '周' : '月'}K 数据获取失败，已切回日K`, 'error');
+      state.klinePeriod = 'day';
+      if (dayK) updateChart(dayK);
+      else updateChart(null);
+    });
 }
 
 function maybeStartIndustry() {
@@ -778,6 +812,11 @@ function handleClick(e) {
     if (action === 'refresh') {
       e.preventDefault();
       refreshCurrent();
+      return;
+    }
+    if (action === 'kline-period') {
+      e.preventDefault();
+      switchKlinePeriod(actionEl.dataset.period);
       return;
     }
     if (action === 'demo') {
