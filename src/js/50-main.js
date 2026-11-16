@@ -12,6 +12,7 @@ const state = {
   coreSettled: new Set(),
   score: null,
   profile: null,
+  profileReady: false,
   reports: null,
   peers: null,
   industryName: '',
@@ -758,6 +759,10 @@ async function submitSearch(raw) {
     const box = $('#suggestions');
     if (box) box.innerHTML = '<div class="sug-empty">未找到匹配的股票，请尝试完整代码或换个关键词。</div>';
     return;
+  }
+  /* 4–5 位纯数字会被解析为港股代码，提示一次避免 A 股用户误入 */
+  if (stock.market === 'HK' && /^\d{1,5}$/.test(q)) {
+    toast(`已按港股代码 ${stock.code} 解析；若想查 A 股请输入完整 6 位代码`, 'info');
   }
   goStock(stock);
 }

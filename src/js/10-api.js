@@ -174,15 +174,21 @@ function parseSearchRaw(raw) {
   return out.slice(0, 8);
 }
 
+const SEARCH_MEMO_MAX = 50;
+
 function searchStocks(query) {
   const q = String(query || '').trim();
   if (!q) return Promise.resolve([]);
   const memo = searchMemo.get(q);
   if (memo && Date.now() - memo.t < 5 * 60 * 1000) return Promise.resolve(memo.d);
+  if (memo) searchMemo.delete(q); /* 过期条目随手清除，避免 Map 只增不减 */
   const run = () => smartbox(q).then(parseSearchRaw);
   const p = searchChain.then(run, run);
   searchChain = p.catch(() => {});
   return p.then((d) => {
+    if (searchMemo.size >= SEARCH_MEMO_MAX) {
+      searchMemo.delete(searchMemo.keys().next().value); /* 超上限淘汰最早插入的条目 */
+    }
     searchMemo.set(q, { t: Date.now(), d });
     return d;
   });

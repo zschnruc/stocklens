@@ -117,7 +117,7 @@ function fmtInt(n) {
 function fmtBig(n, unit = '亿') {
   if (!Number.isFinite(n)) return '—';
   const abs = Math.abs(n);
-  if (abs >= 10000) return `${(n / 10000).toFixed(2)}万亿${unit === '亿' ? '' : ''}`;
+  if (abs >= 10000) return `${(n / 10000).toFixed(2)}万亿`;
   if (abs >= 100) return `${n.toFixed(0)}${unit}`;
   if (abs >= 1) return `${n.toFixed(2)}${unit}`;
   if (abs === 0) return `0${unit}`;
@@ -234,10 +234,17 @@ function readLocal(key) {
     return null;
   }
 }
+let localWriteWarned = false;
 function writeLocal(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {}
+  } catch (e) {
+    /* 配额溢出等场景：只告警一次，缓存自动降级为内存模式，不影响功能 */
+    if (!localWriteWarned) {
+      localWriteWarned = true;
+      console.warn('[StockLens] 本地缓存写入失败（可能超出配额），数据缓存将仅在本次会话内存中生效');
+    }
+  }
 }
 const store = {
   get(key, fallback = null) {

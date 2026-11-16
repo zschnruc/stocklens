@@ -1049,7 +1049,7 @@ html[data-theme="light"] .fin-item{background:rgba(255,255,255,.72)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v1.2.0 · 构建于 2026/11/16 18:00:21</p>
+      <p>研值 StockLens v1.2.0 · 构建于 2026/11/16 18:05:21</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -1182,7 +1182,7 @@ function fmtInt(n) {
 function fmtBig(n, unit = '亿') {
   if (!Number.isFinite(n)) return '—';
   const abs = Math.abs(n);
-  if (abs >= 10000) return `${(n / 10000).toFixed(2)}万亿${unit === '亿' ? '' : ''}`;
+  if (abs >= 10000) return `${(n / 10000).toFixed(2)}万亿`;
   if (abs >= 100) return `${n.toFixed(0)}${unit}`;
   if (abs >= 1) return `${n.toFixed(2)}${unit}`;
   if (abs === 0) return `0${unit}`;
@@ -1299,10 +1299,17 @@ function readLocal(key) {
     return null;
   }
 }
+let localWriteWarned = false;
 function writeLocal(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {}
+  } catch (e) {
+    /* 配额溢出等场景：只告警一次，缓存自动降级为内存模式，不影响功能 */
+    if (!localWriteWarned) {
+      localWriteWarned = true;
+      console.warn('[StockLens] 本地缓存写入失败（可能超出配额），数据缓存将仅在本次会话内存中生效');
+    }
+  }
 }
 const store = {
   get(key, fallback = null) {
@@ -1611,15 +1618,21 @@ function parseSearchRaw(raw) {
   return out.slice(0, 8);
 }
 
+const SEARCH_MEMO_MAX = 50;
+
 function searchStocks(query) {
   const q = String(query || '').trim();
   if (!q) return Promise.resolve([]);
   const memo = searchMemo.get(q);
   if (memo && Date.now() - memo.t < 5 * 60 * 1000) return Promise.resolve(memo.d);
+  if (memo) searchMemo.delete(q); /* 过期条目随手清除，避免 Map 只增不减 */
   const run = () => smartbox(q).then(parseSearchRaw);
   const p = searchChain.then(run, run);
   searchChain = p.catch(() => {});
   return p.then((d) => {
+    if (searchMemo.size >= SEARCH_MEMO_MAX) {
+      searchMemo.delete(searchMemo.keys().next().value); /* 超上限淘汰最早插入的条目 */
+    }
     searchMemo.set(q, { t: Date.now(), d });
     return d;
   });
@@ -4828,6 +4841,7 @@ const state = {
   coreSettled: new Set(),
   score: null,
   profile: null,
+  profileReady: false,
   reports: null,
   peers: null,
   industryName: '',
@@ -5574,6 +5588,10 @@ async function submitSearch(raw) {
     const box = $('#suggestions');
     if (box) box.innerHTML = '<div class="sug-empty">未找到匹配的股票，请尝试完整代码或换个关键词。</div>';
     return;
+  }
+  /* 4–5 位纯数字会被解析为港股代码，提示一次避免 A 股用户误入 */
+  if (stock.market === 'HK' && /^\d{1,5}$/.test(q)) {
+    toast(`已按港股代码 ${stock.code} 解析；若想查 A 股请输入完整 6 位代码`, 'info');
   }
   goStock(stock);
 }
