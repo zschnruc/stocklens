@@ -329,13 +329,29 @@ function renderCandlestick(points, opts = {}) {
   const lows = pts.map((p) => p.low);
   const highs = pts.map((p) => p.high);
   const mas = [...ma20Full, ...ma60Full, ...(boll ? [...boll.up, ...boll.low] : [])].filter(Number.isFinite);
-  const min = Math.min(...lows, ...mas);
-  const max = Math.max(...highs, ...mas);
-  const span = max - min || 1;
-  const yP = (v) => mainTop + mainH - ((v - min) / span) * mainH;
+  /* FR-5.1 目标价锚点：离现价区间超过 60% 跨度的目标价不参与缩放（避免压缩蜡烛） */
+  let lo = Math.min(...lows, ...mas);
+  let hi = Math.max(...highs, ...mas);
+  const span0 = hi - lo || 1;
+  const anchors = [];
+  const anchorLabels = { high: '目标高', mid: '目标中', low: '目标低' };
+  if (opts.targets) {
+    ['high', 'mid', 'low'].forEach((k) => {
+      const v = opts.targets[k];
+      if (Number.isFinite(v) && v > 0 && v >= lo - span0 * 0.6 && v <= hi + span0 * 0.6) {
+        anchors.push({ key: k, value: v });
+      }
+    });
+    if (anchors.length) {
+      lo = Math.min(lo, ...anchors.map((a) => a.value));
+      hi = Math.max(hi, ...anchors.map((a) => a.value));
+    }
+  }
+  const span = hi - lo || 1;
+  const yP = (v) => mainTop + mainH - ((v - lo) / span) * mainH;
 
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((r) => {
-    const v = min + span * (1 - r);
+    const v = lo + span * (1 - r);
     return `<line class="candle-grid" x1="${padL}" y1="${(mainTop + mainH * r).toFixed(1)}" x2="${padL + usableW}" y2="${(
       mainTop +
       mainH * r
@@ -368,6 +384,14 @@ function renderCandlestick(points, opts = {}) {
   const subSvg = subOk
     ? renderSubPanel(sub, subSeries, pts, x, subTop, subH, bodyW)
     : renderSubPanel('volume', null, pts, x, subTop, subH, bodyW);
+  /* FR-5.1：目标价锚线（虚线 + 左上角标签） */
+  const anchorsSvg = anchors
+    .map(
+      (a) => `<line class="target-line" x1="${padL}" y1="${yP(a.value).toFixed(1)}" x2="${padL + usableW}" y2="${yP(a.value).toFixed(
+        1
+      )}"/><text class="target-label" x="${padL + 4}" y="${(yP(a.value) - 3).toFixed(1)}">${esc(anchorLabels[a.key])} ${fmtPrice(a.value)}</text>`
+    )
+    .join('');
 
   const dateIdx = [0, Math.round((n - 1) / 3), Math.round(((n - 1) * 2) / 3), n - 1]
     .filter((v, i, a) => a.indexOf(v) === i)
@@ -392,6 +416,7 @@ function renderCandlestick(points, opts = {}) {
       <path class="candle-ma ma60" d="${ma60Path}"></path>
       <path class="candle-ma ma20" d="${ma20Path}"></path>
       ${candles}
+      ${anchorsSvg}
       ${subSvg}
       ${dateIdx}
       <line class="candle-cross-v" data-role="v" x1="0" y1="${mainTop}" x2="0" y2="${subTop + subH}" hidden></line>

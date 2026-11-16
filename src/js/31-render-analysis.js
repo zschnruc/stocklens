@@ -329,6 +329,21 @@ function subLegendHTML(sub) {
   return '';
 }
 
+/* FR-5.1：从研报数据提取目标价 高/中/低 三档锚点 */
+function targetAnchors() {
+  const list = Array.isArray(state.reports)
+    ? state.reports.map((r) => num(r.target)).filter((v) => Number.isFinite(v) && v > 0)
+    : [];
+  if (!list.length) return null;
+  const sorted = [...list].sort((a, b) => a - b);
+  return {
+    low: sorted[0],
+    mid: sorted[Math.floor((sorted.length - 1) / 2)],
+    high: sorted[sorted.length - 1],
+    count: list.length,
+  };
+}
+
 function renderChartSection(kline) {
   /* 指标事实区始终基于日线数据（周/月线仅用于蜡烛展示） */
   const dayK = (state.periodKlines && state.periodKlines.day) || (state.core && state.core.kline) || null;
@@ -339,10 +354,12 @@ function renderChartSection(kline) {
   const first = pts[0];
   const last = pts[pts.length - 1];
   /* FR-3.6：蜡烛渲染条件不满足时降级为原有 sparkline */
+  const anchors = targetAnchors();
   const candles = renderCandlestick(pts, {
     window: period === 'day' ? 240 : period === 'week' ? 260 : 140,
     sub: state.subChart || 'volume',
     boll: !!state.bollOn,
+    targets: anchors,
   });
   const chartBody = candles
     ? `<div class="kline-wrap">${candles}</div>`
@@ -364,6 +381,7 @@ function renderChartSection(kline) {
         <span class="kline-legend" aria-hidden="true"><i class="ma20"></i>MA20<i class="ma60"></i>MA60</span>
         <span>${esc(fmtDate(first.date))} — ${esc(fmtDate(last.date))} · ${period === 'day' ? '前复权 · ' : ''}${pts.length} 根${periodLabel}</span></div>
       ${chartSubControls(pts.length)}
+      ${anchors ? '<span class="kline-note">目标价为研报发布口径，前复权 K 线在最新交易日与实际价格基本一致</span>' : ''}
       ${chartBody}
     </div>
     ${facts}

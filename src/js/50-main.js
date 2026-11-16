@@ -283,6 +283,9 @@ function bindCoreData(token, quote) {
       state.reports = reports;
       markCoreSettled('reports', reports);
       renderStockReports(reports, stock.market);
+      /* FR-5.1：研报（含目标价）到达后刷新 K 线，绘制目标价锚点 */
+      const k = state.periodKlines[state.klinePeriod] || state.core.kline;
+      if (k) updateChart(k);
     })
     .catch(() => {
       if (token !== state.token) return;

@@ -134,6 +134,17 @@ function auditCandlestick(html, expectBars) {
   const tooShort = renderCandlestick(shortRows, { window: 10, sub: 'macd' });
   check('数据不足时副图档位安全降级为量', tooShort.includes('vol-bar') && !tooShort.includes('sub-line'));
 
+  console.log('目标价锚点（FR-5）');
+  const baseTargets = { high: 12.5, mid: 11.8, low: 11.2, count: 5 };
+  const withTargets = renderCandlestick(okRows, { window: 60, targets: baseTargets });
+  const anchorLines = (withTargets.match(/class="target-line"/g) || []).length;
+  check('常规目标价绘制 3 条锚线', anchorLines === 3 && withTargets.includes('目标高 12.50'));
+  const crazy = renderCandlestick(okRows, { window: 60, targets: { high: 900, mid: 500, low: 400, count: 3 } });
+  check('离谱目标价（超 60% 跨度）不绘制锚线', !(crazy.match(/class="target-line"/g) || []).length);
+  check('无目标价时不渲染锚点', !(renderCandlestick(okRows, { window: 60 }).match(/target-line/g) || []).length);
+  const half = renderCandlestick(okRows, { window: 60, targets: { high: 12.5, mid: 11.8, low: 300, count: 3 } });
+  check('混合目标价只绘制区间内的锚线', (half.match(/class="target-line"/g) || []).length === 2);
+
   console.log(failures ? `\n${failures} 项失败` : '\n全部通过');
   process.exit(failures ? 1 : 0);
 })();
