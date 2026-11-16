@@ -332,6 +332,13 @@ async function getQuoteBatch(keys) {
 }
 
 /* ---------------- Tencent K-line ---------------- */
+/* K 线周期：同一腾讯接口切换 period 参数（FR-3.2） */
+const KLINE_PERIODS = ['day', 'week', 'month'];
+const KLINE_COUNT = { day: 320, week: 260, month: 140 };
+
+function normalizeKlinePeriod(period) {
+  return KLINE_PERIODS.includes(period) ? period : 'day';
+}
 function klineMetrics(points) {
   const closes = points.map((p) => num(p.close)).filter((n) => Number.isFinite(n) && n > 0);
   if (closes.length < 2) throw new Error('历史行情数据不足');
@@ -372,7 +379,8 @@ function klineMetrics(points) {
   };
 }
 
-async function getKline(stock, quote) {
+async function getKline(stock, quote, period = 'day') {
+  const p = normalizeKlinePeriod(period);
   let key = stock.klineCode || stock.quoteKey;
   if (stock.market === 'US') {
     if (quote && quote.rawCode) key = 'us' + quote.rawCode;
@@ -382,13 +390,15 @@ async function getKline(stock, quote) {
   }
   if (!key) throw new Error('缺少 K 线代码');
   const isUS = stock.market === 'US';
-  return cached('kline:' + key, TTL.kline, async () => {
+  return cached(`kline:${p}:${key}`, TTL.kline, async () => {
     const base = isUS ? API.usKline : API.kline;
-    const url = `${base}?param=${encodeURIComponent(key)},day,,,320,qfq`;
+    const count = KLINE_COUNT[p] || 320;
+    const url = `${base}?param=${encodeURIComponent(key)},${p},,,${count},qfq`;
     const data = await fetchJSON(url, { timeout: 15000 });
     const block = data && data.data && (data.data[key] || Object.values(data.data)[0]);
     if (!block) throw new Error('K 线数据为空');
-    const arr = block.qfqday || block.day || block.qfqweek || block.week || [];
+    /* A/美股前复权键为 qfqday/qfqweek/qfqmonth，港股直接为 day/week/month（FR-3.7） */
+    const arr = block[`qfq${p}`] || block[p] || [];
     const points = arr
       .map((row) => ({
         date: row[0],
@@ -398,9 +408,10 @@ async function getKline(stock, quote) {
         low: num(row[4]),
         volume: num(row[5], 0),
       }))
-      .filter((p) => Number.isFinite(p.close) && p.date);
+      .filter((p2) => Number.isFinite(p2.close) && p2.date);
     if (points.length < 5) throw new Error('K 线数据不足');
-    return { key, points, metrics: klineMetrics(points), source: '腾讯财经' };
+    /* 技术面指标仅在日线上有意义，周/月只返回原始点供图表使用 */
+    return { key, period: p, points, metrics: p === 'day' ? klineMetrics(points) : null, source: '腾讯财经' };
   });
 }
 
