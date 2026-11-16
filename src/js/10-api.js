@@ -1,0 +1,1307 @@
+/* ============================================================
+   Data layer — Tencent quotes/kline, Eastmoney reports/F10/news
+   ============================================================ */
+'use strict';
+
+const API = {
+  quote: 'https://qt.gtimg.cn/q=',
+  kline: 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get',
+  usKline: 'https://web.ifzq.gtimg.cn/appstock/app/usfqkline/get',
+  smartbox: 'https://smartbox.gtimg.cn/s3/',
+  report: 'https://reportapi.eastmoney.com/report/list',
+  datacenter: 'https://datacenter-web.eastmoney.com/api/data/v1/get',
+  news: 'https://search-api-web.eastmoney.com/search/jsonp',
+  push2: 'https://push2.eastmoney.com/api/qt/',
+  pdf: 'https://pdf.dfcfw.com/pdf/H3_',
+};
+
+const TTL = {
+  quote: 60 * 1000,
+  kline: 10 * 60 * 1000,
+  report: 30 * 60 * 1000,
+  financial: 6 * 60 * 60 * 1000,
+  profile: 24 * 60 * 60 * 1000,
+  news: 10 * 60 * 1000,
+  peers: 30 * 60 * 1000,
+  boards: 24 * 60 * 60 * 1000,
+};
+
+/* ---------------- transport ---------------- */
+async function fetchJSON(url, options = {}) {
+  const { timeout = 15000, headers = {} } = options;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      cache: 'no-store',
+      headers: { Accept: 'application/json,text/plain,*/*', ...headers },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function jsonp(url, options = {}) {
+  const { timeout = 12000, callbackParam = 'cb' } = options;
+  return new Promise((resolve, reject) => {
+    const cbName = '__slcb_' + Math.random().toString(36).slice(2, 10);
+    const script = document.createElement('script');
+    let done = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      script.remove();
+      try {
+        delete window[cbName];
+      } catch (e) {}
+    };
+    const finish = (fn, value) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      fn(value);
+    };
+    const timer = setTimeout(() => finish(reject, new Error('数据接口超时')), timeout);
+    window[cbName] = (data) => finish(resolve, data);
+    script.onerror = () => finish(reject, new Error('数据接口连接失败'));
+    script.src = url + (url.includes('?') ? '&' : '?') + callbackParam + '=' + encodeURIComponent(cbName);
+    script.charset = 'utf-8';
+    document.head.appendChild(script);
+  });
+}
+
+/* Eastmoney 接口串行 + 最小间隔，降低被限流概率 */
+let emChain = Promise.resolve();
+let emLast = 0;
+function emQueue(fn, gap = 280) {
+  const run = async () => {
+    const wait = gap - (Date.now() - emLast);
+    if (wait > 0) await sleep(wait);
+    try {
+      return await fn();
+    } finally {
+      emLast = Date.now();
+    }
+  };
+  const p = emChain.then(run, run);
+  emChain = p.catch(() => {});
+  return p;
+}
+const emJsonp = (url) => emQueue(() => jsonp(url));
+const emJSON = (url, opts) => emQueue(() => fetchJSON(url, opts));
+
+/* ---------------- search ---------------- */
+let searchChain = Promise.resolve();
+const searchMemo = new Map();
+
+function smartbox(query) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    const prev = window.v_hint;
+    let done = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      script.remove();
+      try {
+        if (prev === undefined) delete window.v_hint;
+        else window.v_hint = prev;
+      } catch (e) {}
+    };
+    const finish = (fn, v) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      fn(v);
+    };
+    const timer = setTimeout(() => finish(reject, new Error('搜索超时')), 7000);
+    script.onload = () => {
+      const raw = window.v_hint || '';
+      finish(resolve, raw);
+    };
+    script.onerror = () => finish(reject, new Error('搜索服务不可用'));
+    script.charset = 'utf-8';
+    script.src = `${API.smartbox}?q=${encodeURIComponent(query)}&t=all&r=${Date.now()}`;
+    document.head.appendChild(script);
+  });
+}
+
+function normalizeSearchItem(part) {
+  const f = part.split('~');
+  if (f.length < 5) return null;
+  const mk = f[0];
+  const rawCode = (f[1] || '').trim();
+  const name = stripTags(f[2] || '');
+  const pinyin = (f[3] || '').trim();
+  const type = f[4] || '';
+  if (!/^GP/i.test(type)) return null;
+  if (!rawCode || !name) return null;
+
+  if (mk === 'sh' || mk === 'sz' || mk === 'bj') {
+    return { market: 'A', code: rawCode, name, pinyin, quoteKey: mk + rawCode, rawCode, klineCode: mk + rawCode };
+  }
+  if (mk === 'hk') {
+    const code = rawCode.replace(/\D/g, '').padStart(5, '0');
+    return { market: 'HK', code, name, pinyin, quoteKey: 'hk' + code, rawCode: code, klineCode: 'hk' + code };
+  }
+  if (mk === 'us') {
+    const upper = rawCode.toUpperCase();
+    const klineCode = 'us' + upper;
+    const quoteRaw = upper.replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '');
+    return { market: 'US', code: quoteRaw, name, pinyin, quoteKey: 'us' + quoteRaw, rawCode: upper, klineCode };
+  }
+  return null;
+}
+
+function parseSearchRaw(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  const seen = new Set();
+  const out = [];
+  raw.split('^').forEach((part) => {
+    const item = normalizeSearchItem(part);
+    if (!item) return;
+    const id = item.market + ':' + item.code;
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push(item);
+  });
+  return out.slice(0, 8);
+}
+
+function searchStocks(query) {
+  const q = String(query || '').trim();
+  if (!q) return Promise.resolve([]);
+  const memo = searchMemo.get(q);
+  if (memo && Date.now() - memo.t < 5 * 60 * 1000) return Promise.resolve(memo.d);
+  const run = () => smartbox(q).then(parseSearchRaw);
+  const p = searchChain.then(run, run);
+  searchChain = p.catch(() => {});
+  return p.then((d) => {
+    searchMemo.set(q, { t: Date.now(), d });
+    return d;
+  });
+}
+
+function parseSymbolInput(input) {
+  const q = String(input || '').trim();
+  if (!q) return null;
+  let m = q.match(/^(sh|sz|bj)(\d{6})$/i);
+  if (m) {
+    const mk = m[1].toLowerCase();
+    const code = m[2];
+    return { market: 'A', code, name: code, quoteKey: mk + code, rawCode: code, klineCode: mk + code };
+  }
+  if (/^\d{6}$/.test(q)) {
+    const mk = /^(6|9)/.test(q) ? 'sh' : /^(4|8)/.test(q) ? 'bj' : 'sz';
+    return { market: 'A', code: q, name: q, quoteKey: mk + q, rawCode: q, klineCode: mk + q };
+  }
+  m = q.match(/^hk(\d{1,5})$/i);
+  if (m) {
+    const code = m[1].padStart(5, '0');
+    return { market: 'HK', code, name: code, quoteKey: 'hk' + code, rawCode: code, klineCode: 'hk' + code };
+  }
+  if (/^\d{1,5}$/.test(q)) {
+    const code = q.padStart(5, '0');
+    return { market: 'HK', code, name: code, quoteKey: 'hk' + code, rawCode: code, klineCode: 'hk' + code };
+  }
+  m = q.match(/^us([A-Za-z][A-Za-z0-9.\-]*)$/i);
+  if (m) {
+    const raw = m[1].toUpperCase();
+    const quoteRaw = raw.replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '');
+    return { market: 'US', code: quoteRaw, name: quoteRaw, quoteKey: 'us' + quoteRaw, rawCode: raw, klineCode: 'us' + raw };
+  }
+  if (/^[A-Za-z][A-Za-z0-9.\-]{0,11}$/.test(q)) {
+    const raw = q.toUpperCase();
+    const quoteRaw = raw.replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '');
+    return { market: 'US', code: quoteRaw, name: quoteRaw, quoteKey: 'us' + quoteRaw, rawCode: raw, klineCode: 'us' + raw };
+  }
+  return null;
+}
+
+/* ---------------- Tencent quote ---------------- */
+function decodeGBK(buffer) {
+  try {
+    return new TextDecoder('gbk').decode(buffer);
+  } catch (e) {
+    try {
+      return new TextDecoder('utf-8').decode(buffer);
+    } catch (e2) {
+      return '';
+    }
+  }
+}
+
+function parseQuoteLine(key, raw) {
+  if (!raw) throw new Error('行情数据为空');
+  const f = raw.split('~');
+  if (f.length < 38) throw new Error('行情数据格式异常');
+  const market = marketFromKey(key);
+  const price = num(f[3]);
+  if (!Number.isFinite(price) || price <= 0) throw new Error('未找到该股票的行情');
+  const quote = {
+    key,
+    market,
+    name: stripTags(f[1] || ''),
+    rawCode: f[2] || '',
+    price,
+    prevClose: num(f[4], 0),
+    open: num(f[5], 0),
+    volume: num(f[36], num(f[6], 0)),
+    time: formatQuoteTime(f[30]),
+    change: num(f[31], 0),
+    changePct: num(f[32], 0),
+    high: num(f[33], 0),
+    low: num(f[34], 0),
+    currency: currencyOf(market),
+    source: '腾讯财经',
+  };
+  if (market === 'A') {
+    quote.amount = num(f[37], 0) * 1e4;
+    quote.turnover = num(f[38]);
+    quote.pe = num(f[39]);
+    quote.pb = num(f[46]);
+    quote.floatCap = num(f[44]);
+    quote.marketCap = num(f[45]);
+    quote.high52 = num(f[67]);
+    quote.low52 = num(f[68]);
+    quote.volumeRatio = num(f[49]);
+  } else if (market === 'HK') {
+    quote.amount = num(f[37], 0);
+    quote.turnover = null;
+    quote.pe = num(f[39]);
+    quote.pb = num(f[47]);
+    quote.marketCap = num(f[45]);
+    quote.high52 = num(f[48]);
+    quote.low52 = num(f[49]);
+  } else {
+    quote.amount = num(f[37], 0);
+    quote.turnover = num(f[38]);
+    quote.pe = num(f[39]);
+    quote.pb = num(f[47]);
+    quote.marketCap = num(f[45]);
+    quote.high52 = num(f[48]);
+    quote.low52 = num(f[49]);
+  }
+  return quote;
+}
+
+async function getQuote(stock) {
+  const key = stock.quoteKey || stock.klineCode;
+  if (!key) throw new Error('缺少行情代码');
+  return cached('quote:' + key, TTL.quote, async () => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12000);
+    try {
+      const res = await fetch(API.quote + encodeURIComponent(key), { signal: ctrl.signal, cache: 'no-store' });
+      if (!res.ok) throw new Error(`行情 HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      const text = decodeGBK(buf);
+      const escKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      let m = text.match(new RegExp('v_' + escKey + '="([^"]*)"'));
+      if (!m) m = text.match(/v_[^=]+="([^"]*)"/);
+      return parseQuoteLine(key, m ? m[1] : '');
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+}
+
+async function getQuoteBatch(keys) {
+  const list = [...new Set((keys || []).filter(Boolean))];
+  if (!list.length) return new Map();
+  const chunks = [];
+  for (let i = 0; i < list.length; i += 60) chunks.push(list.slice(i, i + 60));
+  const pages = await Promise.all(
+    chunks.map(async (chunk) => {
+      const res = await fetch(API.quote + chunk.map(encodeURIComponent).join(','), { cache: 'no-store' });
+      if (!res.ok) throw new Error(`行情 HTTP ${res.status}`);
+      const text = decodeGBK(await res.arrayBuffer());
+      const out = [];
+      const re = /v_([^=]+)="([^"]*)"/g;
+      let m;
+      while ((m = re.exec(text))) {
+        try {
+          out.push(parseQuoteLine(m[1], m[2]));
+        } catch (e) {}
+      }
+      return out;
+    })
+  );
+  return new Map(pages.flat().map((q) => [q.key, q]));
+}
+
+/* ---------------- Tencent K-line ---------------- */
+function klineMetrics(points) {
+  const closes = points.map((p) => num(p.close)).filter((n) => Number.isFinite(n) && n > 0);
+  if (closes.length < 2) throw new Error('历史行情数据不足');
+  const last = closes[closes.length - 1];
+  const ret = (n) => (closes.length > n ? (last / closes[closes.length - 1 - n] - 1) * 100 : null);
+  const avg = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const ma = (n) => (closes.length >= n ? avg(closes.slice(-n)) : null);
+  const daily = [];
+  for (let i = 1; i < closes.length; i++) daily.push(closes[i] / closes[i - 1] - 1);
+  const recent = daily.slice(-120);
+  const mean = recent.length ? avg(recent) : 0;
+  const variance = recent.length ? avg(recent.map((r) => (r - mean) ** 2)) : 0;
+  const volatility = Math.sqrt(variance) * Math.sqrt(252) * 100;
+  let peak = closes[0];
+  let maxDrawdown = 0;
+  closes.slice(-120).forEach((c) => {
+    peak = Math.max(peak, c);
+    maxDrawdown = Math.min(maxDrawdown, (c / peak - 1) * 100);
+  });
+  const ma20 = ma(20);
+  const ma60 = ma(60);
+  let trend = '震荡';
+  if (ma20 && ma60) {
+    if (last > ma20 && ma20 > ma60) trend = '多头排列';
+    else if (last < ma20 && ma20 < ma60) trend = '空头排列';
+  }
+  return {
+    last,
+    r20: ret(20),
+    r60: ret(60),
+    r120: ret(120),
+    ma20,
+    ma60,
+    volatility,
+    maxDrawdown,
+    trend,
+    points: closes.length,
+  };
+}
+
+async function getKline(stock, quote) {
+  let key = stock.klineCode || stock.quoteKey;
+  if (stock.market === 'US') {
+    if (quote && quote.rawCode) key = 'us' + quote.rawCode;
+    else if (!key || !/\.(OQ|N|PS|A)$/i.test(key)) {
+      key = 'us' + (stock.rawCode || stock.code || '');
+    }
+  }
+  if (!key) throw new Error('缺少 K 线代码');
+  const isUS = stock.market === 'US';
+  return cached('kline:' + key, TTL.kline, async () => {
+    const base = isUS ? API.usKline : API.kline;
+    const url = `${base}?param=${encodeURIComponent(key)},day,,,320,qfq`;
+    const data = await fetchJSON(url, { timeout: 15000 });
+    const block = data && data.data && (data.data[key] || Object.values(data.data)[0]);
+    if (!block) throw new Error('K 线数据为空');
+    const arr = block.qfqday || block.day || block.qfqweek || block.week || [];
+    const points = arr
+      .map((row) => ({
+        date: row[0],
+        open: num(row[1]),
+        close: num(row[2]),
+        high: num(row[3]),
+        low: num(row[4]),
+        volume: num(row[5], 0),
+      }))
+      .filter((p) => Number.isFinite(p.close) && p.date);
+    if (points.length < 5) throw new Error('K 线数据不足');
+    return { key, points, metrics: klineMetrics(points), source: '腾讯财经' };
+  });
+}
+
+/* ---------------- Eastmoney reports ---------------- */
+function aShareSecucode(code) {
+  const c = String(code || '');
+  if (/^(6|9)/.test(c)) return c + '.SH';
+  if (/^(4|8)/.test(c)) return c + '.BJ';
+  return c + '.SZ';
+}
+
+function normalizeReport(r) {
+  const ratingRaw = r.emRatingName || r.sRatingName || '';
+  const info = ratingInfo(ratingRaw);
+  const target = num(r.indvAimPriceT) || num(r.indvAimPriceL) || null;
+  const analyst =
+    r.researcher ||
+    (Array.isArray(r.author) ? r.author.map((a) => String(a).split('.').pop()).filter(Boolean).join('、') : '');
+  return {
+    title: stripTags(r.title),
+    date: fmtDate(r.publishDate),
+    rawDate: r.publishDate,
+    org: stripTags(r.orgSName || r.orgName || ''),
+    orgFull: stripTags(r.orgName || ''),
+    rating: ratingRaw,
+    ratingLabel: info.label,
+    ratingScore: info.score,
+    ratingCls: info.cls,
+    analyst,
+    eps: num(r.predictThisYearEps),
+    pe: num(r.predictThisYearPe),
+    target,
+    pdf: r.infoCode ? API.pdf + r.infoCode + '_1.pdf' : '',
+    pages: num(r.attachPages),
+    industryName: r.indvInduName || r.industryName || '',
+    industryCode: r.indvInduCode || r.industryCode || '',
+    stockName: stripTags(r.stockName || ''),
+    stockCode: r.stockCode || '',
+  };
+}
+
+async function getStockReports(stock, opts = {}) {
+  if (stock.market !== 'A') {
+    return { supported: false, hits: 0, list: [], industryCode: '', industryName: '' };
+  }
+  const pageSize = opts.pageSize || 20;
+  const months = opts.months || 6;
+  const code = stock.code;
+  const cacheKey = `reports:${code}:${pageSize}:${months}`;
+  return cached(cacheKey, TTL.report, async () => {
+    const params = new URLSearchParams({
+      industryCode: '*',
+      pageSize: String(pageSize),
+      industry: '*',
+      rating: '',
+      ratingChange: '',
+      beginTime: monthsAgoISO(months),
+      endTime: todayISO(),
+      pageNo: '1',
+      fields: '',
+      qType: '0',
+      orgCode: '',
+      code,
+      rcode: '',
+      p: '1',
+      pageNum: '1',
+      pageNumber: '1',
+      _: String(Date.now()),
+    });
+    const data = await emJSON(`${API.report}?${params}`);
+    const rows = Array.isArray(data.data) ? data.data : [];
+    let industryCode = '';
+    let industryName = '';
+    rows.forEach((r) => {
+      if (!industryCode && r.indvInduCode) industryCode = r.indvInduCode;
+      if (!industryName && r.indvInduName) industryName = r.indvInduName;
+    });
+    if (!rows.length) {
+      try {
+        const extra = await emJSON(
+          `${API.report}?industryCode=*&pageSize=1&industry=*&rating=&ratingChange=&beginTime=2010-01-01&endTime=${todayISO()}&pageNo=1&fields=&qType=0&orgCode=&code=${code}&rcode=&p=1&pageNum=1&pageNumber=1&_=${Date.now()}`
+        );
+        const r = extra && extra.data && extra.data[0];
+        if (r) {
+          industryCode = r.indvInduCode || r.industryCode || '';
+          industryName = r.indvInduName || r.industryName || '';
+        }
+      } catch (e) {}
+    }
+    return {
+      supported: true,
+      hits: num(data.hits, rows.length),
+      list: rows.map(normalizeReport),
+      industryCode,
+      industryName,
+    };
+  });
+}
+
+async function getIndustryReports(industryCode, industryName, opts = {}) {
+  if (!industryCode) return { supported: true, hits: 0, list: [], industryName: industryName || '' };
+  const months = opts.months || 6;
+  const pageSize = opts.pageSize || 20;
+  return cached(`industry-reports:${industryCode}:${pageSize}`, TTL.report, async () => {
+    const params = new URLSearchParams({
+      industryCode: String(industryCode),
+      pageSize: String(pageSize),
+      industry: '*',
+      rating: '',
+      ratingChange: '',
+      beginTime: monthsAgoISO(months),
+      endTime: todayISO(),
+      pageNo: '1',
+      fields: '',
+      qType: '1',
+      orgCode: '',
+      code: '',
+      rcode: '',
+      p: '1',
+      pageNum: '1',
+      pageNumber: '1',
+      _: String(Date.now()),
+    });
+    const data = await emJSON(`${API.report}?${params}`);
+    return {
+      supported: true,
+      hits: num(data.hits, (data.data || []).length),
+      list: (data.data || []).map(normalizeReport),
+      industryName: industryName || '',
+    };
+  });
+}
+
+/* ---------------- Eastmoney financials / profile ---------------- */
+async function getFinancials(stock) {
+  if (stock.market === 'US') {
+    return { supported: false, reason: '美股盈利与成长数据暂无稳定免费源' };
+  }
+  const code = stock.code;
+  const isHK = stock.market === 'HK';
+  const secucode = isHK ? `${code}.HK` : aShareSecucode(code);
+  return cached('financial:' + secucode, TTL.financial, async () => {
+    let reportName;
+    let columns;
+    if (isHK) {
+      reportName = 'RPT_HKF10_FN_MAININDICATOR';
+      columns = 'SECUCODE,SECURITY_NAME_ABBR,REPORT_DATE,REPORT_TYPE,OPERATE_INCOME,OPERATE_INCOME_YOY,GROSS_PROFIT,GROSS_PROFIT_YOY,HOLDER_PROFIT,HOLDER_PROFIT_YOY,GROSS_PROFIT_RATIO,ROE_YEARLY,ROE_AVG,PE_TTM,PB_TTM,TOTAL_MARKET_CAP,CURRENCY';
+    } else {
+      reportName = 'RPT_F10_FINANCE_MAINFINADATA';
+      columns = 'SECUCODE,SECURITY_NAME_ABBR,REPORT_DATE,REPORT_DATE_NAME,EPSJB,BPS,TOTALOPERATEREVE,PARENTNETPROFIT,TOTALOPERATEREVETZ,PARENTNETPROFITTZ,XSMLL,ROEJQ,ZCFZL';
+    }
+    const params = new URLSearchParams({
+      reportName,
+      columns,
+      filter: `(SECUCODE="${secucode}")`,
+      pageNumber: '1',
+      pageSize: '4',
+      sortTypes: '-1',
+      sortColumns: 'REPORT_DATE',
+      source: 'HSF10',
+      client: 'PC',
+    });
+    const data = await emJSON(`${API.datacenter}?${params}`);
+    const rows = (data && data.result && data.result.data) || [];
+    if (!rows.length) return { supported: true, empty: true, history: [] };
+    const latest = rows[0];
+    const normalized = isHK
+      ? {
+          period: latest.REPORT_TYPE || fmtDate(latest.REPORT_DATE),
+          revenue: num(latest.OPERATE_INCOME),
+          revenueYoY: num(latest.OPERATE_INCOME_YOY),
+          profit: num(latest.HOLDER_PROFIT),
+          profitYoY: num(latest.HOLDER_PROFIT_YOY),
+          grossMargin: num(latest.GROSS_PROFIT_RATIO),
+          roe: num(latest.ROE_YEARLY, num(latest.ROE_AVG)),
+          pe: num(latest.PE_TTM),
+          pb: num(latest.PB_TTM),
+          eps: num(latest.BASIC_EPS),
+          bps: num(latest.BPS),
+          currency: latest.CURRENCY || 'HKD',
+          reportDate: fmtDate(latest.REPORT_DATE),
+          history: rows.map((r) => ({
+            period: r.REPORT_TYPE || fmtDate(r.REPORT_DATE),
+            revenueYoY: num(r.OPERATE_INCOME_YOY),
+            profitYoY: num(r.HOLDER_PROFIT_YOY),
+            roe: num(r.ROE_YEARLY, num(r.ROE_AVG)),
+          })),
+        }
+      : {
+          period: latest.REPORT_DATE_NAME || fmtDate(latest.REPORT_DATE),
+          revenue: num(latest.TOTALOPERATEREVE),
+          revenueYoY: num(latest.TOTALOPERATEREVETZ),
+          profit: num(latest.PARENTNETPROFIT),
+          profitYoY: num(latest.PARENTNETPROFITTZ),
+          grossMargin: num(latest.XSMLL),
+          roe: num(latest.ROEJQ),
+          pe: null,
+          pb: null,
+          eps: num(latest.EPSJB),
+          bps: num(latest.BPS),
+          debtRatio: num(latest.ZCFZL),
+          currency: 'CNY',
+          reportDate: fmtDate(latest.REPORT_DATE),
+          history: rows.map((r) => ({
+            period: r.REPORT_DATE_NAME || fmtDate(r.REPORT_DATE),
+            revenueYoY: num(r.TOTALOPERATEREVETZ),
+            profitYoY: num(r.PARENTNETPROFITTZ),
+            roe: num(r.ROEJQ),
+          })),
+        };
+    return { supported: true, ...normalized, source: '东方财富 F10' };
+  });
+}
+
+async function getOrgProfile(stock, quote) {
+  const code = stock.code;
+  const market = stock.market;
+  const cacheKey = `profile:${market}:${code}`;
+  return cached(cacheKey, TTL.profile, async () => {
+    let reportName;
+    let secucode;
+    if (market === 'A') {
+      reportName = 'RPT_F10_BASIC_ORGINFO';
+      secucode = aShareSecucode(code);
+    } else if (market === 'HK') {
+      reportName = 'RPT_HKF10_INFO_ORGPROFILE';
+      secucode = `${code}.HK`;
+    } else {
+      reportName = 'RPT_USF10_INFO_ORGPROFILE';
+      const raw = (quote && quote.rawCode) || stock.rawCode || code;
+      const c = String(raw).replace(/^us/i, '');
+      if (/\.OQ$/i.test(c)) secucode = c.replace(/\.OQ$/i, '.O');
+      else if (/\.PS$/i.test(c)) secucode = c.replace(/\.PS$/i, '.O');
+      else if (/\.[A-Z]{1,2}$/i.test(c)) secucode = c;
+      else secucode = c + '.O';
+    }
+    const params = new URLSearchParams({
+      reportName,
+      columns: 'ALL',
+      filter: `(SECUCODE="${secucode}")`,
+      pageNumber: '1',
+      pageSize: '1',
+      source: 'HSF10',
+      client: 'PC',
+    });
+    const data = await emJSON(`${API.datacenter}?${params}`);
+    const row = data && data.result && data.result.data && data.result.data[0];
+    if (!row) return { industryName: '', companyName: '' };
+    let industryName = '';
+    if (market === 'A') {
+      const em = row.EM2016 || '';
+      industryName = em.split('-').filter(Boolean).pop() || '';
+      if (!industryName) industryName = (row.INDUSTRYCSRC1 || '').split('-').filter(Boolean).pop() || '';
+    } else {
+      industryName = row.BELONG_INDUSTRY || '';
+    }
+    return {
+      industryName,
+      industryRaw: row.EM2016 || row.BELONG_INDUSTRY || '',
+      companyName: row.ORG_NAME || row.SECURITY_NAME_ABBR || '',
+      source: '东方财富 F10',
+    };
+  });
+}
+
+/* ---------------- Eastmoney news ---------------- */
+async function getNews(stock) {
+  const keyword = stock.name || stock.code;
+  const cacheKey = `news:${stock.market}:${stock.code}`;
+  return cached(cacheKey, TTL.news, async () => {
+    const payload = {
+      uid: '',
+      keyword,
+      type: ['cmsArticleWebOld'],
+      client: 'web',
+      clientType: 'web',
+      clientVersion: 'curr',
+      param: {
+        cmsArticleWebOld: {
+          searchScope: 'default',
+          sort: 'default',
+          pageIndex: 1,
+          pageSize: 15,
+          preTag: '',
+          postTag: '',
+        },
+      },
+    };
+    const url = `${API.news}?param=${encodeURIComponent(JSON.stringify(payload))}`;
+    const data = await jsonp(url, { timeout: 15000 });
+    const rows = (data && data.result && data.result.cmsArticleWebOld) || [];
+    const name = String(stock.name || '').toLowerCase();
+    const code = String(stock.code || '').toLowerCase();
+    const normalized = rows.map((r) => ({
+      title: stripTags(r.title),
+      content: stripTags(r.content),
+      date: r.date || '',
+      source: stripTags(r.mediaName || '东方财富资讯'),
+      url: safeUrl(r.url),
+    }));
+    let filtered = normalized.filter((n) => {
+      const text = (n.title + ' ' + n.content).toLowerCase();
+      return (name && text.includes(name)) || (code && text.includes(code));
+    });
+    if (filtered.length < 5) filtered = normalized;
+    return filtered
+      .filter((n) => n.title)
+      .sort((a, b) => (parseDateValue(b.date)?.getTime() || 0) - (parseDateValue(a.date)?.getTime() || 0))
+      .slice(0, 15);
+  });
+}
+
+/* ---------------- Industry mapping / peers ---------------- */
+const INDUSTRY_CODES = {
+  光伏设备: '1031', 风电设备: '1032', 电池: '1033', 其他电源设备Ⅱ: '1034', 半导体: '1036',
+  消费电子: '1037', 光学光电子: '1038', 中药Ⅱ: '1040', 医药商业: '1042', 生物制品: '1044',
+  房地产服务: '1045', 游戏Ⅱ: '1046', 服装家纺: '1225', 航空装备Ⅱ: '1231', 航天装备Ⅱ: '1232',
+  IT服务Ⅱ: '1238', 白色家电: '1239', 黑色家电: '1241', 煤炭开采: '1250', 化妆品: '1252',
+  医疗美容: '1253', 农业综合Ⅱ: '1257', 饲料: '1258', 养殖业: '1259', 摩托车及其他: '1263',
+  造纸: '1267', 酒店餐饮: '1271', 白酒Ⅱ: '1277', 食品加工: '1280', 休闲食品: '1281',
+  饮料乳品: '1282', 工业金属: '1287', 物流: '422', 电力: '428', 通信设备: '448',
+  房地产开发: '451', 电网设备: '457', 元件: '459', 化学制药: '465', 证券Ⅱ: '473',
+  保险Ⅱ: '474', 银行Ⅱ: '475', 汽车零部件: '481', 一般零售: '482', 化学制品: '538',
+  通用设备: '545', 医疗服务: '727', 通信服务: '736', 软件开发: '737', 多元金融: '738', 专用设备: '910',
+};
+
+const INDUSTRY_ALIASES = {
+  软件服务: ['软件开发', 'IT服务Ⅱ'],
+  半导体产品: ['半导体'],
+  银行: ['银行Ⅱ'],
+  保险: ['保险Ⅱ'],
+  证券: ['证券Ⅱ'],
+  汽车: ['汽车零部件'],
+  媒体: ['游戏Ⅱ'],
+  娱乐: ['游戏Ⅱ'],
+  互联网: ['软件开发', 'IT服务Ⅱ'],
+  医药: ['化学制药', '生物制品'],
+  生物科技: ['生物制品'],
+  食品饮料: ['食品加工', '饮料乳品'],
+  消费: ['一般零售'],
+  新能源: ['电池', '光伏设备'],
+  通信: ['通信服务', '通信设备'],
+  地产: ['房地产开发'],
+  房地产: ['房地产开发'],
+  家电: ['白色家电'],
+  餐饮: ['酒店餐饮'],
+  旅游: ['酒店餐饮'],
+  服装: ['服装家纺'],
+  化工: ['化学制品'],
+  机械: ['通用设备', '专用设备'],
+};
+
+function normIndustry(s) {
+  return String(s || '')
+    .replace(/[（(].*?[）)]/g, '')
+    .replace(/(Ⅱ|Ⅲ|II|III|行业|板块|产品|服务|制造|设备|其他)/gi, '')
+    .replace(/[\s·\-—]/g, '')
+    .toLowerCase();
+}
+function sameIndustry(a, b) {
+  if (!a || !b) return false;
+  if (String(a) === String(b)) return true;
+  const na = normIndustry(a);
+  const nb = normIndustry(b);
+  if (!na || !nb) return false;
+  return na === nb || na.includes(nb) || nb.includes(na);
+}
+function findIndustryCode(industryName) {
+  if (!industryName) return null;
+  const direct = Object.entries(INDUSTRY_CODES).find(([name]) => name === industryName);
+  if (direct) return { code: direct[1], name: direct[0], reference: false };
+  const norm = normIndustry(industryName);
+  const candidates = Object.entries(INDUSTRY_CODES).filter(([name]) => {
+    const n = normIndustry(name);
+    return n === norm || n.includes(norm) || norm.includes(n);
+  });
+  if (candidates.length) return { code: candidates[0][1], name: candidates[0][0], reference: true };
+  for (const [key, aliases] of Object.entries(INDUSTRY_ALIASES)) {
+    if (normIndustry(key) === norm) {
+      for (const alias of aliases) {
+        if (INDUSTRY_CODES[alias]) return { code: INDUSTRY_CODES[alias], name: alias, reference: true };
+      }
+    }
+  }
+  return null;
+}
+
+async function fetchBoardConstituents(boardCode, sortField) {
+  const params = new URLSearchParams({
+    pn: '1',
+    pz: '30',
+    po: '1',
+    np: '1',
+    fltt: '2',
+    invt: '2',
+    fid: sortField,
+    fs: `b:${boardCode}+f:!50`,
+    fields: 'f12,f13,f14,f20,f105,f9,f23',
+  });
+  const data = await emJsonp(`${API.push2}clist/get?${params}`);
+  const diff = data && data.data && data.data.diff;
+  const rows = Array.isArray(diff) ? diff : diff ? Object.values(diff) : [];
+  return rows.map((r) => ({
+    market: 'A',
+    code: String(r.f12 || ''),
+    name: stripTags(r.f14 || ''),
+    marketCap: num(r.f20) != null ? num(r.f20) / 1e8 : null,
+    profit: num(r.f105) != null ? num(r.f105) / 1e8 : null,
+    pe: num(r.f9),
+    pb: num(r.f23),
+    marketId: num(r.f13),
+  }));
+}
+
+async function getIndustryBoards() {
+  return cached('industry-boards', TTL.boards, async () => {
+    const out = [];
+    for (let page = 1; page <= 2; page++) {
+      const data = await emJsonp(
+        `${API.push2}clist/get?pn=${page}&pz=300&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2&fields=f12,f14`
+      );
+      const diff = data && data.data && data.data.diff;
+      const rows = Array.isArray(diff) ? diff : diff ? Object.values(diff) : [];
+      rows.forEach((r) => out.push({ code: r.f12, name: stripTags(r.f14) }));
+      if (!data || !data.data || out.length >= num(data.data.total, 0)) break;
+    }
+    return out;
+  });
+}
+
+function normalizeASharePeer(row, extras = {}) {
+  if (!row || !row.SECURITY_CODE) return null;
+  const code = String(row.SECURITY_CODE);
+  if (/^(200|900)/.test(code)) return null;
+  const mk = /^(6|9)/.test(code) ? 'sh' : /^(4|8)/.test(code) ? 'bj' : 'sz';
+  return {
+    market: 'A',
+    code,
+    name: stripTags(row.SECURITY_NAME_ABBR || code),
+    marketCap: Number.isFinite(extras.marketCap) ? extras.marketCap : null,
+    profit: Number.isFinite(extras.profit) ? extras.profit : null,
+    pe: num(row.PE_RATIO),
+    pb: num(row.PB_RATIO),
+    quoteKey: mk + code,
+    klineCode: mk + code,
+    rawCode: code,
+  };
+}
+
+async function dcQuery(reportName, columns, filter, sortColumns, sortTypes = '-1', pageSize = 20) {
+  const params = new URLSearchParams({
+    reportName,
+    columns,
+    filter,
+    pageNumber: '1',
+    pageSize: String(pageSize),
+    sortTypes,
+    sortColumns,
+    source: 'WEB',
+    client: 'WEB',
+  });
+  const data = await emJSON(`${API.datacenter}?${params}`);
+  return (data && data.result && data.result.data) || [];
+}
+
+async function getAShareIndustryCode(stock) {
+  const rows = await dcQuery(
+    'RPT_STOCK_INDUSTRY_STA',
+    'SECURITY_CODE,SECURITY_NAME_ABBR,INDUSTRY_NAME,INDUSTRY_CODE,TOTAL_MARKET_CAP,PE_RATIO,PB_RATIO,TMC_RANK',
+    `(SECURITY_CODE="${stock.code}")`,
+    'TRADE_DATE',
+    '-1',
+    1
+  );
+  const row = rows[0];
+  if (!row || !row.INDUSTRY_CODE) return null;
+  return { code: String(row.INDUSTRY_CODE), name: row.INDUSTRY_NAME || '' };
+}
+
+async function getASharePeersFromDataCenter(stock, industryName, industryCode) {
+  let info =
+    industryCode && /^\d+$/.test(String(industryCode))
+      ? { code: String(industryCode), name: industryName || '' }
+      : await getAShareIndustryCode(stock);
+  if (!info || !info.code) throw new Error('数据中心未返回行业代码');
+  const code = info.code;
+
+  const capColumns =
+    'SECURITY_CODE,SECURITY_NAME_ABBR,INDUSTRY_NAME,INDUSTRY_CODE,TOTAL_MARKET_CAP,PE_RATIO,PB_RATIO,TMC_RANK';
+  const profitColumns =
+    'SECURITY_CODE,SECURITY_NAME_ABBR,PARENT_NETPROFIT,REPORTDATE,BOARD_NAME,ORI_BOARD_CODE';
+
+  const [capRows, latestRows] = await Promise.all([
+    dcQuery(
+      'RPT_STOCK_INDUSTRY_STA',
+      capColumns,
+      `(INDUSTRY_CODE="${code}")`,
+      'TOTAL_MARKET_CAP',
+      '-1',
+      30
+    ),
+    dcQuery(
+      'RPT_LICO_FN_CPD',
+      profitColumns,
+      `(ORI_BOARD_CODE="${code}")`,
+      'REPORTDATE',
+      '-1',
+      1
+    ),
+  ]);
+
+  const cap = capRows
+    .map((r) => normalizeASharePeer(r, { marketCap: num(r.TOTAL_MARKET_CAP) != null ? num(r.TOTAL_MARKET_CAP) / 1e8 : null }))
+    .filter((p) => p && p.code !== stock.code && Number.isFinite(p.marketCap))
+    .sort((a, b) => b.marketCap - a.marketCap)
+    .slice(0, 3);
+
+  let profit = [];
+  let profitPeriod = '';
+  const latest = latestRows[0];
+  if (latest && latest.REPORTDATE) {
+    profitPeriod = fmtDate(latest.REPORTDATE);
+    const profitRows = await dcQuery(
+      'RPT_LICO_FN_CPD',
+      profitColumns,
+      `(REPORTDATE='${latest.REPORTDATE.slice(0, 10)}')(ORI_BOARD_CODE="${code}")`,
+      'PARENT_NETPROFIT',
+      '-1',
+      30
+    );
+    profit = profitRows
+      .map((r) => normalizeASharePeer(r, { profit: num(r.PARENT_NETPROFIT) != null ? num(r.PARENT_NETPROFIT) / 1e8 : null }))
+      .filter((p) => p && p.code !== stock.code && Number.isFinite(p.profit) && p.profit > 0)
+      .sort((a, b) => b.profit - a.profit)
+      .slice(0, 3);
+  }
+
+  if (!cap.length && !profit.length) throw new Error('数据中心行业榜暂无可用数据');
+
+  return {
+    supported: true,
+    boardCode: code,
+    boardName: info.name || industryName || '',
+    cap,
+    profit,
+    profitPeriod,
+    source: '东方财富数据中心',
+    note: '行业板块接口不可用，已回退到东方财富数据中心行业榜',
+  };
+}
+
+async function getASharePeers(stock, industryName, industryCode) {
+  if (!industryName && !industryCode) throw new Error('未识别到所属行业');
+  try {
+    const boards = await getIndustryBoards();
+    const targetNorm = normIndustry(industryName);
+    const board =
+      boards.find((b) => b.name === industryName) ||
+      boards.find((b) => normIndustry(b.name) === targetNorm) ||
+      boards.find((b) => sameIndustry(b.name, industryName));
+    if (!board) throw new Error(`未找到「${industryName}」行业板块`);
+
+    const [capRows, profitRows] = await Promise.all([
+      fetchBoardConstituents(board.code, 'f20'),
+      fetchBoardConstituents(board.code, 'f105'),
+    ]);
+    const cap = capRows
+      .filter((r) => r.code && r.code !== stock.code && Number.isFinite(r.marketCap))
+      .sort((a, b) => b.marketCap - a.marketCap)
+      .slice(0, 3);
+    const profit = profitRows
+      .filter((r) => r.code && r.code !== stock.code && Number.isFinite(r.profit) && r.profit > 0)
+      .sort((a, b) => b.profit - a.profit)
+      .slice(0, 3);
+    if (!cap.length && !profit.length) throw new Error('行业板块未返回成分股');
+    [...cap, ...profit].forEach((p) => {
+      const mk = p.marketId === 1 ? 'sh' : /^(4|8)/.test(p.code) ? 'bj' : 'sz';
+      p.quoteKey = mk + p.code;
+      p.klineCode = p.quoteKey;
+      p.market = 'A';
+      p.rawCode = p.code;
+    });
+
+    if (!cap.length || !profit.length) {
+      try {
+        const dcInfo = industryCode ? { code: String(industryCode) } : await getAShareIndustryCode(stock);
+        const dc = await getASharePeersFromDataCenter(
+          stock,
+          industryName,
+          dcInfo && /^\d+$/.test(dcInfo.code || '') ? dcInfo.code : ''
+        );
+        return {
+          supported: true,
+          boardCode: board.code,
+          boardName: board.name || dc.boardName,
+          cap: cap.length ? cap : dc.cap,
+          profit: profit.length ? profit : dc.profit,
+          profitPeriod: dc.profitPeriod || '',
+          source: '东方财富行业板块 / 数据中心',
+          note: `行业板块接口返回不完整，已用数据中心补齐${profit.length ? '' : '利润榜'}`,
+        };
+      } catch (e) {}
+    }
+
+    return {
+      supported: true,
+      boardCode: board.code,
+      boardName: board.name,
+      cap,
+      profit,
+      profitPeriod: '',
+      source: '东方财富行业板块',
+      note: '按行业板块成分股排序',
+    };
+  } catch (e) {
+    return getASharePeersFromDataCenter(stock, industryName, industryCode);
+  }
+}
+
+async function fetchMarketPeerPage(fs, sortField, page) {
+  const params = new URLSearchParams({
+    pn: String(page),
+    pz: '100',
+    po: '1',
+    np: '1',
+    fltt: '2',
+    invt: '2',
+    fid: sortField,
+    fs,
+    fields: 'f12,f13,f14,f20,f105,f9,f23,f100',
+  });
+  const data = await emJsonp(`${API.push2}clist/get?${params}`);
+  const diff = data && data.data && data.data.diff;
+  const rows = Array.isArray(diff) ? diff : diff ? Object.values(diff) : [];
+  return {
+    total: num(data && data.data && data.data.total, 0),
+    rows: rows.map((r) => ({
+      code: String(r.f12 || ''),
+      name: stripTags(r.f14 || ''),
+      marketCap: num(r.f20) != null ? num(r.f20) / 1e8 : null,
+      profit: num(r.f105) != null ? num(r.f105) / 1e8 : null,
+      pe: num(r.f9),
+      pb: num(r.f23),
+      industry: stripTags(r.f100 || ''),
+      marketId: num(r.f13),
+    })),
+  };
+}
+
+async function getHKUSPeersFromPush2(stock, industryName) {
+  if (!industryName) throw new Error('未识别到所属行业');
+  const isHK = stock.market === 'HK';
+  const fs = isHK ? 'm:128' : 'm:105,m:106,m:107';
+  const collect = async (sortField) => {
+    const matched = [];
+    for (let page = 1; page <= 3; page++) {
+      const { rows, total } = await fetchMarketPeerPage(fs, sortField, page);
+      rows.forEach((r) => {
+        if (sameIndustry(r.industry, industryName)) matched.push(r);
+      });
+      if (matched.length >= 3 || page * 100 >= total) break;
+    }
+    return matched
+      .filter((r) => r.code && r.code !== stock.code)
+      .slice(0, 3)
+      .map((r) => ({
+        market: stock.market,
+        code: isHK ? String(r.code).padStart(5, '0') : String(r.code).replace(/\..*$/, ''),
+        name: r.name,
+        marketCap: Number.isFinite(r.marketCap) ? r.marketCap : null,
+        profit: Number.isFinite(r.profit) ? r.profit : null,
+        pe: r.pe,
+        pb: r.pb,
+        quoteKey: isHK ? 'hk' + String(r.code).padStart(5, '0') : 'us' + String(r.code).replace(/\..*$/, ''),
+        klineCode: isHK ? 'hk' + String(r.code).padStart(5, '0') : 'us' + String(r.code),
+      }));
+  };
+  const [cap, profit] = await Promise.all([collect('f20'), collect('f105')]);
+  const hasProfit = profit.some((p) => Number.isFinite(p.profit) && p.profit > 0);
+  return {
+    supported: true,
+    boardCode: '',
+    boardName: industryName,
+    cap,
+    profit: hasProfit ? profit : [],
+    profitPeriod: '',
+    source: '东方财富市场列表',
+    note: `按「${industryName}」行业标签匹配，覆盖可能不完整`,
+  };
+}
+
+function dcQuoteString(s) {
+  return String(s || '').replace(/["\\]/g, '');
+}
+function dcCodeInFilter(codes) {
+  const unique = [...new Set((codes || []).map((c) => dcQuoteString(c)).filter(Boolean))];
+  if (!unique.length) return '';
+  return `(SECURITY_CODE in (${unique.map((c) => `"${c}"`).join(',')}))`;
+}
+function usBaseCode(raw) {
+  return String(raw || '')
+    .toUpperCase()
+    .replace(/^US/, '')
+    .replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '');
+}
+function peerCurrencyLabel(currency) {
+  const c = String(currency || '').toUpperCase();
+  if (c === 'HKD') return '港元';
+  if (c === 'USD') return '美元';
+  if (c === 'TWD') return '新台币';
+  if (c === 'CNY' || c === 'RMB') return '元';
+  return c || '元';
+}
+function peerMoney(yi, currency) {
+  if (!Number.isFinite(yi)) return '—';
+  const label = peerCurrencyLabel(currency);
+  if (Math.abs(yi) >= 10000) return `${(yi / 10000).toFixed(2)}万亿${label}`;
+  return `${fmtBig(yi)}${label}`;
+}
+
+async function getHKUSPeersFromDataCenter(stock, industryName) {
+  if (!industryName) throw new Error('未识别到所属行业');
+  const isHK = stock.market === 'HK';
+  const profileReport = isHK ? 'RPT_HKF10_INFO_ORGPROFILE' : 'RPT_USF10_INFO_ORGPROFILE';
+  const profiles = await dcQuery(
+    profileReport,
+    'SECURITY_CODE,SECURITY_NAME_ABBR,ORG_CODE,BELONG_INDUSTRY',
+    `(BELONG_INDUSTRY="${dcQuoteString(industryName)}")`,
+    'SECURITY_CODE',
+    '1',
+    500
+  );
+  const rows = (profiles || []).filter((r) => r && r.SECURITY_CODE);
+  if (!rows.length) throw new Error(`未找到「${industryName}」行业成分股`);
+
+  const orgMap = new Map();
+  rows.forEach((r) => {
+    const org = r.ORG_CODE || String(r.SECURITY_CODE);
+    if (!orgMap.has(org)) {
+      orgMap.set(org, {
+        org,
+        code: String(r.SECURITY_CODE),
+        name: stripTags(r.SECURITY_NAME_ABBR || r.SECURITY_CODE),
+      });
+    }
+  });
+  const filter = dcCodeInFilter(rows.map((r) => r.SECURITY_CODE));
+
+  if (isHK) {
+    const finRows = await dcQuery(
+      'RPT_HKF10_FN_MAININDICATOR',
+      'SECURITY_CODE,SECURITY_NAME_ABBR,ORG_CODE,TOTAL_MARKET_CAP,HOLDER_PROFIT,REPORT_DATE,CURRENCY',
+      filter,
+      'REPORT_DATE',
+      '-1',
+      500
+    );
+    const latest = new Map();
+    finRows.forEach((r) => {
+      const org = r.ORG_CODE || String(r.SECURITY_CODE);
+      if (!latest.has(org)) latest.set(org, r);
+    });
+    const peers = [...latest.entries()].map(([org, r]) => {
+      const pref = orgMap.get(org) || { code: String(r.SECURITY_CODE), name: r.SECURITY_NAME_ABBR };
+      const marketCap = num(r.TOTAL_MARKET_CAP);
+      const profit = num(r.HOLDER_PROFIT);
+      return {
+        market: 'HK',
+        code: pref.code,
+        name: stripTags(pref.name || r.SECURITY_NAME_ABBR || pref.code),
+        marketCap: marketCap != null ? marketCap / 1e8 : null,
+        profit: profit != null ? profit / 1e8 : null,
+        pe: null,
+        pb: null,
+        currency: 'HKD',
+        reportDate: r.REPORT_DATE,
+        quoteKey: 'hk' + pref.code,
+        klineCode: 'hk' + pref.code,
+      };
+    });
+    const cap = peers
+      .filter((p) => p.code !== stock.code && Number.isFinite(p.marketCap) && p.marketCap > 0)
+      .sort((a, b) => b.marketCap - a.marketCap)
+      .slice(0, 3);
+    const profit = peers
+      .filter((p) => p.code !== stock.code && Number.isFinite(p.profit) && p.profit > 0)
+      .sort((a, b) => b.profit - a.profit)
+      .slice(0, 3);
+    if (!cap.length && !profit.length) throw new Error('港股 F10 暂无行业排行数据');
+    const dates = [...new Set(profit.map((p) => String(p.reportDate || '').slice(0, 10)).filter(Boolean))];
+    return {
+      supported: true,
+      boardCode: '',
+      boardName: industryName,
+      cap,
+      profit,
+      profitPeriod: dates.length === 1 ? dates[0] : '',
+      source: '东方财富港股 F10',
+      note: `按「${industryName}」行业分类匹配，报告期以各公司最新可得数据为准`,
+    };
+  }
+
+  const quoteMap = await getQuoteBatch([...orgMap.values()].map((p) => 'us' + p.code));
+  const peerFromQuote = (org) => {
+    const pref = orgMap.get(org);
+    if (!pref) return null;
+    const q = quoteMap.get('us' + pref.code);
+    const rawCode = (q && q.rawCode) || pref.code;
+    const code = usBaseCode(rawCode || pref.code);
+    return {
+      market: 'US',
+      code,
+      name: stripTags((q && q.name) || pref.name || code),
+      rawCode: String(rawCode).toUpperCase(),
+      marketCap: q && Number.isFinite(q.marketCap) ? q.marketCap : null,
+      profit: null,
+      pe: q ? q.pe : null,
+      pb: q ? q.pb : null,
+      currency: 'USD',
+      quoteKey: 'us' + code,
+      klineCode: 'us' + String(rawCode).toUpperCase(),
+    };
+  };
+
+  const cap = [...orgMap.keys()]
+    .map(peerFromQuote)
+    .filter((p) => p && p.code !== stock.code && Number.isFinite(p.marketCap) && p.marketCap > 0)
+    .sort((a, b) => b.marketCap - a.marketCap)
+    .slice(0, 3);
+
+  const incomeRows = await dcQuery(
+    'RPT_USF10_FN_INCOME',
+    'SECURITY_CODE,SECURITY_NAME_ABBR,ORG_CODE,REPORT_DATE,REPORT_TYPE,AMOUNT,CURRENCY,CURRENCY_ABBR',
+    `${filter}(REPORT_TYPE in ("累计季报","年报"))(ITEM_NAME="归属于母公司股东净利润")`,
+    'REPORT_DATE',
+    '-1',
+    500
+  );
+  const latestProfit = new Map();
+  incomeRows.forEach((r) => {
+    const org = r.ORG_CODE || String(r.SECURITY_CODE);
+    if (!latestProfit.has(org)) latestProfit.set(org, r);
+  });
+  const profit = [...latestProfit.entries()]
+    .map(([org, r]) => {
+      const p = peerFromQuote(org);
+      if (!p) return null;
+      return {
+        ...p,
+        profit: num(r.AMOUNT) != null ? num(r.AMOUNT) / 1e8 : null,
+        currency: r.CURRENCY_ABBR || r.CURRENCY || 'USD',
+        reportDate: r.REPORT_DATE,
+      };
+    })
+    .filter(
+      (p) =>
+        p &&
+        p.code !== stock.code &&
+        Number.isFinite(p.profit) &&
+        p.profit > 0 &&
+        String(p.currency).toUpperCase() === 'USD'
+    )
+    .sort((a, b) => b.profit - a.profit)
+    .slice(0, 3);
+
+  if (!cap.length && !profit.length) throw new Error('美股 F10 暂无行业排行数据');
+  const dates = [...new Set(profit.map((p) => String(p.reportDate || '').slice(0, 10)).filter(Boolean))];
+  return {
+    supported: true,
+    boardCode: '',
+    boardName: industryName,
+    cap,
+    profit,
+    profitPeriod: dates.length === 1 ? dates[0] : '',
+    source: '东方财富美股 F10 / 腾讯财经',
+    note: `按「${industryName}」行业分类匹配；利润榜仅统计美元口径，报告期以各公司最新累计数据为准`,
+  };
+}
+
+async function getHKUSPeers(stock, industryName) {
+  try {
+    const dc = await getHKUSPeersFromDataCenter(stock, industryName);
+    if (dc && (dc.cap.length || dc.profit.length)) return dc;
+  } catch (e) {}
+  return getHKUSPeersFromPush2(stock, industryName);
+}
+
+async function getPeers(stock, industryName, opts = {}) {
+  const cacheKey = `peers:${stock.market}:${stock.code}:${industryName}:${opts.industryCode || ''}`;
+  return cached(cacheKey, TTL.peers, async () => {
+    if (stock.market === 'A') return getASharePeers(stock, industryName, opts.industryCode);
+    return getHKUSPeers(stock, industryName);
+  });
+}
+
+async function getPeerReports(peer) {
+  if (peer.market !== 'A') return [];
+  try {
+    const data = await getStockReports(peer, { pageSize: 3, months: 6 });
+    return data.list.slice(0, 3);
+  } catch (e) {
+    return [];
+  }
+}

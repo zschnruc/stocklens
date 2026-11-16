@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="研值 StockLens：聚合个股与行业研报、同业龙头对比，用四维打分给出可解释的股票研判。覆盖 A 股、港股、美股。">
+<title>研值 StockLens · 股票研报与研判</title>
+<script>
+try {
+  var savedTheme = localStorage.getItem('sl:theme');
+  if (savedTheme === 'light' || savedTheme === 'dark') document.documentElement.dataset.theme = savedTheme;
+} catch (e) {}
+</script>
+<style>
+/*__STYLES__*/
+</style>
+</head>
+<body>
+<div class="ambient" aria-hidden="true">
+  <span class="ambient-glow ambient-glow-a"></span>
+  <span class="ambient-glow ambient-glow-b"></span>
+  <span class="ambient-grid"></span>
+</div>
+
+<header class="topbar" id="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#" data-action="home" aria-label="返回首页">
+      <span class="brand-mark">研</span>
+      <span class="brand-copy"><strong>研值</strong><em>STOCKLENS</em></span>
+    </a>
+
+    <button class="top-search-trigger" type="button" data-action="search-focus" id="topSearchTrigger" hidden>
+      <span class="ico" data-icon="search"></span>
+      <span>搜索另一只股票</span>
+      <kbd>⌘ K</kbd>
+    </button>
+
+    <div class="top-actions">
+      <span class="market-live" title="数据来自公开行情接口">
+        <i></i><span class="market-live-text">公开数据</span>
+      </span>
+      <button class="icon-btn" type="button" data-action="print" id="printBtn" title="打印 / 导出 PDF" aria-label="打印或导出 PDF" hidden>
+        <span class="ico" data-icon="print"></span>
+      </button>
+      <button class="icon-btn" type="button" data-action="toggle-theme" title="切换明暗主题" aria-label="切换明暗主题">
+        <span class="ico" data-icon="moon"></span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="view" tabindex="-1"></main>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <span class="brand-mark sm">研</span>
+      <div>
+        <strong>研值 StockLens</strong>
+        <p>把研报、同业、财务与舆情放在同一张桌上。</p>
+      </div>
+    </div>
+    <div class="footer-meta">
+      <p>数据来源：腾讯财经 · 东方财富公开接口</p>
+      <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
+    </div>
+  </div>
+</footer>
+
+<div class="toast-wrap" id="toastWrap" aria-live="polite" aria-atomic="true"></div>
+
+<noscript>
+  <div class="noscript">本工具需要启用 JavaScript 才能获取研报与行情数据。</div>
+</noscript>
+
+<script>
+/*__APP__*/
+</script>
+</body>
+</html>

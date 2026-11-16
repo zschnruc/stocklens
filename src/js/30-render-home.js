@@ -1,0 +1,225 @@
+/* ============================================================
+   Home / landing renderer
+   ============================================================ */
+'use strict';
+
+const HOT_STOCKS = [
+  { market: 'A', code: '600519', name: '贵州茅台', quoteKey: 'sh600519', klineCode: 'sh600519', rawCode: '600519' },
+  { market: 'A', code: '300750', name: '宁德时代', quoteKey: 'sz300750', klineCode: 'sz300750', rawCode: '300750' },
+  { market: 'HK', code: '00700', name: '腾讯控股', quoteKey: 'hk00700', klineCode: 'hk00700', rawCode: '00700' },
+  { market: 'HK', code: '01810', name: '小米集团-W', quoteKey: 'hk01810', klineCode: 'hk01810', rawCode: '01810' },
+  {
+    market: 'US',
+    code: 'NVDA',
+    name: '英伟达',
+    quoteKey: 'usNVDA',
+    klineCode: 'usNVDA.OQ',
+    rawCode: 'NVDA.OQ',
+  },
+  {
+    market: 'US',
+    code: 'AAPL',
+    name: '苹果',
+    quoteKey: 'usAAPL',
+    klineCode: 'usAAPL.OQ',
+    rawCode: 'AAPL.OQ',
+  },
+];
+
+const FEATURES = [
+  {
+    icon: 'book',
+    title: '研报聚合',
+    desc: '抓取近半年个股与行业研报，给出机构评级、目标价与盈利预测，最多展示最新 20 篇。',
+    tags: ['个股研报', '行业研报', 'PDF 原文'],
+  },
+  {
+    icon: 'target',
+    title: '四维研判',
+    desc: '把研报、盈利成长、技术动量与新闻舆情拆成四个可解释维度，缺失数据不臆造、不计分。',
+    tags: ['研报评级', '盈利成长', '技术动量', '新闻舆情'],
+  },
+  {
+    icon: 'users',
+    title: '同业对照',
+    desc: '自动识别所属行业，列出行业市值前三与利润前三，并附上同行最新研报，避免只看单一标的。',
+    tags: ['市值榜', '利润榜', '同行研报'],
+  },
+  {
+    icon: 'pulse',
+    title: '行情与舆情',
+    desc: '近一年前复权走势、均线趋势、区间涨跌与回撤，叠加公开新闻的正负面关键词情绪分布。',
+    tags: ['前复权 K 线', '技术指标', '新闻情绪'],
+  },
+];
+
+function stockDataset(stock) {
+  return [
+    `data-market="${esc(stock.market)}"`,
+    `data-code="${esc(stock.code)}"`,
+    `data-name="${esc(stock.name)}"`,
+    `data-quotekey="${esc(stock.quoteKey || '')}"`,
+    `data-klinecode="${esc(stock.klineCode || '')}"`,
+    `data-rawcode="${esc(stock.rawCode || '')}"`,
+  ].join(' ');
+}
+
+function stockButton(stock, cls, extra = '') {
+  return `<button type="button" class="${cls}" ${stockDataset(stock)} ${extra}>${esc(stock.name)}<span class="hot-chg" data-chg="${esc(
+    stock.quoteKey || ''
+  )}">—</span></button>`;
+}
+
+function recentStocks() {
+  const list = store.get('recent', []);
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((s) => s && s.market && s.code && s.name)
+    .slice(0, 5)
+    .map((s) => ({
+      market: s.market,
+      code: s.code,
+      name: s.name,
+      quoteKey: s.quoteKey || '',
+      klineCode: s.klineCode || '',
+      rawCode: s.rawCode || '',
+    }));
+}
+
+function homeHTML() {
+  const recent = recentStocks();
+  const featureCards = FEATURES.map(
+    (f, i) => `
+    <article class="card feature-card">
+      <span class="feature-num">0${i + 1}</span>
+      <div class="feature-icon">${ico(f.icon, 'lg')}</div>
+      <h3>${f.title}</h3>
+      <p>${f.desc}</p>
+      <div class="feature-tags">${f.tags.map((t) => `<span>${t}</span>`).join('')}</div>
+    </article>`
+  ).join('');
+
+  return `
+  <section class="home">
+    <div class="hero">
+      <span class="eyebrow"><i class="dot"></i>公开数据 · 实时行情 · 可解释评分</span>
+      <h1>读懂研报，<br><span>把判断交给证据。</span></h1>
+      <p class="lede">输入 A 股、港股或美股，聚合近半年个股与行业研报、同行龙头、财务与舆情，用四维打分形成一张可追溯的研究底稿。</p>
+
+      <div class="search-shell">
+        <form class="search-box" id="searchForm" autocomplete="off">
+          ${ico('search')}
+          <input id="stockSearch" type="text" placeholder="输入股票名称、代码或拼音，如 贵州茅台 / 600519 / 00700 / NVDA"
+            aria-label="搜索股票" spellcheck="false">
+          <button class="search-submit" type="submit" aria-label="开始分析">
+            <span>开始分析</span>${ico('arrow')}
+          </button>
+        </form>
+        <div class="suggestions" id="suggestions" role="listbox" aria-label="股票搜索结果"></div>
+      </div>
+
+      <div class="hot-row" id="hotRow">
+        <span class="hot-label">热门</span>
+        ${HOT_STOCKS.map((s) => stockButton(s, 'hot-chip')).join('')}
+      </div>
+      ${
+        recent.length
+          ? `<div class="hot-row recent-row" id="recentRow">
+              <span class="hot-label">最近查看</span>
+              ${recent.map((s) => stockButton(s, 'hot-chip recent-chip')).join('')}
+            </div>`
+          : ''
+      }
+      <button class="demo-link" type="button" data-action="demo">${ico('spark', 'sm')}没有目标？先看一份完整的示例研判</button>
+
+      <div class="hero-stats">
+        <div class="hero-stat"><strong>3 地市场</strong><span>A 股 · 港股 · 美股</span></div>
+        <div class="hero-stat"><strong>4 个维度</strong><span>研报 · 盈利 · 技术 · 舆情</span></div>
+        <div class="hero-stat"><strong>20 篇</strong><span>近半年最新个股研报</span></div>
+      </div>
+    </div>
+
+    <section class="features" aria-labelledby="featureTitle">
+      <div class="features-head">
+        <div>
+          <div class="section-kicker">研究框架</div>
+          <h2 id="featureTitle">一张页面，四层证据</h2>
+        </div>
+        <p>不堆指标，只呈现能解释结论的证据。每项评分都能在页面上找到对应原文、财务数字或行情区间。</p>
+      </div>
+      <div class="feature-grid">${featureCards}</div>
+    </section>
+
+    <section class="card coverage" aria-labelledby="coverageTitle">
+      <div>
+        <div class="section-kicker">数据边界</div>
+        <h3 id="coverageTitle">覆盖范围与降级说明</h3>
+        <p>东方财富免费研报接口目前只覆盖 A 股。港美股保留行情、K 线、新闻舆情、技术与估值打分、市值与利润同行榜；拿不到的数据会明确标注，不会用猜测补齐。</p>
+        <div class="coverage-foot">所有数据来自公开接口，可能存在延迟、限流或字段缺失。评分仅用于研究整理，不构成任何投资建议。</div>
+      </div>
+      <div class="coverage-list">
+        <div class="coverage-row">${ico('check', 'sm')}<span><strong>A 股 · 全功能</strong>：行情 / K 线 / 个股与行业研报 / 财务成长 / 同业双榜 / 新闻舆情。</span></div>
+        <div class="coverage-row warn">${ico('info', 'sm')}<span><strong>港股 · 简版</strong>：行情 / K 线 / 财务指标 / 同业标签 / 新闻舆情；研报区显示暂无免费中文源。</span></div>
+        <div class="coverage-row warn">${ico('info', 'sm')}<span><strong>美股 · 简版</strong>：行情 / K 线 / 同业标签 / 新闻舆情；盈利成长与中文研报暂缺，评分按可用维度折算。</span></div>
+        <div class="coverage-row">${ico('shield', 'sm')}<span><strong>可解释性</strong>：每个维度展示得分、权重、数据覆盖与理由；数据不足时直接标注「不可用」。</span></div>
+      </div>
+    </section>
+  </section>`;
+}
+
+function renderHome() {
+  setViewHTML(homeHTML());
+  document.title = '研值 StockLens · 股票研报与研判';
+  syncTopbar('home');
+  loadHotQuotes();
+}
+
+function loadHotQuotes() {
+  HOT_STOCKS.forEach((stock) => {
+    if (!stock.quoteKey) return;
+    getQuote(stock)
+      .then((quote) => {
+        $$(`[data-chg="${stock.quoteKey}"]`).forEach((el) => {
+          el.textContent = fmtPct(quote.changePct);
+          el.classList.remove('up', 'down', 'flat');
+          el.classList.add(pctClass(quote.changePct));
+        });
+      })
+      .catch(() => {});
+  });
+}
+
+function suggestionHTML(items) {
+  if (!items.length) {
+    return `<div class="sug-empty">没有匹配结果。试试股票代码，如 <span class="mono">600519</span> / <span class="mono">00700</span> / <span class="mono">NVDA</span></div>`;
+  }
+  return (
+    items
+      .map(
+        (item, i) => `
+    <button type="button" class="sug-item" role="option" data-sug-index="${i}" ${stockDataset(item)}>
+      <span class="badge ${marketBadgeClass(item.market)}">${marketLabel(item.market)}</span>
+      <span class="sug-name">${esc(item.name)}</span>
+      <span class="sug-code">${esc(item.code)}</span>
+      <span class="sug-pinyin">${esc(item.pinyin || '')}</span>
+    </button>`
+      )
+      .join('') +
+    `<div class="sug-hint"><span>↑ ↓ 选择 · Enter 打开</span><span>行情来自腾讯财经</span></div>`
+  );
+}
+
+function renderSuggestions(items, query) {
+  const box = $('#suggestions');
+  if (!box) return;
+  if (!query) {
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = suggestionHTML(items || []);
+}
+
+function closeSuggestions() {
+  const box = $('#suggestions');
+  if (box) box.innerHTML = '';
+}
