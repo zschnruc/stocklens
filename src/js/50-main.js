@@ -153,12 +153,6 @@ function syncThemeButton() {
 function toggleTheme() {
   const theme = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
   applyTheme(theme);
-  /* v1.3：klinecharts 画布配色在挂载时读取 CSS 变量，主题切换后需重挂载刷新 */
-  if (document.body.dataset.route === 'analysis' && typeof remountCharts === 'function') {
-    try {
-      remountCharts();
-    } catch (e) {}
-  }
 }
 
 function addRecent(stock) {
