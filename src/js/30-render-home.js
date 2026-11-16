@@ -222,19 +222,25 @@ async function loadWatchQuotes() {
   }
 }
 
-function loadHotQuotes() {
-  HOT_STOCKS.forEach((stock) => {
-    if (!stock.quoteKey) return;
-    getQuote(stock)
-      .then((quote) => {
-        $$(`[data-chg="${stock.quoteKey}"]`).forEach((el) => {
-          el.textContent = fmtPct(quote.changePct);
-          el.classList.remove('up', 'down', 'flat');
-          el.classList.add(pctClass(quote.changePct));
-        });
-      })
-      .catch(() => {});
-  });
+/* 热门股行情：复用批量接口一次拉取（与自选股一致），并回填内存缓存保持 getQuote 口径一致 */
+async function loadHotQuotes() {
+  const keys = HOT_STOCKS.map((s) => s.quoteKey).filter(Boolean);
+  if (!keys.length) return;
+  try {
+    const map = await getQuoteBatch(keys);
+    keys.forEach((key) => {
+      const q = map.get(key);
+      if (!q) return;
+      memCache.set('quote:' + key, { t: Date.now(), d: q });
+      $$(`[data-chg="${key}"]`).forEach((el) => {
+        el.textContent = fmtPct(q.changePct);
+        el.classList.remove('up', 'down', 'flat');
+        el.classList.add(pctClass(q.changePct));
+      });
+    });
+  } catch (e) {
+    /* 首页热门行情失败不影响主流程 */
+  }
 }
 
 function suggestionHTML(items) {

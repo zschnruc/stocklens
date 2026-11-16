@@ -319,18 +319,28 @@ async function getQuoteBatch(keys) {
   for (let i = 0; i < list.length; i += 60) chunks.push(list.slice(i, i + 60));
   const pages = await Promise.all(
     chunks.map(async (chunk) => {
-      const res = await fetch(API.quote + chunk.map(encodeURIComponent).join(','), { cache: 'no-store' });
-      if (!res.ok) throw new Error(`行情 HTTP ${res.status}`);
-      const text = decodeGBK(await res.arrayBuffer());
-      const out = [];
-      const re = /v_([^=]+)="([^"]*)"/g;
-      let m;
-      while ((m = re.exec(text))) {
-        try {
-          out.push(parseQuoteLine(m[1], m[2]));
-        } catch (e) {}
+      /* 与 getQuote 一致的超时控制，避免网络挂起时 Promise 长期悬空 */
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 12000);
+      try {
+        const res = await fetch(API.quote + chunk.map(encodeURIComponent).join(','), {
+          signal: ctrl.signal,
+          cache: 'no-store',
+        });
+        if (!res.ok) throw new Error(`行情 HTTP ${res.status}`);
+        const text = decodeGBK(await res.arrayBuffer());
+        const out = [];
+        const re = /v_([^=]+)="([^"]*)"/g;
+        let m;
+        while ((m = re.exec(text))) {
+          try {
+            out.push(parseQuoteLine(m[1], m[2]));
+          } catch (e) {}
+        }
+        return out;
+      } finally {
+        clearTimeout(timer);
       }
-      return out;
     })
   );
   return new Map(pages.flat().map((q) => [q.key, q]));
@@ -706,7 +716,8 @@ async function getNews(stock) {
       },
     };
     const url = `${API.news}?param=${encodeURIComponent(JSON.stringify(payload))}`;
-    const data = await jsonp(url, { timeout: 15000 });
+    /* 与其他东财接口一致走 emQueue 串行限流（NFR-3），避免高频触发对方限流 */
+    const data = await emJsonp(url);
     const rows = (data && data.result && data.result.cmsArticleWebOld) || [];
     const name = String(stock.name || '').toLowerCase();
     const code = String(stock.code || '').toLowerCase();

@@ -363,7 +363,8 @@ function refreshScore() {
     news: state.core.news,
   });
   state.score = score;
-  renderOverview(score, state.core.kline);
+  /* 优先使用用户当前所选周期（周/月K），避免评分刷新时图表被重置回日K */
+  renderOverview(score, state.periodKlines[state.klinePeriod] || state.core.kline);
 }
 
 /* ---------------- 自选股清单（FR-6） ---------------- */
