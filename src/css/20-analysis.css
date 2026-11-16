@@ -165,6 +165,12 @@ html[data-theme="light"] .watch-btn.on{color:var(--gold);border-color:rgba(169,1
 .candle-boll-area{fill:rgba(122,169,255,.08);stroke:none}
 html[data-theme="light"] .candle-boll-area{fill:rgba(62,111,209,.08)}
 .kline-wrap{margin-top:8px}
+/* v1.3：klinecharts 宿主容器（canvas 引擎，需显式高度） */
+.kline-host{position:relative;width:100%;height:420px}
+.kline-host table{margin:0}
+@media (max-width:760px){
+  .kline-host{height:330px}
+}
 .candle-svg{display:block;width:100%;height:auto;aspect-ratio:660/312;overflow:visible}
 .candle-grid{stroke:var(--line);stroke-width:1}
 .candle-tick{fill:var(--faint);font-size:10px}

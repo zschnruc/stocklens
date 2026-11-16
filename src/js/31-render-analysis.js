@@ -348,6 +348,9 @@ function targetAnchors() {
   };
 }
 
+/* v1.3：klinecharts 挂载配置——渲染时记录，挂载步骤消费（渲染与挂载总是成对执行） */
+let pendingKlineConfig = null;
+
 function renderChartSection(kline) {
   /* 指标事实区始终基于日线数据（周/月线仅用于蜡烛展示） */
   const dayK = (state.periodKlines && state.periodKlines.day) || (state.core && state.core.kline) || null;
@@ -357,17 +360,22 @@ function renderChartSection(kline) {
   const periodLabel = { day: '日K', week: '周K', month: '月K' }[period] || '日K';
   const first = pts[0];
   const last = pts[pts.length - 1];
-  /* FR-3.6：蜡烛渲染条件不满足时降级为原有 sparkline */
   const anchors = targetAnchors();
-  const candles = renderCandlestick(pts, {
-    window: period === 'day' ? 240 : period === 'week' ? 260 : 140,
+  /* FR-3.6：渲染阶段只产出挂载容器；mountKline 失败（缺 vendor / canvas 不可用 /
+     数据不足）时由 mountChartSection 降级为 sparkline，不阻塞页面其他模块 */
+  pendingKlineConfig = {
+    points: pts,
     sub: state.subChart || 'volume',
-    boll: !!state.bollOn,
+    bollOn: !!state.bollOn,
     targets: anchors,
-  });
-  const chartBody = candles
-    ? `<div class="kline-wrap">${candles}</div>`
-    : `<div class="spark-wrap">${renderSparkline(pts)}</div>`;
+    symbol: {
+      code: (state.stock && (state.stock.klineCode || state.stock.quoteKey)) || 'KLINE',
+      name: (state.stock && state.stock.name) || '',
+      pricePrecision: 2,
+      volumePrecision: 0,
+    },
+  };
+  const chartBody = `<div class="kline-wrap"><div class="kline-host" role="img" aria-label="股价 K 线交互图表，含均线与副图指标"></div></div>`;
   const facts = m
     ? `<div class="chart-facts">
     <div class="chart-fact"><label>近 20 日</label><strong class="${pctClass(m.r20)}">${fmtPct(m.r20)}</strong></div>
@@ -392,6 +400,28 @@ function renderChartSection(kline) {
   </article>`;
 }
 
+/* v1.3：klinecharts 挂载入口——渲染后调用；失败即降级 sparkline（FR-3.6） */
+function mountChartSection(root = document) {
+  /* 先清理已离开 DOM 的旧实例，避免实例 Map 无限增长 */
+  Array.from(KLINE_INSTANCES.keys()).forEach((h) => {
+    if (!h || !h.isConnected) disposeKline(h);
+  });
+  const host = $('.kline-host', root);
+  if (!host || host.dataset.klineMounted || !pendingKlineConfig) return;
+  const cfg = pendingKlineConfig;
+  const ok = mountKline(host, cfg);
+  if (!ok) {
+    const wrap = host.closest('.kline-wrap');
+    if (wrap) wrap.innerHTML = `<div class="spark-wrap">${renderSparkline(cfg.points)}</div>`;
+  }
+}
+
+/* 主题切换后重挂载：canvas 调色板在挂载时读取 CSS 变量，不随主题自动刷新 */
+function remountCharts() {
+  Array.from(KLINE_INSTANCES.keys()).forEach((h) => disposeKline(h));
+  mountChartSection(document);
+}
+
 function renderOverview(score, kline) {
   const overview = $('#overviewArea');
   if (!overview) return;
@@ -402,7 +432,7 @@ function renderOverview(score, kline) {
     kline ? renderChartSection(kline) : emptyState({ icon: 'chart', title: '历史行情不足', desc: '无法绘制近一年走势，技术面维度已按不可用处理。' })
   }</div>`;
   hydrateIcons(overview);
-  hydrateCandles(overview);
+  mountChartSection(overview);
 }
 
 function updateHeaderIndustry(profile) {
@@ -422,7 +452,7 @@ function updateChart(kline, loading = false) {
     return;
   }
   slot.innerHTML = renderChartSection(kline);
-  hydrateCandles(slot);
+  mountChartSection(slot);
 }
 
 /* ---------------- reports ---------------- */
