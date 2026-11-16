@@ -35,6 +35,10 @@ async function fetchJSON(url, options = {}) {
     const res = await fetch(url, {
       signal: ctrl.signal,
       cache: 'no-store',
+      /* 部署到 https（如 GitHub Pages）后浏览器会自动带 Referer，
+         东方财富 WAF 会拦截非东财来源的 Referer（HTTP 567）。
+         数据接口不依赖 Referer，显式关闭即可两地通用。 */
+      referrerPolicy: 'no-referrer',
       headers: { Accept: 'application/json,text/plain,*/*', ...headers },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -68,6 +72,7 @@ function jsonp(url, options = {}) {
     script.onerror = () => finish(reject, new Error('数据接口连接失败'));
     script.src = url + (url.includes('?') ? '&' : '?') + callbackParam + '=' + encodeURIComponent(cbName);
     script.charset = 'utf-8';
+    script.referrerPolicy = 'no-referrer';
     document.head.appendChild(script);
   });
 }
