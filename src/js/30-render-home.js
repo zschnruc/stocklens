@@ -86,6 +86,26 @@ function recentStocks() {
     }));
 }
 
+function watchRowHTML() {
+  const list = watchlistGet();
+  if (!list.length) return '';
+  return `<div class="watch-row" id="watchRow">
+    <span class="hot-label">自选</span>
+    ${list
+      .map(
+        (s) => `<div class="watch-item">
+      <button type="button" class="hot-chip watch-chip" ${stockDataset(s)}>${esc(s.name)}<span class="watch-quote" data-wq="${esc(
+          s.quoteKey || ''
+        )}"><span class="skeleton" style="width:64px;height:10px"></span></span></button>
+      <button type="button" class="watch-remove" data-action="watch-remove" data-market="${esc(s.market)}" data-code="${esc(
+          s.code
+        )}" aria-label="移除 ${esc(s.name)}">${ico('x', 'sm')}</button>
+    </div>`
+      )
+      .join('')}
+  </div>`;
+}
+
 function homeHTML() {
   const recent = recentStocks();
   const featureCards = FEATURES.map(
@@ -130,6 +150,7 @@ function homeHTML() {
             </div>`
           : ''
       }
+      ${watchRowHTML()}
       <button class="demo-link" type="button" data-action="demo">${ico('spark', 'sm')}没有目标？先看一份完整的示例研判</button>
 
       <div class="hero-stats">
@@ -172,6 +193,33 @@ function renderHome() {
   document.title = '研值 StockLens · 股票研报与研判';
   syncTopbar('home');
   loadHotQuotes();
+  loadWatchQuotes();
+}
+
+/* FR-6.2：自选股行情速览，批量接口一次拉取 */
+async function loadWatchQuotes() {
+  const list = watchlistGet();
+  if (!list.length) return;
+  const keys = list.map((s) => s.quoteKey).filter(Boolean);
+  if (!keys.length) return;
+  try {
+    const map = await getQuoteBatch(keys);
+    list.forEach((s) => {
+      const q = map.get(s.quoteKey);
+      if (!q) return;
+      $$(`[data-wq="${s.quoteKey}"]`).forEach((el) => {
+        const cls = pctClass(q.changePct);
+        el.innerHTML = `<b class="${cls}">${fmtPrice(q.price, q.price < 10 ? 3 : 2)}</b><span class="${cls}">${fmtPct(
+          q.changePct
+        )}</span>`;
+      });
+    });
+  } catch (e) {
+    /* FR-6.5：失败显示占位，不阻塞其他标的 */
+    $$('[data-wq]').forEach((el) => {
+      el.textContent = '—';
+    });
+  }
 }
 
 function loadHotQuotes() {

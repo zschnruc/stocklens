@@ -75,6 +75,16 @@ html[data-theme="light"] .suggestions{background:rgba(255,253,248,.99);box-shado
 .hot-row .hot-label{margin-right:2px}
 .hot-chip{padding:4px 9px;border-radius:6px;border:1px solid transparent;color:var(--muted);transition:all .16s}
 .hot-chip:hover{color:var(--gold-2);border-color:rgba(231,180,92,.22);background:rgba(231,180,92,.06)}
+
+/* 自选股速览（FR-6） */
+.watch-item{display:inline-flex;align-items:center}
+.watch-item .watch-chip{border-top-right-radius:0;border-bottom-right-radius:0}
+.watch-remove{padding:4px 6px;border:1px solid transparent;border-left:none;border-radius:0 6px 6px 0;color:var(--faint);background:transparent;cursor:pointer;line-height:1;transition:all .16s}
+.watch-remove:hover{color:var(--red);border-color:rgba(240,112,112,.25)}
+.watch-quote{margin-left:7px;font-variant-numeric:tabular-nums;display:inline-flex;gap:6px;font-size:11px}
+.watch-quote b{font-weight:600}
+.watch-quote .up{color:var(--up)}
+.watch-quote .down{color:var(--down)}
 .demo-link{display:inline-flex;align-items:center;gap:5px;margin-top:14px;font-size:11px;color:var(--faint);border-bottom:1px dashed var(--line-2);padding-bottom:1px}
 .demo-link:hover{color:var(--gold)}
 

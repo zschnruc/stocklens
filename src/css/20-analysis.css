@@ -149,6 +149,8 @@ html[data-theme="light"] .kline-tab.active{background:rgba(169,118,35,.1)}
 .sub-label{font-size:10px;color:var(--faint)}
 .kline-tab:disabled{opacity:.4;cursor:not-allowed}
 .kline-note{font-size:10px;color:var(--faint)}
+.watch-btn.on{color:var(--gold-2);border-color:rgba(231,180,92,.4)}
+html[data-theme="light"] .watch-btn.on{color:var(--gold);border-color:rgba(169,118,35,.4)}
 .target-line{stroke:var(--gold-2);stroke-width:1;stroke-dasharray:5 4;opacity:.75}
 .target-label{fill:var(--gold-2);font-size:9.5px}
 .candle-guide{stroke:var(--line);stroke-width:1;stroke-dasharray:2 3}

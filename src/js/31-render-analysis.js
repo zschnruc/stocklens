@@ -194,6 +194,10 @@ function renderStockHeader(stock, quote, profile) {
       </div>
       <div class="price-time">${esc(quote.time)} · 前收 ${fmtPrice(quote.prevClose)}</div>
       <div class="stock-actions no-print">
+        <button class="btn sm watch-btn ${watchlistHas(stock) ? 'on' : ''}" type="button" data-action="watch-toggle" aria-pressed="${watchlistHas(stock)}">${ico(
+          'star',
+          'sm'
+        )}${watchlistHas(stock) ? '已自选' : '加自选'}</button>
         <button class="btn sm" type="button" data-action="copy-link">${ico('share', 'sm')}分享</button>
         <button class="btn sm" type="button" data-action="refresh">${ico('refresh', 'sm')}刷新</button>
       </div>

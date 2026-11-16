@@ -366,6 +366,60 @@ function refreshScore() {
   renderOverview(score, state.core.kline);
 }
 
+/* ---------------- 自选股清单（FR-6） ---------------- */
+const WATCHLIST_MAX = 20;
+
+function watchlistGet() {
+  const list = store.get('watchlist', []);
+  return Array.isArray(list) ? list.filter((s) => s && s.market && s.code) : [];
+}
+
+function watchlistHas(stock) {
+  return watchlistGet().some((s) => s.market === stock.market && s.code === stock.code);
+}
+
+function watchlistToggle(stock) {
+  let list = watchlistGet();
+  if (watchlistHas(stock)) {
+    list = list.filter((s) => !(s.market === stock.market && s.code === stock.code));
+    store.set('watchlist', list);
+    toast('已从自选中移除', 'info');
+    return false;
+  }
+  if (list.length >= WATCHLIST_MAX) {
+    toast(`自选已达 ${WATCHLIST_MAX} 只上限，请先移除部分`, 'error');
+    return true;
+  }
+  list.unshift({
+    market: stock.market,
+    code: stock.code,
+    name: stock.name,
+    quoteKey: stock.quoteKey,
+    klineCode: stock.klineCode,
+    rawCode: stock.rawCode,
+    t: Date.now(),
+  });
+  store.set('watchlist', list);
+  toast('已加入自选', 'ok');
+  return true;
+}
+
+function watchlistRemove(market, code) {
+  store.set(
+    'watchlist',
+    watchlistGet().filter((s) => !(s.market === market && s.code === code))
+  );
+}
+
+function updateWatchButton() {
+  const btn = document.querySelector('[data-action="watch-toggle"]');
+  if (!btn || !state.stock) return;
+  const on = watchlistHas(state.stock);
+  btn.classList.toggle('on', on);
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.innerHTML = `${ico('star', 'sm')}${on ? '已自选' : '加自选'}`;
+}
+
 /* ---------------- K 线周期切换（FR-3.2 / FR-3.6） ---------------- */
 function switchKlinePeriod(period) {
   const p = normalizeKlinePeriod(period);
@@ -836,6 +890,21 @@ function handleClick(e) {
       state.bollOn = !state.bollOn;
       const k = state.periodKlines[state.klinePeriod] || state.core.kline;
       if (k) updateChart(k);
+      return;
+    }
+    if (action === 'watch-toggle') {
+      e.preventDefault();
+      if (state.stock) {
+        watchlistToggle(state.stock);
+        updateWatchButton();
+      }
+      return;
+    }
+    if (action === 'watch-remove') {
+      e.preventDefault();
+      watchlistRemove(actionEl.dataset.market, actionEl.dataset.code);
+      toast('已从自选中移除', 'info');
+      if (state.route === 'home') renderHome();
       return;
     }
     if (action === 'demo') {
