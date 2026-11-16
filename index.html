@@ -394,6 +394,16 @@ html[data-theme="light"] .suggestions{background:rgba(255,253,248,.99);box-shado
 .hot-row .hot-label{margin-right:2px}
 .hot-chip{padding:4px 9px;border-radius:6px;border:1px solid transparent;color:var(--muted);transition:all .16s}
 .hot-chip:hover{color:var(--gold-2);border-color:rgba(231,180,92,.22);background:rgba(231,180,92,.06)}
+
+/* 自选股速览（FR-6） */
+.watch-item{display:inline-flex;align-items:center}
+.watch-item .watch-chip{border-top-right-radius:0;border-bottom-right-radius:0}
+.watch-remove{padding:4px 6px;border:1px solid transparent;border-left:none;border-radius:0 6px 6px 0;color:var(--faint);background:transparent;cursor:pointer;line-height:1;transition:all .16s}
+.watch-remove:hover{color:var(--red);border-color:rgba(240,112,112,.25)}
+.watch-quote{margin-left:7px;font-variant-numeric:tabular-nums;display:inline-flex;gap:6px;font-size:11px}
+.watch-quote b{font-weight:600}
+.watch-quote .up{color:var(--up)}
+.watch-quote .down{color:var(--down)}
 .demo-link{display:inline-flex;align-items:center;gap:5px;margin-top:14px;font-size:11px;color:var(--faint);border-bottom:1px dashed var(--line-2);padding-bottom:1px}
 .demo-link:hover{color:var(--gold)}
 
@@ -624,6 +634,28 @@ html[data-theme="light"] .kline-tab.active{background:rgba(169,118,35,.1)}
 .kline-legend{font-size:10px;color:var(--faint)}
 .kline-legend i{display:inline-block;width:14px;height:2px;border-radius:2px;vertical-align:middle;margin:0 4px 2px 8px;background:var(--gold)}
 .kline-legend i.ma60{background:var(--blue)}
+.kline-legend i.b{background:var(--blue)}
+.kline-legend i.c{background:var(--violet)}
+.kline-legend i.vol{background:var(--muted)}
+.kline-subhead{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:8px}
+.sub-label{font-size:10px;color:var(--faint)}
+.kline-tab:disabled{opacity:.4;cursor:not-allowed}
+.kline-note{font-size:10px;color:var(--faint)}
+.watch-btn.on{color:var(--gold-2);border-color:rgba(231,180,92,.4)}
+html[data-theme="light"] .watch-btn.on{color:var(--gold);border-color:rgba(169,118,35,.4)}
+.target-line{stroke:var(--gold-2);stroke-width:1;stroke-dasharray:5 4;opacity:.75}
+.target-label{fill:var(--gold-2);font-size:9.5px}
+.candle-guide{stroke:var(--line);stroke-width:1;stroke-dasharray:2 3}
+.sub-hist{opacity:.7}
+.sub-hist.up{fill:var(--up)}
+.sub-hist.down{fill:var(--down)}
+.sub-line{fill:none;stroke-width:1.2;stroke-linejoin:round}
+.sub-line.a{stroke:var(--gold)}
+.sub-line.b{stroke:var(--blue)}
+.sub-line.c{stroke:var(--violet)}
+.candle-boll{fill:none;stroke:var(--blue);stroke-width:1;stroke-dasharray:4 3;opacity:.75}
+.candle-boll-area{fill:rgba(122,169,255,.08);stroke:none}
+html[data-theme="light"] .candle-boll-area{fill:rgba(62,111,209,.08)}
 .kline-wrap{margin-top:8px}
 .candle-svg{display:block;width:100%;height:auto;aspect-ratio:660/312;overflow:visible}
 .candle-grid{stroke:var(--line);stroke-width:1}
@@ -3200,6 +3232,104 @@ function maPath(vals, x, y) {
   return d.trim();
 }
 
+function sliceSeries(series, n) {
+  const out = {};
+  for (const key in series) out[key] = series[key].slice(-n);
+  return out;
+}
+
+function bandAreaPath(upper, lower, x, y) {
+  const fwd = [];
+  const rev = [];
+  for (let i = 0; i < upper.length; i++) {
+    if (!Number.isFinite(upper[i]) || !Number.isFinite(lower[i])) continue;
+    fwd.push(`${fwd.length ? 'L' : 'M'}${x(i).toFixed(1)} ${y(upper[i]).toFixed(1)}`);
+    rev.push(`L${x(i).toFixed(1)} ${y(lower[i]).toFixed(1)}`);
+  }
+  if (fwd.length < 2) return '';
+  return `${fwd.join(' ')} ${rev.reverse().join(' ')} Z`;
+}
+
+/* 副图绘制：量 / MACD / KDJ / RSI（FR-4.1 ~ FR-4.4） */
+function renderSubPanel(sub, series, points, x, top, h, bodyW) {
+  const x0 = 8;
+  const right = CANDLE_W - 58;
+  const guide = (yy) => `<line class="candle-guide" x1="${x0}" y1="${yy.toFixed(1)}" x2="${right}" y2="${yy.toFixed(1)}"/>`;
+  const label = (t, yy) => `<text class="candle-vol-max" x="${right + 6}" y="${yy.toFixed(1)}">${t}</text>`;
+  const bx = (i) => (x(i) - bodyW / 2).toFixed(1);
+
+  if (sub === 'volume') {
+    const volMax = Math.max(...points.map((p) => p.volume), 1);
+    const yV = (v) => top + h - (v / volMax) * h;
+    const bars = points
+      .map((p, i) => {
+        const vh = Math.max(0.5, h * (p.volume / volMax));
+        return `<rect class="vol-bar ${p.close >= p.open ? 'up' : 'down'}" x="${bx(i)}" y="${yV(p.volume).toFixed(
+          1
+        )}" width="${bodyW.toFixed(1)}" height="${vh.toFixed(1)}"/>`;
+      })
+      .join('');
+    return `${guide(top)}${bars}${label(fmtVolCompact(volMax), top + 9)}`;
+  }
+
+  if (sub === 'macd') {
+    const vals = [...series.dif, ...series.dea, ...series.hist].filter(Number.isFinite);
+    const scale = Math.max(...vals.map(Math.abs), 1e-9);
+    const yS = (v) => top + h / 2 - (v / scale) * (h / 2);
+    const y0 = yS(0);
+    const bars = series.hist
+      .map((v, i) => {
+        if (!Number.isFinite(v)) return '';
+        const yv = yS(v);
+        const bh = Math.max(0.5, Math.abs(yv - y0));
+        return `<rect class="sub-hist ${v >= 0 ? 'up' : 'down'}" x="${bx(i)}" y="${Math.min(y0, yv).toFixed(
+          1
+        )}" width="${bodyW.toFixed(1)}" height="${bh.toFixed(1)}"/>`;
+      })
+      .join('');
+    return `${guide(y0)}${bars}<path class="sub-line a" d="${maPath(series.dif, x, yS)}"></path><path class="sub-line b" d="${maPath(
+      series.dea,
+      x,
+      yS
+    )}"></path>${label('±' + fmtSigned(scale, 2), top + 9)}`;
+  }
+
+  /* KDJ / RSI：固定 0-100 刻度 */
+  const yS = (v) => top + h - (clamp(v, 0, 100) / 100) * h;
+  if (sub === 'kdj') {
+    return `${guide(yS(80))}${guide(yS(20))}<path class="sub-line c" d="${maPath(series.j, x, yS)}"></path><path class="sub-line a" d="${maPath(
+      series.k,
+      x,
+      yS
+    )}"></path><path class="sub-line b" d="${maPath(series.d, x, yS)}"></path>${label('100', top + 9)}${label('0', top + h)}`;
+  }
+  /* rsi */
+  return `${guide(yS(70))}${guide(yS(30))}<path class="sub-line a" d="${maPath(series.fast, x, yS)}"></path><path class="sub-line b" d="${maPath(
+    series.slow,
+    x,
+    yS
+  )}"></path>${label('100', top + 9)}${label('0', top + h)}`;
+}
+
+/* 悬浮详情里当前档位副图与 BOLL 的数值（FR-4.6） */
+function candleIndicatorTip(data, i) {
+  const { sub, subSeries, boll } = data;
+  const sign = (v, digits = 2) => (Number.isFinite(v) ? `<b class="${v >= 0 ? 'up' : 'down'}">${fmtSigned(v, digits)}</b>` : '—');
+  const plain = (v, digits = 2) => (Number.isFinite(v) ? fmtPrice(v, digits) : '—');
+  let html = '';
+  if (sub === 'macd' && subSeries) {
+    html += `<span>DIF ${sign(subSeries.dif[i])}</span><span>DEA ${sign(subSeries.dea[i])}</span><span>MACD ${sign(subSeries.hist[i])}</span>`;
+  } else if (sub === 'kdj' && subSeries) {
+    html += `<span>K ${plain(subSeries.k[i], 1)}</span><span>D ${plain(subSeries.d[i], 1)}</span><span>J ${plain(subSeries.j[i], 1)}</span>`;
+  } else if (sub === 'rsi' && subSeries) {
+    html += `<span>RSI6 ${plain(subSeries.fast[i], 1)}</span><span>RSI12 ${plain(subSeries.slow[i], 1)}</span>`;
+  }
+  if (boll && Number.isFinite(boll.mid[i])) {
+    html += `<span>布林 ${plain(boll.low[i])} / ${plain(boll.mid[i])} / ${plain(boll.up[i])}</span>`;
+  }
+  return html;
+}
+
 function renderCandlestick(points, opts = {}) {
   const rows = (Array.isArray(points) ? points : [])
     .map((p) => ({
@@ -3216,17 +3346,30 @@ function renderCandlestick(points, opts = {}) {
   const pts = rows.slice(-Math.max(2, want));
   if (pts.length < 2) return '';
 
-  /* 均线基于完整历史计算，再截取窗口，保证窗口边缘数值准确 */
+  /* 指标与几何：均线/BOLL/副图指标均基于完整历史计算，再截取窗口（FR-4） */
+  const sub = normalizeSubMode(opts.sub);
+  const subOk = subAvailable(sub, rows.length);
+  const bollOn = !!opts.boll && rows.length >= 20;
   const allCloses = rows.map((p) => p.close);
+  const allHighs = rows.map((p) => p.high);
+  const allLows = rows.map((p) => p.low);
   const ma20Full = maSeries(allCloses, 20).slice(-pts.length);
   const ma60Full = maSeries(allCloses, 60).slice(-pts.length);
+  const bollFull = bollOn ? bollCalc(allCloses) : null;
+  const boll = bollFull
+    ? { up: bollFull.up.slice(-pts.length), mid: bollFull.mid.slice(-pts.length), low: bollFull.low.slice(-pts.length) }
+    : null;
+  const subSeries =
+    subOk && sub !== 'volume'
+      ? sliceSeries(computeSubSeries(sub, { closes: allCloses, highs: allHighs, lows: allLows }), pts.length)
+      : null;
 
   const padL = 8;
   const padR = 58;
   const mainTop = 10;
   const mainH = 208;
-  const volTop = mainTop + mainH + 18;
-  const volH = 58;
+  const subTop = mainTop + mainH + 18;
+  const subH = 58;
   const usableW = CANDLE_W - padL - padR;
   const n = pts.length;
   const slot = usableW / n;
@@ -3235,17 +3378,30 @@ function renderCandlestick(points, opts = {}) {
 
   const lows = pts.map((p) => p.low);
   const highs = pts.map((p) => p.high);
-  const mas = [...ma20Full, ...ma60Full].filter(Number.isFinite);
-  const min = Math.min(...lows, ...mas);
-  const max = Math.max(...highs, ...mas);
-  const span = max - min || 1;
-  const yP = (v) => mainTop + mainH - ((v - min) / span) * mainH;
-
-  const volMax = Math.max(...pts.map((p) => p.volume), 1);
-  const yV = (v) => volTop + volH - (v / volMax) * volH;
+  const mas = [...ma20Full, ...ma60Full, ...(boll ? [...boll.up, ...boll.low] : [])].filter(Number.isFinite);
+  /* FR-5.1 目标价锚点：离现价区间超过 60% 跨度的目标价不参与缩放（避免压缩蜡烛） */
+  let lo = Math.min(...lows, ...mas);
+  let hi = Math.max(...highs, ...mas);
+  const span0 = hi - lo || 1;
+  const anchors = [];
+  const anchorLabels = { high: '目标高', mid: '目标中', low: '目标低' };
+  if (opts.targets) {
+    ['high', 'mid', 'low'].forEach((k) => {
+      const v = opts.targets[k];
+      if (Number.isFinite(v) && v > 0 && v >= lo - span0 * 0.6 && v <= hi + span0 * 0.6) {
+        anchors.push({ key: k, value: v });
+      }
+    });
+    if (anchors.length) {
+      lo = Math.min(lo, ...anchors.map((a) => a.value));
+      hi = Math.max(hi, ...anchors.map((a) => a.value));
+    }
+  }
+  const span = hi - lo || 1;
+  const yP = (v) => mainTop + mainH - ((v - lo) / span) * mainH;
 
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((r) => {
-    const v = min + span * (1 - r);
+    const v = lo + span * (1 - r);
     return `<line class="candle-grid" x1="${padL}" y1="${(mainTop + mainH * r).toFixed(1)}" x2="${padL + usableW}" y2="${(
       mainTop +
       mainH * r
@@ -3257,45 +3413,65 @@ function renderCandlestick(points, opts = {}) {
       const up = p.close >= p.open;
       const bodyTop = yP(Math.max(p.open, p.close));
       const bodyH = Math.max(1, Math.abs(yP(p.open) - yP(p.close)));
-      const volH2 = Math.max(0.5, volH * (p.volume / volMax));
       return `<g class="candle ${up ? 'up' : 'down'}" data-i="${i}"><line x1="${x(i).toFixed(1)}" y1="${yP(p.high).toFixed(
         1
       )}" x2="${x(i).toFixed(1)}" y2="${yP(p.low).toFixed(1)}"/><rect x="${(x(i) - bodyW / 2).toFixed(
         1
-      )}" y="${bodyTop.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${bodyH.toFixed(1)}"/></g><rect class="vol-bar ${up ? 'up' : 'down'}" x="${(
-        x(i) -
-        bodyW / 2
-      ).toFixed(1)}" y="${yV(p.volume).toFixed(1)}" width="${bodyW.toFixed(1)}" height="${volH2.toFixed(1)}"/>`;
+      )}" y="${bodyTop.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${bodyH.toFixed(1)}"/></g>`;
     })
     .join('');
 
   const ma20Path = maPath(ma20Full, x, yP);
   const ma60Path = maPath(ma60Full, x, yP);
+  const bollSvg = boll
+    ? `<path class="candle-boll-area" d="${bandAreaPath(boll.up, boll.low, x, yP)}"></path><path class="candle-boll" d="${maPath(
+        boll.up,
+        x,
+        yP
+      )}"></path><path class="candle-boll" d="${maPath(boll.low, x, yP)}"></path>`
+    : '';
+  /* FR-4.7：请求的副图档位数据不足时，降级为成交量副图 */
+  const subSvg = subOk
+    ? renderSubPanel(sub, subSeries, pts, x, subTop, subH, bodyW)
+    : renderSubPanel('volume', null, pts, x, subTop, subH, bodyW);
+  /* FR-5.1：目标价锚线（虚线 + 左上角标签） */
+  const anchorsSvg = anchors
+    .map(
+      (a) => `<line class="target-line" x1="${padL}" y1="${yP(a.value).toFixed(1)}" x2="${padL + usableW}" y2="${yP(a.value).toFixed(
+        1
+      )}"/><text class="target-label" x="${padL + 4}" y="${(yP(a.value) - 3).toFixed(1)}">${esc(anchorLabels[a.key])} ${fmtPrice(a.value)}</text>`
+    )
+    .join('');
 
   const dateIdx = [0, Math.round((n - 1) / 3), Math.round(((n - 1) * 2) / 3), n - 1]
     .filter((v, i, a) => a.indexOf(v) === i)
-    .map((i) => `<text class="candle-tick date" x="${x(i).toFixed(1)}" y="${volTop + volH + 15}">${esc(pts[i].date)}</text>`)
+    .map((i) => `<text class="candle-tick date" x="${x(i).toFixed(1)}" y="${subTop + subH + 15}">${esc(pts[i].date)}</text>`)
     .join('');
 
   const id = uid('cndl');
   CANDLE_STORE.set(id, {
     pts,
-    geom: { padL, slot, n, mainTop, mainH, yP, volTop, volH },
+    geom: { padL, slot, n, mainTop, mainH, yP, subTop, subH },
+    sub: subOk ? sub : 'volume',
+    subSeries,
+    boll,
   });
 
+  const subLabel = KLINE_SUBS.find((s) => s.key === sub).label;
   return `<div class="candle-wrap">
     <svg class="candle-svg" viewBox="0 0 ${CANDLE_W} ${CANDLE_H}" preserveAspectRatio="none" role="img" data-candle-id="${id}"
-      aria-label="K 线图：${n} 个交易区间的蜡烛与成交量">
+      aria-label="K 线图：${n} 根蜡烛，副图 ${esc(subLabel)}${boll ? '，叠加布林带' : ''}">
       ${ticks}
+      ${bollSvg}
       <path class="candle-ma ma60" d="${ma60Path}"></path>
       <path class="candle-ma ma20" d="${ma20Path}"></path>
       ${candles}
-      <line class="candle-base" x1="${padL}" y1="${volTop}" x2="${padL + usableW}" y2="${volTop}"/>
-      <text class="candle-vol-max" x="${padL + usableW + 6}" y="${(volTop + 9).toFixed(1)}">${fmtVolCompact(volMax)}</text>
+      ${anchorsSvg}
+      ${subSvg}
       ${dateIdx}
-      <line class="candle-cross-v" data-role="v" x1="0" y1="${mainTop}" x2="0" y2="${volTop + volH}" hidden></line>
+      <line class="candle-cross-v" data-role="v" x1="0" y1="${mainTop}" x2="0" y2="${subTop + subH}" hidden></line>
       <line class="candle-cross-h" data-role="h" x1="${padL}" y1="0" x2="${padL + usableW}" y2="0" hidden></line>
-      <rect class="candle-hover-layer" x="${padL}" y="${mainTop}" width="${usableW}" height="${volTop + volH - mainTop}" fill="transparent"></rect>
+      <rect class="candle-hover-layer" x="${padL}" y="${mainTop}" width="${usableW}" height="${subTop + subH - mainTop}" fill="transparent"></rect>
     </svg>
     <div class="candle-tip" hidden></div>
   </div>`;
@@ -3341,7 +3517,7 @@ function candleShowIndex(svg, i) {
     <span>开 ${fmtPrice(p.open)}</span><span>收 <b class="${up ? 'up' : 'down'}">${fmtPrice(p.close)}</b></span>
     <span>高 ${fmtPrice(p.high)}</span><span>低 ${fmtPrice(p.low)}</span>
     ${chg !== null ? `<span class="${pctClass(chg)}">涨跌 ${fmtPct(chg)}</span>` : ''}
-    <span>量 ${fmtVolCompact(p.volume)}</span>`;
+    <span>量 ${fmtVolCompact(p.volume)}</span>${candleIndicatorTip(data, i)}`;
   tip.hidden = false;
   const svgW = svg.clientWidth || CANDLE_W;
   const scale = svgW / CANDLE_W;
@@ -3375,6 +3551,156 @@ function hydrateCandles(root = document) {
     svg.addEventListener('pointerdown', (e) => candleShowIndex(svg, candleIndexFromEvent(svg, e)));
     svg.addEventListener('pointerleave', () => candleShowIndex(svg, -1));
   });
+}
+
+
+/* ===== js/22-indicators.js ===== */
+/* ============================================================
+   Indicators — MACD / KDJ / RSI / BOLL，纯前端计算（FR-4）
+   全部返回与输入等长的数组；数据不足的位置为 null，绝不产生 NaN
+   ============================================================ */
+'use strict';
+
+/* 副图档位定义：min 为可用的最少数据条数（FR-4.7） */
+const KLINE_SUBS = [
+  { key: 'volume', label: '量', min: 2 },
+  { key: 'macd', label: 'MACD', min: 34 },
+  { key: 'kdj', label: 'KDJ', min: 9 },
+  { key: 'rsi', label: 'RSI', min: 14 },
+];
+
+function normalizeSubMode(sub) {
+  return KLINE_SUBS.some((s) => s.key === sub) ? sub : 'volume';
+}
+
+function subAvailable(sub, rowsCount) {
+  const def = KLINE_SUBS.find((s) => s.key === sub);
+  return !!def && rowsCount >= def.min;
+}
+
+/* 标准 EMA：首值作种子 */
+function emaSeries(values, n) {
+  const out = new Array(values.length).fill(null);
+  if (!values.length || !Number.isFinite(values[0])) return out;
+  let prev = values[0];
+  out[0] = prev;
+  const k = 2 / (n + 1);
+  for (let i = 1; i < values.length; i++) {
+    if (!Number.isFinite(values[i])) {
+      out[i] = prev;
+      continue;
+    }
+    prev = values[i] * k + prev * (1 - k);
+    out[i] = prev;
+  }
+  return out;
+}
+
+/* MACD(12,26,9)：DIF=EMA12-EMA26，DEA=EMA9(DIF)，柱=(DIF-DEA)*2（国内口径） */
+function macdCalc(closes, fast = 12, slow = 26, signal = 9) {
+  const ef = emaSeries(closes, fast);
+  const es = emaSeries(closes, slow);
+  const dif = closes.map((_, i) => (Number.isFinite(ef[i]) && Number.isFinite(es[i]) ? ef[i] - es[i] : null));
+  const allFinite = dif.every(Number.isFinite);
+  const deaOut = allFinite ? emaSeries(dif, signal) : new Array(closes.length).fill(null);
+  const hist = dif.map((v, i) => (Number.isFinite(v) && Number.isFinite(deaOut[i]) ? (v - deaOut[i]) * 2 : null));
+  return { dif, dea: deaOut, hist };
+}
+
+/* KDJ(9,3,3)：RSV 后 K/D 平滑，J=3K-2D，初始 50 */
+function kdjCalc(highs, lows, closes, n = 9) {
+  const k = [];
+  const d = [];
+  const j = [];
+  let pk = 50;
+  let pd = 50;
+  for (let i = 0; i < closes.length; i++) {
+    const from = Math.max(0, i - n + 1);
+    let hh = -Infinity;
+    let ll = Infinity;
+    for (let t = from; t <= i; t++) {
+      if (Number.isFinite(highs[t])) hh = Math.max(hh, highs[t]);
+      if (Number.isFinite(lows[t])) ll = Math.min(ll, lows[t]);
+    }
+    const rsv = hh === ll || !Number.isFinite(hh) ? 50 : ((closes[i] - ll) / (hh - ll)) * 100;
+    pk = (2 / 3) * pk + (1 / 3) * rsv;
+    pd = (2 / 3) * pd + (1 / 3) * pk;
+    k.push(pk);
+    d.push(pd);
+    j.push(3 * pk - 2 * pd);
+  }
+  return { k, d, j };
+}
+
+/* RSI（Wilder 平滑口径）：前 n 期简单均值起算 */
+function rsiSeries(closes, n) {
+  const out = new Array(closes.length).fill(null);
+  if (closes.length <= n) return out;
+  let gain = 0;
+  let loss = 0;
+  for (let i = 1; i <= n; i++) {
+    const c = closes[i] - closes[i - 1];
+    if (c >= 0) gain += c;
+    else loss -= c;
+  }
+  let ag = gain / n;
+  let al = loss / n;
+  out[n] = al === 0 ? 100 : (100 * ag) / (ag + al);
+  for (let i = n + 1; i < closes.length; i++) {
+    const c = closes[i] - closes[i - 1];
+    ag = (ag * (n - 1) + Math.max(c, 0)) / n;
+    al = (al * (n - 1) + Math.max(-c, 0)) / n;
+    out[i] = al === 0 ? 100 : (100 * ag) / (ag + al);
+  }
+  return out;
+}
+
+function rsiCalc(closes, fast = 6, slow = 12) {
+  return { fast: rsiSeries(closes, fast), slow: rsiSeries(closes, slow) };
+}
+
+/* BOLL(20,2)：中轨=MA20，上下轨=中轨±2σ（总体标准差） */
+function bollCalc(closes, n = 20, mult = 2) {
+  const up = [];
+  const mid = [];
+  const low = [];
+  let sum = 0;
+  let sum2 = 0;
+  for (let i = 0; i < closes.length; i++) {
+    sum += closes[i];
+    sum2 += closes[i] * closes[i];
+    if (i >= n) {
+      sum -= closes[i - n];
+      sum2 -= closes[i - n] * closes[i - n];
+    }
+    if (i >= n - 1) {
+      const m = sum / n;
+      const sd = Math.sqrt(Math.max(0, sum2 / n - m * m));
+      mid.push(m);
+      up.push(m + mult * sd);
+      low.push(m - mult * sd);
+    } else {
+      mid.push(null);
+      up.push(null);
+      low.push(null);
+    }
+  }
+  return { up, mid, low };
+}
+
+/* 按当前档位计算指标（基于完整历史，调用方自行截取窗口） */
+function computeSubSeries(sub, data) {
+  const { closes, highs, lows } = data;
+  switch (sub) {
+    case 'macd':
+      return macdCalc(closes);
+    case 'kdj':
+      return kdjCalc(highs, lows, closes);
+    case 'rsi':
+      return rsiCalc(closes);
+    default:
+      return null; /* volume 直接用 points.volume */
+  }
 }
 
 
@@ -3467,6 +3793,26 @@ function recentStocks() {
     }));
 }
 
+function watchRowHTML() {
+  const list = watchlistGet();
+  if (!list.length) return '';
+  return `<div class="watch-row" id="watchRow">
+    <span class="hot-label">自选</span>
+    ${list
+      .map(
+        (s) => `<div class="watch-item">
+      <button type="button" class="hot-chip watch-chip" ${stockDataset(s)}>${esc(s.name)}<span class="watch-quote" data-wq="${esc(
+          s.quoteKey || ''
+        )}"><span class="skeleton" style="width:64px;height:10px"></span></span></button>
+      <button type="button" class="watch-remove" data-action="watch-remove" data-market="${esc(s.market)}" data-code="${esc(
+          s.code
+        )}" aria-label="移除 ${esc(s.name)}">${ico('x', 'sm')}</button>
+    </div>`
+      )
+      .join('')}
+  </div>`;
+}
+
 function homeHTML() {
   const recent = recentStocks();
   const featureCards = FEATURES.map(
@@ -3511,6 +3857,7 @@ function homeHTML() {
             </div>`
           : ''
       }
+      ${watchRowHTML()}
       <button class="demo-link" type="button" data-action="demo">${ico('spark', 'sm')}没有目标？先看一份完整的示例研判</button>
 
       <div class="hero-stats">
@@ -3553,6 +3900,33 @@ function renderHome() {
   document.title = '研值 StockLens · 股票研报与研判';
   syncTopbar('home');
   loadHotQuotes();
+  loadWatchQuotes();
+}
+
+/* FR-6.2：自选股行情速览，批量接口一次拉取 */
+async function loadWatchQuotes() {
+  const list = watchlistGet();
+  if (!list.length) return;
+  const keys = list.map((s) => s.quoteKey).filter(Boolean);
+  if (!keys.length) return;
+  try {
+    const map = await getQuoteBatch(keys);
+    list.forEach((s) => {
+      const q = map.get(s.quoteKey);
+      if (!q) return;
+      $$(`[data-wq="${s.quoteKey}"]`).forEach((el) => {
+        const cls = pctClass(q.changePct);
+        el.innerHTML = `<b class="${cls}">${fmtPrice(q.price, q.price < 10 ? 3 : 2)}</b><span class="${cls}">${fmtPct(
+          q.changePct
+        )}</span>`;
+      });
+    });
+  } catch (e) {
+    /* FR-6.5：失败显示占位，不阻塞其他标的 */
+    $$('[data-wq]').forEach((el) => {
+      el.textContent = '—';
+    });
+  }
 }
 
 function loadHotQuotes() {
@@ -3803,6 +4177,10 @@ function renderStockHeader(stock, quote, profile) {
       </div>
       <div class="price-time">${esc(quote.time)} · 前收 ${fmtPrice(quote.prevClose)}</div>
       <div class="stock-actions no-print">
+        <button class="btn sm watch-btn ${watchlistHas(stock) ? 'on' : ''}" type="button" data-action="watch-toggle" aria-pressed="${watchlistHas(stock)}">${ico(
+          'star',
+          'sm'
+        )}${watchlistHas(stock) ? '已自选' : '加自选'}</button>
         <button class="btn sm" type="button" data-action="copy-link">${ico('share', 'sm')}分享</button>
         <button class="btn sm" type="button" data-action="refresh">${ico('refresh', 'sm')}刷新</button>
       </div>
@@ -3911,6 +4289,48 @@ function chartPeriodTabs() {
     .join('')}</div>`;
 }
 
+/* 副图档位 + BOLL 开关（FR-4.1 / FR-4.5 / FR-4.7） */
+function chartSubControls(rowsCount) {
+  const cur = state.subChart || 'volume';
+  const tabs = KLINE_SUBS.map((s) => {
+    const ok = subAvailable(s.key, rowsCount);
+    return `<button class="kline-tab sub-tab ${cur === s.key ? 'active' : ''}" type="button" ${
+      ok ? '' : 'disabled title="数据不足，无法计算"'
+    } aria-pressed="${cur === s.key}" data-action="kline-sub" data-sub="${s.key}">${s.label}</button>`;
+  }).join('');
+  const bollOk = rowsCount >= 20;
+  const boll = `<button class="kline-tab boll-tab ${state.bollOn ? 'active' : ''}" type="button" ${
+    bollOk ? '' : 'disabled title="数据不足，无法计算"'
+  } aria-pressed="${!!state.bollOn}" data-action="kline-boll">BOLL</button>`;
+  return `<div class="kline-subhead">
+    <span class="sub-label">副图</span>${tabs}${boll}
+    ${subLegendHTML(cur)}
+  </div>`;
+}
+
+function subLegendHTML(sub) {
+  if (sub === 'macd') return `<span class="kline-legend" aria-hidden="true"><i class="a"></i>DIF<i class="b"></i>DEA</span>`;
+  if (sub === 'kdj') return `<span class="kline-legend" aria-hidden="true"><i class="a"></i>K<i class="b"></i>D<i class="c"></i>J</span>`;
+  if (sub === 'rsi') return `<span class="kline-legend" aria-hidden="true"><i class="a"></i>RSI6<i class="b"></i>RSI12</span>`;
+  if (sub === 'volume') return `<span class="kline-legend" aria-hidden="true"><i class="vol"></i>成交量</span>`;
+  return '';
+}
+
+/* FR-5.1：从研报数据提取目标价 高/中/低 三档锚点 */
+function targetAnchors() {
+  const list = Array.isArray(state.reports)
+    ? state.reports.map((r) => num(r.target)).filter((v) => Number.isFinite(v) && v > 0)
+    : [];
+  if (!list.length) return null;
+  const sorted = [...list].sort((a, b) => a - b);
+  return {
+    low: sorted[0],
+    mid: sorted[Math.floor((sorted.length - 1) / 2)],
+    high: sorted[sorted.length - 1],
+    count: list.length,
+  };
+}
+
 function renderChartSection(kline) {
   /* 指标事实区始终基于日线数据（周/月线仅用于蜡烛展示） */
   const dayK = (state.periodKlines && state.periodKlines.day) || (state.core && state.core.kline) || null;
@@ -3921,7 +4341,13 @@ function renderChartSection(kline) {
   const first = pts[0];
   const last = pts[pts.length - 1];
   /* FR-3.6：蜡烛渲染条件不满足时降级为原有 sparkline */
-  const candles = renderCandlestick(pts, { window: period === 'day' ? 240 : period === 'week' ? 260 : 140 });
+  const anchors = targetAnchors();
+  const candles = renderCandlestick(pts, {
+    window: period === 'day' ? 240 : period === 'week' ? 260 : 140,
+    sub: state.subChart || 'volume',
+    boll: !!state.bollOn,
+    targets: anchors,
+  });
   const chartBody = candles
     ? `<div class="kline-wrap">${candles}</div>`
     : `<div class="spark-wrap">${renderSparkline(pts)}</div>`;
@@ -3941,6 +4367,8 @@ function renderChartSection(kline) {
       <div class="chart-head"><strong>股价 K 线</strong>${chartPeriodTabs()}
         <span class="kline-legend" aria-hidden="true"><i class="ma20"></i>MA20<i class="ma60"></i>MA60</span>
         <span>${esc(fmtDate(first.date))} — ${esc(fmtDate(last.date))} · ${period === 'day' ? '前复权 · ' : ''}${pts.length} 根${periodLabel}</span></div>
+      ${chartSubControls(pts.length)}
+      ${anchors ? '<span class="kline-note">目标价为研报发布口径，前复权 K 线在最新交易日与实际价格基本一致</span>' : ''}
       ${chartBody}
     </div>
     ${facts}
@@ -4384,6 +4812,8 @@ const state = {
   pendingStock: null,
   klinePeriod: 'day',
   periodKlines: {},
+  subChart: 'volume',
+  bollOn: false,
   search: { items: [], active: -1, query: '', seq: 0 },
 };
 
@@ -4646,6 +5076,9 @@ function bindCoreData(token, quote) {
       state.reports = reports;
       markCoreSettled('reports', reports);
       renderStockReports(reports, stock.market);
+      /* FR-5.1：研报（含目标价）到达后刷新 K 线，绘制目标价锚点 */
+      const k = state.periodKlines[state.klinePeriod] || state.core.kline;
+      if (k) updateChart(k);
     })
     .catch(() => {
       if (token !== state.token) return;
@@ -4724,6 +5157,60 @@ function refreshScore() {
   });
   state.score = score;
   renderOverview(score, state.core.kline);
+}
+
+/* ---------------- 自选股清单（FR-6） ---------------- */
+const WATCHLIST_MAX = 20;
+
+function watchlistGet() {
+  const list = store.get('watchlist', []);
+  return Array.isArray(list) ? list.filter((s) => s && s.market && s.code) : [];
+}
+
+function watchlistHas(stock) {
+  return watchlistGet().some((s) => s.market === stock.market && s.code === stock.code);
+}
+
+function watchlistToggle(stock) {
+  let list = watchlistGet();
+  if (watchlistHas(stock)) {
+    list = list.filter((s) => !(s.market === stock.market && s.code === stock.code));
+    store.set('watchlist', list);
+    toast('已从自选中移除', 'info');
+    return false;
+  }
+  if (list.length >= WATCHLIST_MAX) {
+    toast(`自选已达 ${WATCHLIST_MAX} 只上限，请先移除部分`, 'error');
+    return true;
+  }
+  list.unshift({
+    market: stock.market,
+    code: stock.code,
+    name: stock.name,
+    quoteKey: stock.quoteKey,
+    klineCode: stock.klineCode,
+    rawCode: stock.rawCode,
+    t: Date.now(),
+  });
+  store.set('watchlist', list);
+  toast('已加入自选', 'ok');
+  return true;
+}
+
+function watchlistRemove(market, code) {
+  store.set(
+    'watchlist',
+    watchlistGet().filter((s) => !(s.market === market && s.code === code))
+  );
+}
+
+function updateWatchButton() {
+  const btn = document.querySelector('[data-action="watch-toggle"]');
+  if (!btn || !state.stock) return;
+  const on = watchlistHas(state.stock);
+  btn.classList.toggle('on', on);
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.innerHTML = `${ico('star', 'sm')}${on ? '已自选' : '加自选'}`;
 }
 
 /* ---------------- K 线周期切换（FR-3.2 / FR-3.6） ---------------- */
@@ -5182,6 +5669,35 @@ function handleClick(e) {
     if (action === 'kline-period') {
       e.preventDefault();
       switchKlinePeriod(actionEl.dataset.period);
+      return;
+    }
+    if (action === 'kline-sub') {
+      e.preventDefault();
+      state.subChart = normalizeSubMode(actionEl.dataset.sub);
+      const k = state.periodKlines[state.klinePeriod] || state.core.kline;
+      if (k) updateChart(k);
+      return;
+    }
+    if (action === 'kline-boll') {
+      e.preventDefault();
+      state.bollOn = !state.bollOn;
+      const k = state.periodKlines[state.klinePeriod] || state.core.kline;
+      if (k) updateChart(k);
+      return;
+    }
+    if (action === 'watch-toggle') {
+      e.preventDefault();
+      if (state.stock) {
+        watchlistToggle(state.stock);
+        updateWatchButton();
+      }
+      return;
+    }
+    if (action === 'watch-remove') {
+      e.preventDefault();
+      watchlistRemove(actionEl.dataset.market, actionEl.dataset.code);
+      toast('已从自选中移除', 'info');
+      if (state.route === 'home') renderHome();
       return;
     }
     if (action === 'demo') {
