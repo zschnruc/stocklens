@@ -19,6 +19,8 @@ const state = {
   pendingStock: null,
   klinePeriod: 'day',
   periodKlines: {},
+  subChart: 'volume',
+  bollOn: false,
   search: { items: [], active: -1, query: '', seq: 0 },
 };
 
@@ -817,6 +819,20 @@ function handleClick(e) {
     if (action === 'kline-period') {
       e.preventDefault();
       switchKlinePeriod(actionEl.dataset.period);
+      return;
+    }
+    if (action === 'kline-sub') {
+      e.preventDefault();
+      state.subChart = normalizeSubMode(actionEl.dataset.sub);
+      const k = state.periodKlines[state.klinePeriod] || state.core.kline;
+      if (k) updateChart(k);
+      return;
+    }
+    if (action === 'kline-boll') {
+      e.preventDefault();
+      state.bollOn = !state.bollOn;
+      const k = state.periodKlines[state.klinePeriod] || state.core.kline;
+      if (k) updateChart(k);
       return;
     }
     if (action === 'demo') {

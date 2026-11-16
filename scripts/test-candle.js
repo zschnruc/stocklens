@@ -20,6 +20,7 @@ global.document = {
 
 const src = path.join(root, 'src', 'js');
 vm.runInThisContext(fs.readFileSync(path.join(src, '00-utils.js'), 'utf8'), { filename: '00-utils.js' });
+vm.runInThisContext(fs.readFileSync(path.join(src, '22-indicators.js'), 'utf8'), { filename: '22-indicators.js' });
 vm.runInThisContext(fs.readFileSync(path.join(src, '21-charts.js'), 'utf8'), { filename: '21-charts.js' });
 
 const enc = encodeURIComponent;
@@ -104,6 +105,34 @@ function auditCandlestick(html, expectBars) {
   }));
   const small = renderCandlestick(okRows, { window: 60 });
   check('60 根合成数据渲染 60 根蜡烛', auditCandlestick(small, 60).bars === 60);
+
+  console.log('技术指标引擎（FR-4）');
+  const closes = okRows.map((p) => p.close);
+  const highs = okRows.map((p) => p.high);
+  const lows = okRows.map((p) => p.low);
+  const macd = macdCalc(closes);
+  check('MACD 三序列等长且有限', macd.dif.length === closes.length && macd.dif.every(Number.isFinite) && macd.hist.every(Number.isFinite));
+  check('MACD 零轴以上为正柱（单调上涨序列）', macd.hist[macd.hist.length - 1] > 0);
+  const kdj = kdjCalc(highs, lows, closes);
+  check('KDJ 的 K/D/J ∈ [0,100] 附近且有限', kdj.k.every((v) => Number.isFinite(v) && v >= -1e-6 && v <= 100 + 1e-6));
+  const rsi = rsiCalc(closes);
+  check('RSI 单调上涨序列末值接近 100', rsi.fast[rsi.fast.length - 1] > 95);
+  const boll = bollCalc(closes);
+  const lastOk = closes.length - 1;
+  check('BOLL 上轨 > 中轨 > 下轨', boll.up[lastOk] > boll.mid[lastOk] && boll.mid[lastOk] > boll.low[lastOk]);
+  const shortRows = okRows.slice(0, 10);
+  check('MACD 数据不足 34 根时档位不可用', !subAvailable('macd', shortRows.length) && subAvailable('macd', 34));
+  check('KDJ 数据不足 9 根时档位不可用', !subAvailable('kdj', 8) && subAvailable('kdj', 9));
+
+  console.log('副图/BOLL 渲染（FR-4.1 ~ FR-4.5）');
+  for (const sub of ['volume', 'macd', 'kdj', 'rsi']) {
+    const html = renderCandlestick(okRows, { window: 60, sub, boll: sub === 'macd' });
+    const hasPanel = sub === 'volume' ? html.includes('vol-bar') : html.includes('sub-line');
+    const hasBoll = sub === 'macd' ? html.includes('candle-boll') : !html.includes('candle-boll');
+    check(`副图 ${sub.toUpperCase()} 渲染${sub === 'macd' ? ' + BOLL 叠加' : ''}`, hasPanel && hasBoll && !/NaN|undefined/.test(html));
+  }
+  const tooShort = renderCandlestick(shortRows, { window: 10, sub: 'macd' });
+  check('数据不足时副图档位安全降级为量', tooShort.includes('vol-bar') && !tooShort.includes('sub-line'));
 
   console.log(failures ? `\n${failures} 项失败` : '\n全部通过');
   process.exit(failures ? 1 : 0);

@@ -302,6 +302,33 @@ function chartPeriodTabs() {
     .join('')}</div>`;
 }
 
+/* 副图档位 + BOLL 开关（FR-4.1 / FR-4.5 / FR-4.7） */
+function chartSubControls(rowsCount) {
+  const cur = state.subChart || 'volume';
+  const tabs = KLINE_SUBS.map((s) => {
+    const ok = subAvailable(s.key, rowsCount);
+    return `<button class="kline-tab sub-tab ${cur === s.key ? 'active' : ''}" type="button" ${
+      ok ? '' : 'disabled title="数据不足，无法计算"'
+    } aria-pressed="${cur === s.key}" data-action="kline-sub" data-sub="${s.key}">${s.label}</button>`;
+  }).join('');
+  const bollOk = rowsCount >= 20;
+  const boll = `<button class="kline-tab boll-tab ${state.bollOn ? 'active' : ''}" type="button" ${
+    bollOk ? '' : 'disabled title="数据不足，无法计算"'
+  } aria-pressed="${!!state.bollOn}" data-action="kline-boll">BOLL</button>`;
+  return `<div class="kline-subhead">
+    <span class="sub-label">副图</span>${tabs}${boll}
+    ${subLegendHTML(cur)}
+  </div>`;
+}
+
+function subLegendHTML(sub) {
+  if (sub === 'macd') return `<span class="kline-legend" aria-hidden="true"><i class="a"></i>DIF<i class="b"></i>DEA</span>`;
+  if (sub === 'kdj') return `<span class="kline-legend" aria-hidden="true"><i class="a"></i>K<i class="b"></i>D<i class="c"></i>J</span>`;
+  if (sub === 'rsi') return `<span class="kline-legend" aria-hidden="true"><i class="a"></i>RSI6<i class="b"></i>RSI12</span>`;
+  if (sub === 'volume') return `<span class="kline-legend" aria-hidden="true"><i class="vol"></i>成交量</span>`;
+  return '';
+}
+
 function renderChartSection(kline) {
   /* 指标事实区始终基于日线数据（周/月线仅用于蜡烛展示） */
   const dayK = (state.periodKlines && state.periodKlines.day) || (state.core && state.core.kline) || null;
@@ -312,7 +339,11 @@ function renderChartSection(kline) {
   const first = pts[0];
   const last = pts[pts.length - 1];
   /* FR-3.6：蜡烛渲染条件不满足时降级为原有 sparkline */
-  const candles = renderCandlestick(pts, { window: period === 'day' ? 240 : period === 'week' ? 260 : 140 });
+  const candles = renderCandlestick(pts, {
+    window: period === 'day' ? 240 : period === 'week' ? 260 : 140,
+    sub: state.subChart || 'volume',
+    boll: !!state.bollOn,
+  });
   const chartBody = candles
     ? `<div class="kline-wrap">${candles}</div>`
     : `<div class="spark-wrap">${renderSparkline(pts)}</div>`;
@@ -332,6 +363,7 @@ function renderChartSection(kline) {
       <div class="chart-head"><strong>股价 K 线</strong>${chartPeriodTabs()}
         <span class="kline-legend" aria-hidden="true"><i class="ma20"></i>MA20<i class="ma60"></i>MA60</span>
         <span>${esc(fmtDate(first.date))} — ${esc(fmtDate(last.date))} · ${period === 'day' ? '前复权 · ' : ''}${pts.length} 根${periodLabel}</span></div>
+      ${chartSubControls(pts.length)}
       ${chartBody}
     </div>
     ${facts}
