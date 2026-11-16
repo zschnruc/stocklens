@@ -11,8 +11,8 @@ const src = path.join(root, 'src');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const buildTime = new Date().toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
 
-function readDir(base, dir, ext) {
-  const full = path.join(base, dir);
+function readDir(dir, ext) {
+  const full = path.join(src, dir);
   if (!fs.existsSync(full)) return '';
   return fs
     .readdirSync(full)
@@ -23,22 +23,16 @@ function readDir(base, dir, ext) {
 }
 
 const template = fs.readFileSync(path.join(src, 'template.html'), 'utf8');
-const css = readDir(src, 'css', '.css');
-const js = readDir(src, 'js', '.js');
-const vendor = readDir(root, 'vendor', '.js');
+const css = readDir('css', '.css');
+const js = readDir('js', '.js');
 
 if (!css || !js) {
   console.error('缺少 CSS 或 JS 源文件');
   process.exit(1);
 }
-if (!vendor) {
-  console.error('缺少 vendor 源文件（klinecharts）');
-  process.exit(1);
-}
 
 const html = template
   .replace('/*__STYLES__*/', () => css)
-  .replace('/*__VENDOR__*/', () => vendor)
   .replace('/*__APP__*/', () => js)
   .replace(/__SL_VERSION__/g, 'v' + pkg.version)
   .replace(/__SL_BUILD_TIME__/g, buildTime);
