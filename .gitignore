@@ -9,3 +9,6 @@ npm-debug.log*
 .idea/
 .vscode/
 *.swp
+
+# WorkBuddy 项目记忆
+.workbuddy/
