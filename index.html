@@ -615,6 +615,42 @@ html[data-theme="light"] .dim-bar{background:rgba(24,32,45,.07)}
 .chart-fact label{display:block;font-size:9.5px;color:var(--faint)}
 .chart-fact strong{display:block;font-size:13px;font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums}
 
+/* K 线模块（FR-3.1 ~ FR-3.9） */
+.kline-tabs{display:inline-flex;gap:4px}
+.kline-tab{border:1px solid var(--line-2);background:transparent;color:var(--faint);font-size:10px;font-family:inherit;line-height:1;padding:4px 10px;border-radius:999px;cursor:pointer;transition:color .15s,border-color .15s,background .15s}
+.kline-tab:hover{color:var(--text-2);border-color:var(--muted)}
+.kline-tab.active{color:var(--gold-2);border-color:var(--gold);background:rgba(231,180,92,.1)}
+html[data-theme="light"] .kline-tab.active{background:rgba(169,118,35,.1)}
+.kline-legend{font-size:10px;color:var(--faint)}
+.kline-legend i{display:inline-block;width:14px;height:2px;border-radius:2px;vertical-align:middle;margin:0 4px 2px 8px;background:var(--gold)}
+.kline-legend i.ma60{background:var(--blue)}
+.kline-wrap{margin-top:8px}
+.candle-svg{display:block;width:100%;height:auto;aspect-ratio:660/312;overflow:visible}
+.candle-grid{stroke:var(--line);stroke-width:1}
+.candle-tick{fill:var(--faint);font-size:10px}
+.candle-tick.date{text-anchor:middle}
+.candle line{stroke-width:1}
+.candle.up line{stroke:var(--up)}
+.candle.down line{stroke:var(--down)}
+.candle rect{fill:var(--up)}
+.candle.down rect{fill:var(--down)}
+.candle-hot rect{stroke:var(--gold-2);stroke-width:.6}
+.candle-ma{fill:none;stroke-width:1.4;stroke-linejoin:round}
+.candle-ma.ma20{stroke:var(--gold)}
+.candle-ma.ma60{stroke:var(--blue)}
+.vol-bar{opacity:.5}
+.vol-bar.up{fill:var(--up)}
+.vol-bar.down{fill:var(--down)}
+.candle-base{stroke:var(--line-2);stroke-width:1}
+.candle-vol-max{fill:var(--faint);font-size:10px}
+.candle-cross-v,.candle-cross-h{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3;pointer-events:none}
+.candle-hover-layer{cursor:crosshair}
+.candle-tip{position:absolute;top:6px;left:0;z-index:3;display:flex;flex-wrap:wrap;gap:2px 10px;padding:7px 10px;font-size:10.5px;line-height:1.5;color:var(--text-2);background:var(--panel-solid);border:1px solid var(--line-2);border-radius:10px;box-shadow:var(--shadow);pointer-events:none;min-width:150px}
+.candle-tip b{font-weight:600;color:var(--text)}
+.candle-tip .up{color:var(--up)}
+.candle-tip .down{color:var(--down)}
+.kline-loading{display:flex;align-items:center;justify-content:center;gap:10px;padding:46px 0;font-size:11.5px;color:var(--muted)}
+
 /* sections */
 .section-block{scroll-margin-top:110px;margin-top:40px}
 .section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:14px;flex-wrap:wrap}
@@ -1700,6 +1736,13 @@ async function getQuoteBatch(keys) {
 }
 
 /* ---------------- Tencent K-line ---------------- */
+/* K 线周期：同一腾讯接口切换 period 参数（FR-3.2） */
+const KLINE_PERIODS = ['day', 'week', 'month'];
+const KLINE_COUNT = { day: 320, week: 260, month: 140 };
+
+function normalizeKlinePeriod(period) {
+  return KLINE_PERIODS.includes(period) ? period : 'day';
+}
 function klineMetrics(points) {
   const closes = points.map((p) => num(p.close)).filter((n) => Number.isFinite(n) && n > 0);
   if (closes.length < 2) throw new Error('历史行情数据不足');
@@ -1740,7 +1783,8 @@ function klineMetrics(points) {
   };
 }
 
-async function getKline(stock, quote) {
+async function getKline(stock, quote, period = 'day') {
+  const p = normalizeKlinePeriod(period);
   let key = stock.klineCode || stock.quoteKey;
   if (stock.market === 'US') {
     if (quote && quote.rawCode) key = 'us' + quote.rawCode;
@@ -1750,13 +1794,15 @@ async function getKline(stock, quote) {
   }
   if (!key) throw new Error('缺少 K 线代码');
   const isUS = stock.market === 'US';
-  return cached('kline:' + key, TTL.kline, async () => {
+  return cached(`kline:${p}:${key}`, TTL.kline, async () => {
     const base = isUS ? API.usKline : API.kline;
-    const url = `${base}?param=${encodeURIComponent(key)},day,,,320,qfq`;
+    const count = KLINE_COUNT[p] || 320;
+    const url = `${base}?param=${encodeURIComponent(key)},${p},,,${count},qfq`;
     const data = await fetchJSON(url, { timeout: 15000 });
     const block = data && data.data && (data.data[key] || Object.values(data.data)[0]);
     if (!block) throw new Error('K 线数据为空');
-    const arr = block.qfqday || block.day || block.qfqweek || block.week || [];
+    /* A/美股前复权键为 qfqday/qfqweek/qfqmonth，港股直接为 day/week/month（FR-3.7） */
+    const arr = block[`qfq${p}`] || block[p] || [];
     const points = arr
       .map((row) => ({
         date: row[0],
@@ -1766,9 +1812,10 @@ async function getKline(stock, quote) {
         low: num(row[4]),
         volume: num(row[5], 0),
       }))
-      .filter((p) => Number.isFinite(p.close) && p.date);
+      .filter((p2) => Number.isFinite(p2.close) && p2.date);
     if (points.length < 5) throw new Error('K 线数据不足');
-    return { key, points, metrics: klineMetrics(points), source: '腾讯财经' };
+    /* 技术面指标仅在日线上有意义，周/月只返回原始点供图表使用 */
+    return { key, period: p, points, metrics: p === 'day' ? klineMetrics(points) : null, source: '腾讯财经' };
   });
 }
 
@@ -3112,6 +3159,224 @@ function renderSentimentBar(s) {
   </div>`;
 }
 
+/* ============================================================
+   Candlestick chart (FR-3.1 ~ FR-3.5, FR-3.8, FR-3.9)
+   纯 SVG：蜡烛 + MA20/MA60 + 成交量副图 + 十字光标悬浮详情
+   ============================================================ */
+
+const CANDLE_STORE = new Map(); // uid -> { pts, geom }
+const CANDLE_W = 660;
+const CANDLE_H = 312;
+
+function fmtVolCompact(v) {
+  if (!Number.isFinite(v) || v <= 0) return '—';
+  if (v >= 1e8) return (v / 1e8).toFixed(2) + '亿';
+  if (v >= 1e4) return (v / 1e4).toFixed(1) + '万';
+  return String(Math.round(v));
+}
+
+function maSeries(closes, n) {
+  const out = new Array(closes.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < closes.length; i++) {
+    sum += closes[i];
+    if (i >= n) sum -= closes[i - n];
+    if (i >= n - 1) out[i] = sum / n;
+  }
+  return out;
+}
+
+function maPath(vals, x, y) {
+  let d = '';
+  let open = false;
+  vals.forEach((v, i) => {
+    if (!Number.isFinite(v)) {
+      open = false;
+      return;
+    }
+    d += `${open ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)} `;
+    open = true;
+  });
+  return d.trim();
+}
+
+function renderCandlestick(points, opts = {}) {
+  const rows = (Array.isArray(points) ? points : [])
+    .map((p) => ({
+      date: p.date,
+      open: num(p.open),
+      close: num(p.close),
+      high: num(p.high),
+      low: num(p.low),
+      volume: num(p.volume, 0),
+    }))
+    .filter((p) => p.date && Number.isFinite(p.open) && Number.isFinite(p.close) && Number.isFinite(p.high) && Number.isFinite(p.low) && p.high >= p.low);
+
+  const want = Math.min(opts.window || 240, 300);
+  const pts = rows.slice(-Math.max(2, want));
+  if (pts.length < 2) return '';
+
+  /* 均线基于完整历史计算，再截取窗口，保证窗口边缘数值准确 */
+  const allCloses = rows.map((p) => p.close);
+  const ma20Full = maSeries(allCloses, 20).slice(-pts.length);
+  const ma60Full = maSeries(allCloses, 60).slice(-pts.length);
+
+  const padL = 8;
+  const padR = 58;
+  const mainTop = 10;
+  const mainH = 208;
+  const volTop = mainTop + mainH + 18;
+  const volH = 58;
+  const usableW = CANDLE_W - padL - padR;
+  const n = pts.length;
+  const slot = usableW / n;
+  const bodyW = Math.max(1, Math.min(slot * 0.62, 13));
+  const x = (i) => padL + slot * (i + 0.5);
+
+  const lows = pts.map((p) => p.low);
+  const highs = pts.map((p) => p.high);
+  const mas = [...ma20Full, ...ma60Full].filter(Number.isFinite);
+  const min = Math.min(...lows, ...mas);
+  const max = Math.max(...highs, ...mas);
+  const span = max - min || 1;
+  const yP = (v) => mainTop + mainH - ((v - min) / span) * mainH;
+
+  const volMax = Math.max(...pts.map((p) => p.volume), 1);
+  const yV = (v) => volTop + volH - (v / volMax) * volH;
+
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((r) => {
+    const v = min + span * (1 - r);
+    return `<line class="candle-grid" x1="${padL}" y1="${(mainTop + mainH * r).toFixed(1)}" x2="${padL + usableW}" y2="${(
+      mainTop +
+      mainH * r
+    ).toFixed(1)}"/><text class="candle-tick" x="${padL + usableW + 6}" y="${(mainTop + mainH * r + 3.5).toFixed(1)}">${fmtPrice(v)}</text>`;
+  }).join('');
+
+  const candles = pts
+    .map((p, i) => {
+      const up = p.close >= p.open;
+      const bodyTop = yP(Math.max(p.open, p.close));
+      const bodyH = Math.max(1, Math.abs(yP(p.open) - yP(p.close)));
+      const volH2 = Math.max(0.5, volH * (p.volume / volMax));
+      return `<g class="candle ${up ? 'up' : 'down'}" data-i="${i}"><line x1="${x(i).toFixed(1)}" y1="${yP(p.high).toFixed(
+        1
+      )}" x2="${x(i).toFixed(1)}" y2="${yP(p.low).toFixed(1)}"/><rect x="${(x(i) - bodyW / 2).toFixed(
+        1
+      )}" y="${bodyTop.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${bodyH.toFixed(1)}"/></g><rect class="vol-bar ${up ? 'up' : 'down'}" x="${(
+        x(i) -
+        bodyW / 2
+      ).toFixed(1)}" y="${yV(p.volume).toFixed(1)}" width="${bodyW.toFixed(1)}" height="${volH2.toFixed(1)}"/>`;
+    })
+    .join('');
+
+  const ma20Path = maPath(ma20Full, x, yP);
+  const ma60Path = maPath(ma60Full, x, yP);
+
+  const dateIdx = [0, Math.round((n - 1) / 3), Math.round(((n - 1) * 2) / 3), n - 1]
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .map((i) => `<text class="candle-tick date" x="${x(i).toFixed(1)}" y="${volTop + volH + 15}">${esc(pts[i].date)}</text>`)
+    .join('');
+
+  const id = uid('cndl');
+  CANDLE_STORE.set(id, {
+    pts,
+    geom: { padL, slot, n, mainTop, mainH, yP, volTop, volH },
+  });
+
+  return `<div class="candle-wrap">
+    <svg class="candle-svg" viewBox="0 0 ${CANDLE_W} ${CANDLE_H}" preserveAspectRatio="none" role="img" data-candle-id="${id}"
+      aria-label="K 线图：${n} 个交易区间的蜡烛与成交量">
+      ${ticks}
+      <path class="candle-ma ma60" d="${ma60Path}"></path>
+      <path class="candle-ma ma20" d="${ma20Path}"></path>
+      ${candles}
+      <line class="candle-base" x1="${padL}" y1="${volTop}" x2="${padL + usableW}" y2="${volTop}"/>
+      <text class="candle-vol-max" x="${padL + usableW + 6}" y="${(volTop + 9).toFixed(1)}">${fmtVolCompact(volMax)}</text>
+      ${dateIdx}
+      <line class="candle-cross-v" data-role="v" x1="0" y1="${mainTop}" x2="0" y2="${volTop + volH}" hidden></line>
+      <line class="candle-cross-h" data-role="h" x1="${padL}" y1="0" x2="${padL + usableW}" y2="0" hidden></line>
+      <rect class="candle-hover-layer" x="${padL}" y="${mainTop}" width="${usableW}" height="${volTop + volH - mainTop}" fill="transparent"></rect>
+    </svg>
+    <div class="candle-tip" hidden></div>
+  </div>`;
+}
+
+/* 悬浮/点选交互：十字光标 + 详情浮层（FR-3.5，触屏点选 FR-3.8） */
+function candleShowIndex(svg, i) {
+  const data = CANDLE_STORE.get(svg.dataset.candleId);
+  const wrap = svg.parentElement;
+  if (!data || !wrap) return;
+  const tip = wrap.querySelector('.candle-tip');
+  const vline = svg.querySelector('[data-role="v"]');
+  const hline = svg.querySelector('[data-role="h"]');
+  const hot = svg.querySelector('.candle-hot');
+  if (hot) hot.classList.remove('candle-hot');
+  const { pts, geom } = data;
+
+  if (i < 0 || i >= pts.length || !tip) {
+    if (tip) tip.hidden = true;
+    if (vline) vline.hidden = true;
+    if (hline) hline.hidden = true;
+    return;
+  }
+
+  const bar = svg.querySelector(`.candle[data-i="${i}"]`);
+  if (bar) bar.classList.add('candle-hot');
+  const gx = geom.padL + geom.slot * (i + 0.5);
+  const p = pts[i];
+  const prev = pts[i - 1];
+  const chg = prev && Number.isFinite(prev.close) ? (p.close / prev.close - 1) * 100 : null;
+  const up = p.close >= p.open;
+  if (vline) {
+    vline.setAttribute('x1', gx.toFixed(1));
+    vline.setAttribute('x2', gx.toFixed(1));
+    vline.hidden = false;
+  }
+  if (hline) {
+    hline.setAttribute('y1', geom.yP(p.close).toFixed(1));
+    hline.setAttribute('y2', geom.yP(p.close).toFixed(1));
+    hline.hidden = false;
+  }
+  tip.innerHTML = `<b class="${up ? 'up' : 'down'}">${esc(p.date)}</b>
+    <span>开 ${fmtPrice(p.open)}</span><span>收 <b class="${up ? 'up' : 'down'}">${fmtPrice(p.close)}</b></span>
+    <span>高 ${fmtPrice(p.high)}</span><span>低 ${fmtPrice(p.low)}</span>
+    ${chg !== null ? `<span class="${pctClass(chg)}">涨跌 ${fmtPct(chg)}</span>` : ''}
+    <span>量 ${fmtVolCompact(p.volume)}</span>`;
+  tip.hidden = false;
+  const svgW = svg.clientWidth || CANDLE_W;
+  const scale = svgW / CANDLE_W;
+  const left = clamp(gx * scale - tip.offsetWidth / 2, 4, Math.max(4, wrap.clientWidth - tip.offsetWidth - 4));
+  tip.style.left = `${left}px`;
+}
+
+function candleIndexFromEvent(svg, e) {
+  const rect = svg.getBoundingClientRect();
+  const vx = ((e.clientX - rect.left) / rect.width) * CANDLE_W;
+  const data = CANDLE_STORE.get(svg.dataset.candleId);
+  if (!data) return -1;
+  const { padL, slot, n } = data.geom;
+  return clamp(Math.floor((vx - padL) / slot), 0, n - 1);
+}
+
+function hydrateCandles(root = document) {
+  /* 先清理已离开 DOM 的缓存，避免 Map 无限增长 */
+  const alive = new Set($$('.candle-svg', root).map((svg) => svg.dataset.candleId));
+  Array.from(CANDLE_STORE.keys()).forEach((id) => {
+    if (!alive.has(id)) CANDLE_STORE.delete(id);
+  });
+
+  $$('.candle-svg', root).forEach((svg) => {
+    if (svg.dataset.candleBound) return;
+    svg.dataset.candleBound = '1';
+    svg.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch') return;
+      candleShowIndex(svg, candleIndexFromEvent(svg, e));
+    });
+    svg.addEventListener('pointerdown', (e) => candleShowIndex(svg, candleIndexFromEvent(svg, e)));
+    svg.addEventListener('pointerleave', () => candleShowIndex(svg, -1));
+  });
+}
+
 
 /* ===== js/30-render-home.js ===== */
 /* ============================================================
@@ -3636,29 +3901,49 @@ function renderScoreCard(score, createdAt) {
   </aside>`;
 }
 
+function chartPeriodTabs() {
+  const cur = state.klinePeriod || 'day';
+  return `<div class="kline-tabs" role="tablist" aria-label="K 线周期">${[['day', '日K'], ['week', '周K'], ['month', '月K']]
+    .map(
+      ([p, label]) =>
+        `<button class="kline-tab ${cur === p ? 'active' : ''}" type="button" role="tab" aria-selected="${cur === p}" data-action="kline-period" data-period="${p}">${label}</button>`
+    )
+    .join('')}</div>`;
+}
+
 function renderChartSection(kline) {
-  const m = kline.metrics;
+  /* 指标事实区始终基于日线数据（周/月线仅用于蜡烛展示） */
+  const dayK = (state.periodKlines && state.periodKlines.day) || (state.core && state.core.kline) || null;
+  const m = dayK && dayK.metrics;
   const pts = kline.points;
+  const period = kline.period || 'day';
+  const periodLabel = { day: '日K', week: '周K', month: '月K' }[period] || '日K';
   const first = pts[0];
   const last = pts[pts.length - 1];
+  /* FR-3.6：蜡烛渲染条件不满足时降级为原有 sparkline */
+  const candles = renderCandlestick(pts, { window: period === 'day' ? 240 : period === 'week' ? 260 : 140 });
+  const chartBody = candles
+    ? `<div class="kline-wrap">${candles}</div>`
+    : `<div class="spark-wrap">${renderSparkline(pts)}</div>`;
+  const facts = m
+    ? `<div class="chart-facts">
+    <div class="chart-fact"><label>近 20 日</label><strong class="${pctClass(m.r20)}">${fmtPct(m.r20)}</strong></div>
+    <div class="chart-fact"><label>近 60 日</label><strong class="${pctClass(m.r60)}">${fmtPct(m.r60)}</strong></div>
+    <div class="chart-fact"><label>近 120 日</label><strong class="${pctClass(m.r120)}">${fmtPct(m.r120)}</strong></div>
+    <div class="chart-fact"><label>最大回撤</label><strong class="down">${fmtPct(m.maxDrawdown)}</strong></div>
+    <div class="chart-fact"><label>均线形态</label><strong>${esc(m.trend)}</strong></div>
+    <div class="chart-fact"><label>年化波动</label><strong>${ratioText(m.volatility)}</strong></div>
+    <div class="chart-fact"><label>区间位置</label><strong>${fmtPrice(m.last)}</strong></div>
+  </div>`
+    : '';
   return `<article class="card chart-card">
     <div>
-      <div class="chart-head"><strong>近一年股价走势</strong><span>${esc(fmtDate(first.date))} — ${esc(
-    fmtDate(last.date)
-  )} · 前复权 · ${m.points} 个交易日</span></div>
-      <div class="spark-wrap">${renderSparkline(pts)}</div>
-      <div class="chart-axis"><span>${esc(first.date)}</span><span>年化波动 ${ratioText(m.volatility)}</span><span>${esc(
-    last.date
-  )}</span></div>
+      <div class="chart-head"><strong>股价 K 线</strong>${chartPeriodTabs()}
+        <span class="kline-legend" aria-hidden="true"><i class="ma20"></i>MA20<i class="ma60"></i>MA60</span>
+        <span>${esc(fmtDate(first.date))} — ${esc(fmtDate(last.date))} · ${period === 'day' ? '前复权 · ' : ''}${pts.length} 根${periodLabel}</span></div>
+      ${chartBody}
     </div>
-    <div class="chart-facts">
-      <div class="chart-fact"><label>近 20 日</label><strong class="${pctClass(m.r20)}">${fmtPct(m.r20)}</strong></div>
-      <div class="chart-fact"><label>近 60 日</label><strong class="${pctClass(m.r60)}">${fmtPct(m.r60)}</strong></div>
-      <div class="chart-fact"><label>近 120 日</label><strong class="${pctClass(m.r120)}">${fmtPct(m.r120)}</strong></div>
-      <div class="chart-fact"><label>最大回撤</label><strong class="down">${fmtPct(m.maxDrawdown)}</strong></div>
-      <div class="chart-fact"><label>均线形态</label><strong>${esc(m.trend)}</strong></div>
-      <div class="chart-fact"><label>区间位置</label><strong>${fmtPrice(m.last)}</strong></div>
-    </div>
+    ${facts}
   </article>`;
 }
 
@@ -3672,6 +3957,7 @@ function renderOverview(score, kline) {
     kline ? renderChartSection(kline) : emptyState({ icon: 'chart', title: '历史行情不足', desc: '无法绘制近一年走势，技术面维度已按不可用处理。' })
   }</div>`;
   hydrateIcons(overview);
+  hydrateCandles(overview);
 }
 
 function updateHeaderIndustry(profile) {
@@ -3681,14 +3967,17 @@ function updateHeaderIndustry(profile) {
   el.innerHTML = industry ? `<span class="badge">${esc(industry)}</span>` : '';
 }
 
-function updateChart(kline) {
+function updateChart(kline, loading = false) {
   const slot = $('#chartSlot') || $('#chartSection');
   if (!slot) return;
   if (!kline) {
-    slot.innerHTML = emptyState({ icon: 'chart', title: '历史行情不足', desc: '无法绘制近一年走势，技术面维度将按不可用处理。' });
+    slot.innerHTML = loading
+      ? `<article class="card chart-card"><div class="kline-loading"><span class="spinner"></span>正在获取 K 线数据…</div></article>`
+      : emptyState({ icon: 'chart', title: '历史行情不足', desc: '无法绘制近一年走势，技术面维度将按不可用处理。' });
     return;
   }
   slot.innerHTML = renderChartSection(kline);
+  hydrateCandles(slot);
 }
 
 /* ---------------- reports ---------------- */
@@ -3870,7 +4159,7 @@ function renderPeersSection(peers, market) {
   const source = peers.source || '东方财富行业板块';
   const profitNote = peers.profitPeriod
     ? `按 ${peers.profitPeriod} 归母净利从高到低`
-    : '按最新报告期归母净利从高到低';
+    : '按各公司最新报告期归母净利从高到低';
   const reportNote = market === 'A' ? '同行研报取近 6 个月最新 3 篇' : '同行研报仅覆盖 A 股';
   body.innerHTML = `<div class="peer-columns">
     <div class="peer-group">
@@ -4093,6 +4382,8 @@ const state = {
   industryName: '',
   industryStarted: false,
   pendingStock: null,
+  klinePeriod: 'day',
+  periodKlines: {},
   search: { items: [], active: -1, query: '', seq: 0 },
 };
 
@@ -4296,6 +4587,8 @@ async function analyzeStock(inputStock, opts = {}) {
   state.industryName = '';
   state.industryCode = '';
   state.industryStarted = false;
+  state.klinePeriod = 'day';
+  state.periodKlines = {};
   renderAnalysisSkeleton(stock);
   if (!opts.keepScroll) scrollTopSmooth();
 
@@ -4337,6 +4630,7 @@ function bindCoreData(token, quote) {
   getKline(stock, quote)
     .then((kline) => {
       if (token !== state.token) return;
+      state.periodKlines.day = kline;
       markCoreSettled('kline', kline);
       updateChart(kline);
     })
@@ -4430,6 +4724,35 @@ function refreshScore() {
   });
   state.score = score;
   renderOverview(score, state.core.kline);
+}
+
+/* ---------------- K 线周期切换（FR-3.2 / FR-3.6） ---------------- */
+function switchKlinePeriod(period) {
+  const p = normalizeKlinePeriod(period);
+  if (!state.stock || p === state.klinePeriod) return;
+  state.klinePeriod = p;
+  const token = state.token;
+  const cachedKline = state.periodKlines[p];
+  if (cachedKline) {
+    updateChart(cachedKline);
+    return;
+  }
+  const dayK = state.periodKlines.day || state.core.kline;
+  updateChart(null, true);
+  getKline(state.stock, state.quote, p)
+    .then((kline) => {
+      if (token !== state.token) return;
+      state.periodKlines[p] = kline;
+      updateChart(kline);
+    })
+    .catch(() => {
+      /* FR-3.6：周/月获取失败降级回日K */
+      if (token !== state.token) return;
+      toast(`${p === 'week' ? '周' : '月'}K 数据获取失败，已切回日K`, 'error');
+      state.klinePeriod = 'day';
+      if (dayK) updateChart(dayK);
+      else updateChart(null);
+    });
 }
 
 function maybeStartIndustry() {
@@ -4854,6 +5177,11 @@ function handleClick(e) {
     if (action === 'refresh') {
       e.preventDefault();
       refreshCurrent();
+      return;
+    }
+    if (action === 'kline-period') {
+      e.preventDefault();
+      switchKlinePeriod(actionEl.dataset.period);
       return;
     }
     if (action === 'demo') {
