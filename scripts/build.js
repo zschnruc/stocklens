@@ -8,6 +8,8 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const src = path.join(root, 'src');
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const buildTime = new Date().toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
 
 function readDir(dir, ext) {
   const full = path.join(src, dir);
@@ -32,7 +34,13 @@ if (!css || !js) {
 const html = template
   .replace('/*__STYLES__*/', () => css)
   .replace('/*__APP__*/', () => js)
-  .replace('__BUILD_TIME__', new Date().toISOString());
+  .replace(/__SL_VERSION__/g, 'v' + pkg.version)
+  .replace(/__SL_BUILD_TIME__/g, buildTime);
+
+if (html.includes('__SL_VERSION__') || html.includes('__SL_BUILD_TIME__')) {
+  console.error('模板中存在未替换的版本占位符');
+  process.exit(1);
+}
 
 fs.writeFileSync(path.join(root, 'index.html'), html);
 const kb = (Buffer.byteLength(html) / 1024).toFixed(1);
