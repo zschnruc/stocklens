@@ -140,3 +140,221 @@ function renderSentimentBar(s) {
     <span><i style="background:var(--green)"></i>负面 ${s.neg}</span>
   </div>`;
 }
+
+/* ============================================================
+   Candlestick chart (FR-3.1 ~ FR-3.5, FR-3.8, FR-3.9)
+   纯 SVG：蜡烛 + MA20/MA60 + 成交量副图 + 十字光标悬浮详情
+   ============================================================ */
+
+const CANDLE_STORE = new Map(); // uid -> { pts, geom }
+const CANDLE_W = 660;
+const CANDLE_H = 312;
+
+function fmtVolCompact(v) {
+  if (!Number.isFinite(v) || v <= 0) return '—';
+  if (v >= 1e8) return (v / 1e8).toFixed(2) + '亿';
+  if (v >= 1e4) return (v / 1e4).toFixed(1) + '万';
+  return String(Math.round(v));
+}
+
+function maSeries(closes, n) {
+  const out = new Array(closes.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < closes.length; i++) {
+    sum += closes[i];
+    if (i >= n) sum -= closes[i - n];
+    if (i >= n - 1) out[i] = sum / n;
+  }
+  return out;
+}
+
+function maPath(vals, x, y) {
+  let d = '';
+  let open = false;
+  vals.forEach((v, i) => {
+    if (!Number.isFinite(v)) {
+      open = false;
+      return;
+    }
+    d += `${open ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)} `;
+    open = true;
+  });
+  return d.trim();
+}
+
+function renderCandlestick(points, opts = {}) {
+  const rows = (Array.isArray(points) ? points : [])
+    .map((p) => ({
+      date: p.date,
+      open: num(p.open),
+      close: num(p.close),
+      high: num(p.high),
+      low: num(p.low),
+      volume: num(p.volume, 0),
+    }))
+    .filter((p) => p.date && Number.isFinite(p.open) && Number.isFinite(p.close) && Number.isFinite(p.high) && Number.isFinite(p.low) && p.high >= p.low);
+
+  const want = Math.min(opts.window || 240, 300);
+  const pts = rows.slice(-Math.max(2, want));
+  if (pts.length < 2) return '';
+
+  /* 均线基于完整历史计算，再截取窗口，保证窗口边缘数值准确 */
+  const allCloses = rows.map((p) => p.close);
+  const ma20Full = maSeries(allCloses, 20).slice(-pts.length);
+  const ma60Full = maSeries(allCloses, 60).slice(-pts.length);
+
+  const padL = 8;
+  const padR = 58;
+  const mainTop = 10;
+  const mainH = 208;
+  const volTop = mainTop + mainH + 18;
+  const volH = 58;
+  const usableW = CANDLE_W - padL - padR;
+  const n = pts.length;
+  const slot = usableW / n;
+  const bodyW = Math.max(1, Math.min(slot * 0.62, 13));
+  const x = (i) => padL + slot * (i + 0.5);
+
+  const lows = pts.map((p) => p.low);
+  const highs = pts.map((p) => p.high);
+  const mas = [...ma20Full, ...ma60Full].filter(Number.isFinite);
+  const min = Math.min(...lows, ...mas);
+  const max = Math.max(...highs, ...mas);
+  const span = max - min || 1;
+  const yP = (v) => mainTop + mainH - ((v - min) / span) * mainH;
+
+  const volMax = Math.max(...pts.map((p) => p.volume), 1);
+  const yV = (v) => volTop + volH - (v / volMax) * volH;
+
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((r) => {
+    const v = min + span * (1 - r);
+    return `<line class="candle-grid" x1="${padL}" y1="${(mainTop + mainH * r).toFixed(1)}" x2="${padL + usableW}" y2="${(
+      mainTop +
+      mainH * r
+    ).toFixed(1)}"/><text class="candle-tick" x="${padL + usableW + 6}" y="${(mainTop + mainH * r + 3.5).toFixed(1)}">${fmtPrice(v)}</text>`;
+  }).join('');
+
+  const candles = pts
+    .map((p, i) => {
+      const up = p.close >= p.open;
+      const bodyTop = yP(Math.max(p.open, p.close));
+      const bodyH = Math.max(1, Math.abs(yP(p.open) - yP(p.close)));
+      const volH2 = Math.max(0.5, volH * (p.volume / volMax));
+      return `<g class="candle ${up ? 'up' : 'down'}" data-i="${i}"><line x1="${x(i).toFixed(1)}" y1="${yP(p.high).toFixed(
+        1
+      )}" x2="${x(i).toFixed(1)}" y2="${yP(p.low).toFixed(1)}"/><rect x="${(x(i) - bodyW / 2).toFixed(
+        1
+      )}" y="${bodyTop.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${bodyH.toFixed(1)}"/></g><rect class="vol-bar ${up ? 'up' : 'down'}" x="${(
+        x(i) -
+        bodyW / 2
+      ).toFixed(1)}" y="${yV(p.volume).toFixed(1)}" width="${bodyW.toFixed(1)}" height="${volH2.toFixed(1)}"/>`;
+    })
+    .join('');
+
+  const ma20Path = maPath(ma20Full, x, yP);
+  const ma60Path = maPath(ma60Full, x, yP);
+
+  const dateIdx = [0, Math.round((n - 1) / 3), Math.round(((n - 1) * 2) / 3), n - 1]
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .map((i) => `<text class="candle-tick date" x="${x(i).toFixed(1)}" y="${volTop + volH + 15}">${esc(pts[i].date)}</text>`)
+    .join('');
+
+  const id = uid('cndl');
+  CANDLE_STORE.set(id, {
+    pts,
+    geom: { padL, slot, n, mainTop, mainH, yP, volTop, volH },
+  });
+
+  return `<div class="candle-wrap">
+    <svg class="candle-svg" viewBox="0 0 ${CANDLE_W} ${CANDLE_H}" preserveAspectRatio="none" role="img" data-candle-id="${id}"
+      aria-label="K 线图：${n} 个交易区间的蜡烛与成交量">
+      ${ticks}
+      <path class="candle-ma ma60" d="${ma60Path}"></path>
+      <path class="candle-ma ma20" d="${ma20Path}"></path>
+      ${candles}
+      <line class="candle-base" x1="${padL}" y1="${volTop}" x2="${padL + usableW}" y2="${volTop}"/>
+      <text class="candle-vol-max" x="${padL + usableW + 6}" y="${(volTop + 9).toFixed(1)}">${fmtVolCompact(volMax)}</text>
+      ${dateIdx}
+      <line class="candle-cross-v" data-role="v" x1="0" y1="${mainTop}" x2="0" y2="${volTop + volH}" hidden></line>
+      <line class="candle-cross-h" data-role="h" x1="${padL}" y1="0" x2="${padL + usableW}" y2="0" hidden></line>
+      <rect class="candle-hover-layer" x="${padL}" y="${mainTop}" width="${usableW}" height="${volTop + volH - mainTop}" fill="transparent"></rect>
+    </svg>
+    <div class="candle-tip" hidden></div>
+  </div>`;
+}
+
+/* 悬浮/点选交互：十字光标 + 详情浮层（FR-3.5，触屏点选 FR-3.8） */
+function candleShowIndex(svg, i) {
+  const data = CANDLE_STORE.get(svg.dataset.candleId);
+  const wrap = svg.parentElement;
+  if (!data || !wrap) return;
+  const tip = wrap.querySelector('.candle-tip');
+  const vline = svg.querySelector('[data-role="v"]');
+  const hline = svg.querySelector('[data-role="h"]');
+  const hot = svg.querySelector('.candle-hot');
+  if (hot) hot.classList.remove('candle-hot');
+  const { pts, geom } = data;
+
+  if (i < 0 || i >= pts.length || !tip) {
+    if (tip) tip.hidden = true;
+    if (vline) vline.hidden = true;
+    if (hline) hline.hidden = true;
+    return;
+  }
+
+  const bar = svg.querySelector(`.candle[data-i="${i}"]`);
+  if (bar) bar.classList.add('candle-hot');
+  const gx = geom.padL + geom.slot * (i + 0.5);
+  const p = pts[i];
+  const prev = pts[i - 1];
+  const chg = prev && Number.isFinite(prev.close) ? (p.close / prev.close - 1) * 100 : null;
+  const up = p.close >= p.open;
+  if (vline) {
+    vline.setAttribute('x1', gx.toFixed(1));
+    vline.setAttribute('x2', gx.toFixed(1));
+    vline.hidden = false;
+  }
+  if (hline) {
+    hline.setAttribute('y1', geom.yP(p.close).toFixed(1));
+    hline.setAttribute('y2', geom.yP(p.close).toFixed(1));
+    hline.hidden = false;
+  }
+  tip.innerHTML = `<b class="${up ? 'up' : 'down'}">${esc(p.date)}</b>
+    <span>开 ${fmtPrice(p.open)}</span><span>收 <b class="${up ? 'up' : 'down'}">${fmtPrice(p.close)}</b></span>
+    <span>高 ${fmtPrice(p.high)}</span><span>低 ${fmtPrice(p.low)}</span>
+    ${chg !== null ? `<span class="${pctClass(chg)}">涨跌 ${fmtPct(chg)}</span>` : ''}
+    <span>量 ${fmtVolCompact(p.volume)}</span>`;
+  tip.hidden = false;
+  const svgW = svg.clientWidth || CANDLE_W;
+  const scale = svgW / CANDLE_W;
+  const left = clamp(gx * scale - tip.offsetWidth / 2, 4, Math.max(4, wrap.clientWidth - tip.offsetWidth - 4));
+  tip.style.left = `${left}px`;
+}
+
+function candleIndexFromEvent(svg, e) {
+  const rect = svg.getBoundingClientRect();
+  const vx = ((e.clientX - rect.left) / rect.width) * CANDLE_W;
+  const data = CANDLE_STORE.get(svg.dataset.candleId);
+  if (!data) return -1;
+  const { padL, slot, n } = data.geom;
+  return clamp(Math.floor((vx - padL) / slot), 0, n - 1);
+}
+
+function hydrateCandles(root = document) {
+  /* 先清理已离开 DOM 的缓存，避免 Map 无限增长 */
+  const alive = new Set($$('.candle-svg', root).map((svg) => svg.dataset.candleId));
+  Array.from(CANDLE_STORE.keys()).forEach((id) => {
+    if (!alive.has(id)) CANDLE_STORE.delete(id);
+  });
+
+  $$('.candle-svg', root).forEach((svg) => {
+    if (svg.dataset.candleBound) return;
+    svg.dataset.candleBound = '1';
+    svg.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch') return;
+      candleShowIndex(svg, candleIndexFromEvent(svg, e));
+    });
+    svg.addEventListener('pointerdown', (e) => candleShowIndex(svg, candleIndexFromEvent(svg, e)));
+    svg.addEventListener('pointerleave', () => candleShowIndex(svg, -1));
+  });
+}
