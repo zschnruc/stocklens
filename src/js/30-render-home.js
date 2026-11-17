@@ -151,7 +151,10 @@ function homeHTML() {
           : ''
       }
       ${watchRowHTML()}
-      <button class="demo-link" type="button" data-action="demo">${ico('spark', 'sm')}没有目标？先看一份完整的示例研判</button>
+      <div class="home-cta-row">
+        <button class="btn primary" type="button" data-action="screener">${ico('filter', 'sm')}查看 80 分以上高分榜</button>
+        <button class="demo-link" type="button" data-action="demo">${ico('spark', 'sm')}没有目标？先看一份示例研判</button>
+      </div>
 
       <div class="hero-stats">
         <div class="hero-stat"><strong>3 地市场</strong><span>A 股 · 港股 · 美股</span></div>

@@ -23,6 +23,18 @@ const state = {
   technical: null,
   subChart: 'volume',
   bollOn: false,
+  screener: {
+    threshold: SCREENER_DEFAULT_THRESHOLD,
+    size: SCREENER_DEFAULT_SIZE,
+    rows: [],
+    ranAt: null,
+    stopped: false,
+    error: '',
+    running: false,
+    token: 0,
+    progressPct: 0,
+    progressText: '准备中…',
+  },
   search: { items: [], active: -1, query: '', seq: 0 },
 };
 
@@ -131,8 +143,10 @@ function syncTopbar(route) {
   state.route = route;
   const topSearch = $('#topSearchTrigger');
   const printBtn = $('#printBtn');
+  const screenerBtn = $('#topScreenerBtn');
   if (topSearch) topSearch.hidden = route !== 'analysis';
   if (printBtn) printBtn.hidden = route !== 'analysis';
+  if (screenerBtn) screenerBtn.classList.toggle('active', route === 'screener');
   document.body.dataset.route = route;
 }
 
@@ -176,6 +190,12 @@ function addRecent(stock) {
 
 /* ---------------- routing ---------------- */
 function routeFromHash() {
+  if ((location.hash || '').startsWith('#/screener')) {
+    state.pendingStock = null;
+    ++state.token; /* 中止可能进行中的个股研判 */
+    enterScreener();
+    return;
+  }
   const stock = stockFromHash();
   if (!stock) {
     if ((location.hash || '').startsWith('#/stock/')) {
@@ -207,6 +227,96 @@ function goHome() {
   } else {
     location.hash = '';
   }
+}
+
+/* ---------------- 高分榜（反向选股）编排 ---------------- */
+function goScreener() {
+  if ((location.hash || '') === '#/screener') {
+    enterScreener();
+  } else {
+    location.hash = '#/screener';
+  }
+}
+
+function enterScreener() {
+  ++state.screener.token; /* 取消上一次可能仍在进行的扫描 */
+  state.screener.running = false;
+  state.screener.rows = [];
+  state.screener.ranAt = null;
+  state.screener.stopped = false;
+  state.screener.error = '';
+  state.screener.progressPct = 0;
+  state.screener.progressText = '准备中…';
+  renderScreenerPage();
+  startScreener();
+}
+
+async function runScreenerFlow() {
+  const sc = state.screener;
+  const token = ++sc.token;
+  sc.running = true;
+  sc.rows = [];
+  sc.stopped = false;
+  sc.error = '';
+  sc.progressPct = 0;
+  sc.progressText = '正在获取候选池…';
+  syncScreenerButtons(true);
+  refreshScreenerResult();
+  try {
+    const result = await runScreener({
+      size: sc.size,
+      onProgress: (done, total, row) => {
+        if (token !== sc.token) return;
+        updateScreenerProgress(done, total, row);
+        if (row) sc.rows.push(row);
+        refreshScreenerResult();
+      },
+      shouldStop: () => token !== sc.token,
+    });
+    if (token !== sc.token) return;
+    sc.rows = result.rows;
+    sc.ranAt = result.ranAt;
+    sc.stopped = !!result.stopped;
+    refreshScreenerResult();
+  } catch (err) {
+    if (token !== sc.token) return;
+    sc.error = err && err.message ? err.message : '扫描失败，请稍后重试';
+    sc.rows = [];
+    refreshScreenerResult();
+  } finally {
+    if (token !== sc.token) return;
+    sc.running = false;
+    syncScreenerButtons(false);
+  }
+}
+
+function startScreener() {
+  if (state.screener.running) return;
+  runScreenerFlow();
+}
+
+function stopScreener() {
+  const sc = state.screener;
+  if (!sc.running) return;
+  ++sc.token;
+  sc.running = false;
+  sc.stopped = true;
+  syncScreenerButtons(false);
+  refreshScreenerResult();
+  toast('扫描已停止，已完成的结果保留在下表', 'info');
+}
+
+function syncScreenerButtons(running) {
+  const runBtn = $('#screenerRunBtn');
+  const stopBtn = $('#screenerStopBtn');
+  const prog = $('#screenerProgress');
+  if (runBtn) {
+    runBtn.disabled = running;
+    const label = runBtn.querySelector('span:last-child');
+    if (label) label.textContent = running ? '扫描中…' : '开始扫描';
+  }
+  if (stopBtn) stopBtn.hidden = !running;
+  if (prog) prog.hidden = !running;
 }
 
 /* ---------------- analysis orchestration ---------------- */
@@ -926,6 +1036,27 @@ function handleClick(e) {
       goStock(HOT_STOCKS[0]);
       return;
     }
+    if (action === 'screener') {
+      e.preventDefault();
+      goScreener();
+      return;
+    }
+    if (action === 'screener-run') {
+      e.preventDefault();
+      startScreener();
+      return;
+    }
+    if (action === 'screener-stop') {
+      e.preventDefault();
+      stopScreener();
+      return;
+    }
+    if (action === 'screener-open') {
+      e.preventDefault();
+      const stockEl = actionEl.closest('[data-market][data-code]');
+      if (stockEl) goStock(stockFromDataset(stockEl.dataset));
+      return;
+    }
   }
 
   const sug = e.target.closest('[data-sug-index]');
@@ -966,6 +1097,14 @@ function initEvents() {
   document.addEventListener('input', (e) => {
     if (e.target && e.target.id === 'stockSearch') handleSearchInput(e.target);
     if (e.target && e.target.matches('[data-filter-target]')) updateFilter(e.target);
+    if (e.target && e.target.id === 'screenerThreshold') updateScreenerThreshold(e.target.value);
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target && e.target.id === 'screenerSize') {
+      state.screener.size = Number(e.target.value) || SCREENER_DEFAULT_SIZE;
+      if (state.screener.running) stopScreener();
+      toast(`候选池已切换，请点击「开始扫描」重新获取`, 'info');
+    }
   });
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'k') {
@@ -993,6 +1132,10 @@ function init() {
   hydrateIcons(document);
   syncThemeButton();
   initEvents();
+  if ((location.hash || '').startsWith('#/screener')) {
+    enterScreener();
+    return;
+  }
   const route = stockFromHash();
   if (route) analyzeStock(route);
   else {

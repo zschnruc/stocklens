@@ -1134,6 +1134,121 @@ html[data-theme="light"] .tech-sig.neutral{background:rgba(169,118,35,.07)}
   .tech-radar-area{fill-opacity:.06}
 }
 
+
+/* ===== css/23-screener.css ===== */
+/* ============================================================
+   高分榜 / 反向选股 样式
+   ============================================================ */
+.screener-page{max-width:1180px;margin:0 auto;padding:46px 22px 80px}
+
+/* hero */
+.screener-hero{margin-bottom:26px}
+.screener-hero h1{font-family:var(--serif);font-size:clamp(30px,5vw,46px);line-height:1.28;margin:14px 0 12px;letter-spacing:.01em}
+.screener-hero h1 span{color:var(--gold)}
+.screener-hero .lede{max-width:760px;color:var(--text-2);font-size:14px;margin:0 0 12px}
+.screener-hero-note{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:11.5px;padding:7px 11px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2)}
+
+/* controls */
+.screener-controls{padding:16px 18px;margin-bottom:20px}
+.screener-control-main{display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap}
+.screener-range{display:flex;flex-direction:column;gap:5px;flex:1 1 300px;min-width:240px}
+.screener-range>span:first-child{font-size:12px;color:var(--text-2)}
+.screener-range b{color:var(--gold);font-size:16px;font-family:var(--mono)}
+.screener-range input[type="range"]{width:100%;accent-color:var(--gold);cursor:pointer;height:18px}
+.range-hint{font-size:10px;color:var(--faint)}
+.screener-size{display:flex;flex-direction:column;gap:5px}
+.screener-size>span{font-size:12px;color:var(--text-2)}
+.screener-size select{height:34px;padding:0 10px;color:var(--text);background:var(--panel-solid);border:1px solid var(--line-2);border-radius:9px;font-family:var(--sans);font-size:12px;cursor:pointer}
+.screener-progress{display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.screener-progress-track{flex:1;height:6px;border-radius:6px;background:var(--panel-2);overflow:hidden}
+.screener-progress-track i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--gold),var(--teal));transition:width .3s ease}
+.screener-progress>span{font-size:11px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+
+/* summary */
+.screener-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.ss-card{padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--panel);display:flex;flex-direction:column;gap:2px}
+.ss-card>span{font-size:11px;color:var(--muted)}
+.ss-card b{font-family:var(--mono);font-size:27px;line-height:1.2;color:var(--text)}
+.ss-card small{font-size:10px;color:var(--faint)}
+.ss-card.gold b{color:var(--gold)}
+.ss-card.teal b{color:var(--teal)}
+.screener-meta{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-bottom:10px}
+.screener-notice{display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:10px;font-size:12px;margin-bottom:12px}
+.screener-notice b{font-family:var(--mono)}
+.screener-notice.ok{color:var(--teal);background:rgba(88,211,195,.08);border:1px solid rgba(88,211,195,.22)}
+.screener-notice.warn{color:var(--gold);background:rgba(231,180,92,.08);border:1px solid rgba(231,180,92,.22)}
+.screener-disclaimer{margin-top:18px}
+
+/* table */
+.screener-table-card{padding:0;overflow:hidden}
+.screener-table-scroll{overflow-x:auto}
+.screener-table{width:100%;border-collapse:collapse;font-size:12px;min-width:980px}
+.screener-table th{text-align:left;padding:12px 12px;font-size:10.5px;font-weight:500;color:var(--muted);background:var(--panel-2);border-bottom:1px solid var(--line);white-space:nowrap;letter-spacing:.03em}
+.screener-table td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.screener-table tbody tr:last-child td{border-bottom:none}
+.screener-row:hover{background:rgba(255,255,255,.025)}
+.screener-row.hit{background:linear-gradient(90deg,rgba(231,180,92,.1),transparent 60%)}
+.screener-row.nodata{opacity:.5}
+.sr-rank{white-space:nowrap}
+.rank-num{font-family:var(--mono);font-size:14px;color:var(--muted)}
+.rank-num.gold{color:var(--gold);font-weight:700}
+.hit-mark{display:inline-block;margin-left:6px;font-size:9px;color:var(--gold);border:1px solid rgba(231,180,92,.3);border-radius:5px;padding:0 4px}
+.sr-name{min-width:150px}
+.sr-stock-btn{display:block;font-size:12.5px;color:var(--text);background:none;border:none;padding:0;cursor:pointer;text-align:left;font-weight:600}
+.sr-stock-btn:hover{color:var(--gold)}
+.sr-stock-btn .hot-chg{display:none}
+.sr-meta{font-size:10px;color:var(--faint);font-family:var(--mono)}
+.sr-price{white-space:nowrap;font-variant-numeric:tabular-nums}
+.sr-price b{display:block;font-family:var(--mono);font-size:12.5px}
+.sr-price span{font-size:10.5px;font-family:var(--mono)}
+.sr-score{white-space:nowrap}
+.sr-score-num{display:inline-block;font-family:var(--mono);font-size:21px;font-weight:700;line-height:1;vertical-align:middle;margin-right:7px}
+.sr-dims{min-width:290px}
+.sd-cell{display:grid;grid-template-columns:30px 1fr 25px;align-items:center;gap:7px;margin:2px 0;font-size:10px}
+.sd-label{color:var(--muted)}
+.sd-bar{height:5px;border-radius:5px;background:var(--panel-2);overflow:hidden}
+.sd-bar i{display:block;height:100%;border-radius:5px}
+.sd-bar i.teal{background:var(--teal)}
+.sd-bar i.blue{background:var(--blue)}
+.sd-bar i.orange{background:var(--orange)}
+.sd-bar i.red{background:var(--red)}
+.sd-bar i.muted{background:var(--faint)}
+.sd-num{font-family:var(--mono);text-align:right;color:var(--text-2)}
+.sd-num.muted{color:var(--faint)}
+.sr-cover{white-space:nowrap}
+.sr-action{text-align:right}
+
+/* empty */
+.screener-empty{padding:26px}
+
+/* topbar nav button */
+.top-nav-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border:1px solid var(--line-2);border-radius:9px;background:var(--panel-2);color:var(--text-2);font-size:11.5px;cursor:pointer;transition:.18s}
+.top-nav-btn:hover{color:var(--gold);border-color:rgba(231,180,92,.35);transform:translateY(-1px)}
+.top-nav-btn.active{color:var(--gold);border-color:rgba(231,180,92,.45);background:rgba(231,180,92,.09)}
+.top-nav-btn .ico{width:15px;height:15px}
+.top-nav-btn .ico svg{width:15px;height:15px}
+
+/* home CTA */
+.home-cta-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:14px}
+.home-cta-row .demo-link{margin-top:0}
+
+@media(max-width:860px){
+  .screener-summary{grid-template-columns:repeat(2,1fr)}
+  .screener-page{padding:32px 16px 60px}
+}
+@media(max-width:520px){
+  .top-nav-label{display:none}
+  .top-nav-btn{padding:0 9px}
+  .screener-summary{grid-template-columns:repeat(2,1fr)}
+  .screener-control-main{gap:12px}
+}
+
+@media print{
+  .screener-controls,.top-nav-btn,.screener-action,.sr-action{display:none!important}
+  .screener-page{padding:0;max-width:none}
+  .screener-table{min-width:0}
+}
+
 </style>
 </head>
 <body>
@@ -1157,6 +1272,9 @@ html[data-theme="light"] .tech-sig.neutral{background:rgba(169,118,35,.07)}
     </button>
 
     <div class="top-actions">
+      <button class="top-nav-btn" type="button" data-action="screener" id="topScreenerBtn" title="高分榜 · 80 分以上 A 股">
+        <span class="ico" data-icon="filter"></span><span class="top-nav-label">高分榜</span>
+      </button>
       <span class="market-live" title="数据来自公开行情接口">
         <i></i><span class="market-live-text">公开数据</span>
       </span>
@@ -1183,7 +1301,7 @@ html[data-theme="light"] .tech-sig.neutral{background:rgba(169,118,35,.07)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v1.3.0 · 构建于 2026/11/17 10:58:47</p>
+      <p>研值 StockLens v1.4.0 · 构建于 2026/11/17 11:13:18</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -4176,6 +4294,163 @@ function analyzeTechnical(points) {
 }
 
 
+/* ===== js/24-screener.js ===== */
+/* ============================================================
+   Screener — A 股热门榜单批量评分（反向选股）
+   纯前端：候选池来自东财 push2 榜单，四维数据复用既有 API 层，
+   逐只调用 computeScore，缺失维度按既有降级逻辑处理，不臆造分数。
+   ============================================================ */
+'use strict';
+
+const SCREENER_DEFAULT_SIZE = 40;
+const SCREENER_DEFAULT_THRESHOLD = 80;
+const SCREENER_CONCURRENCY = 4;
+
+/* 沪深 A 股（主板 / 创业板 / 科创板），按成交额排序取热门候选 */
+function getScreenerCandidates(size = SCREENER_DEFAULT_SIZE) {
+  const n = clamp(Math.round(Number(size) || SCREENER_DEFAULT_SIZE), 10, 100);
+  return cached(`screener-candidates:${n}`, TTL.boards, async () => {
+    const params = new URLSearchParams({
+      pn: '1',
+      pz: String(n),
+      po: '1',
+      np: '1',
+      fltt: '2',
+      invt: '2',
+      fid: 'f6',
+      fs: 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23',
+      fields: 'f12,f13,f14,f6,f20',
+    });
+    const data = await emJsonp(`${API.push2}clist/get?${params}`);
+    const diff = data && data.data && data.data.diff;
+    const rows = Array.isArray(diff) ? diff : diff ? Object.values(diff) : [];
+    return rows
+      .map(normalizeScreenerRow)
+      .filter(Boolean)
+      .slice(0, n);
+  });
+}
+
+/* 纯函数：push2 榜单行 → 可复用 stock 对象 */
+function normalizeScreenerRow(r) {
+  if (!r) return null;
+  const code = String(r.f12 || '').replace(/\D/g, '').slice(0, 6);
+  if (code.length !== 6) return null;
+  const name = stripTags(String(r.f14 || code));
+  if (/ST|退|\*/.test(name)) return null;
+  const prefix = /^(6|9)/.test(code) ? 'sh' : /^(4|8)/.test(code) ? 'bj' : 'sz';
+  return {
+    market: 'A',
+    code,
+    name,
+    quoteKey: prefix + code,
+    klineCode: prefix + code,
+    rawCode: code,
+    amount: num(r.f6),
+    marketCap: num(r.f20) != null ? num(r.f20) / 1e8 : null,
+  };
+}
+
+/* 纯函数：对单只候选股的四维数据调用既有评分引擎 */
+function scoreScreenerCandidate({ stock, quote, kline, reports, financials, news }) {
+  return computeScore({
+    market: 'A',
+    quote,
+    kline,
+    reports,
+    financials,
+    news,
+  });
+}
+
+/* 拉取单只候选股的完整四维数据；任何单项失败都降级为 null，不阻断整轮扫描 */
+async function fetchCandidateData(stock, quote) {
+  const [kline, reports, financials, news] = await Promise.all([
+    getKline(stock, quote).catch(() => null),
+    getStockReports(stock).catch(() => ({ supported: false, list: [] })),
+    getFinancials(stock).catch(() => null),
+    getNews(stock).catch(() => []),
+  ]);
+  return { kline, reports, financials, news };
+}
+
+/* 纯函数：按综合分降序排名（无分者置末），并写入 rank */
+function rankScreenerRows(rows) {
+  const list = Array.isArray(rows) ? rows.slice() : [];
+  list.sort((a, b) => {
+    const av = a && Number.isFinite(a.score && a.score.total) ? a.score.total : -1;
+    const bv = b && Number.isFinite(b.score && b.score.total) ? b.score.total : -1;
+    if (av !== bv) return bv - av;
+    return String((a && a.stock && a.stock.code) || '').localeCompare(String((b && b.stock && b.stock.code) || ''));
+  });
+  list.forEach((row, i) => {
+    row.rank = i + 1;
+  });
+  return list;
+}
+
+/* 纯函数：按阈值筛选（供渲染层与测试复用） */
+function filterScreenerRows(rows, threshold) {
+  const t = Number(threshold);
+  const limit = Number.isFinite(t) ? t : SCREENER_DEFAULT_THRESHOLD;
+  return (Array.isArray(rows) ? rows : []).filter(
+    (r) => r && r.score && Number.isFinite(r.score.total) && r.score.total >= limit
+  );
+}
+
+/* 主流程：候选池 → 批量行情 → 受控并发评分 → 排名
+   onProgress(done, total, row) 逐只回调；shouldStop() 返回 true 时中止。 */
+async function runScreener({ size = SCREENER_DEFAULT_SIZE, onProgress, shouldStop } = {}) {
+  const candidates = await getScreenerCandidates(size);
+  if (!candidates.length) throw new Error('热门榜单暂不可用，请稍后重试');
+
+  if (shouldStop && shouldStop()) return { rows: [], ranAt: new Date(), candidates: candidates.length, stopped: true };
+
+  const quoteMap = await getQuoteBatch(candidates.map((s) => s.quoteKey));
+  const usable = candidates.filter((s) => quoteMap.has(s.quoteKey));
+  if (!usable.length) throw new Error('行情接口暂不可用，请稍后重试');
+
+  const rows = [];
+  let cursor = 0;
+  let done = 0;
+  const worker = async () => {
+    while (cursor < usable.length) {
+      if (shouldStop && shouldStop()) return;
+      const stock = usable[cursor++];
+      const quote = quoteMap.get(stock.quoteKey);
+      let row;
+      try {
+        const data = await fetchCandidateData(stock, quote);
+        row = {
+          stock,
+          quote,
+          kline: data.kline,
+          score: scoreScreenerCandidate({ stock, quote, ...data }),
+        };
+      } catch (e) {
+        row = { stock, quote, score: computeScore({ market: 'A', quote }) };
+      }
+      rows.push(row);
+      done += 1;
+      if (onProgress) onProgress(done, usable.length, row);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(SCREENER_CONCURRENCY, usable.length) }, () => worker())
+  );
+
+  const stopped = !!(shouldStop && shouldStop());
+  return {
+    rows: rankScreenerRows(rows),
+    ranAt: new Date(),
+    candidates: candidates.length,
+    scanned: usable.length,
+    failed: rows.filter((r) => !r.score || !Number.isFinite(r.score.total)).length,
+    stopped,
+  };
+}
+
+
 /* ===== js/30-render-home.js ===== */
 /* ============================================================
    Home / landing renderer
@@ -4330,7 +4605,10 @@ function homeHTML() {
           : ''
       }
       ${watchRowHTML()}
-      <button class="demo-link" type="button" data-action="demo">${ico('spark', 'sm')}没有目标？先看一份完整的示例研判</button>
+      <div class="home-cta-row">
+        <button class="btn primary" type="button" data-action="screener">${ico('filter', 'sm')}查看 80 分以上高分榜</button>
+        <button class="demo-link" type="button" data-action="demo">${ico('spark', 'sm')}没有目标？先看一份示例研判</button>
+      </div>
 
       <div class="hero-stats">
         <div class="hero-stat"><strong>3 地市场</strong><span>A 股 · 港股 · 美股</span></div>
@@ -5412,6 +5690,209 @@ function renderTechnicalSectionInner(result) {
 }
 
 
+/* ===== js/33-render-screener.js ===== */
+/* ============================================================
+   Screener renderer — 高分榜（反向选股）
+   ============================================================ */
+'use strict';
+
+function screenerControlHTML() {
+  const s = state.screener;
+  return `
+  <div class="screener-controls card">
+    <div class="screener-control-main">
+      <label class="screener-range">
+        <span>综合分门槛 <b id="screenerThresholdVal">${s.threshold}</b> 分</span>
+        <input type="range" id="screenerThreshold" min="60" max="95" step="1" value="${s.threshold}"
+          aria-label="综合分门槛">
+        <span class="range-hint">60 — 95 分</span>
+      </label>
+      <label class="screener-size">
+        <span>候选池</span>
+        <select id="screenerSize" aria-label="热门榜单候选数量">
+          ${[20, 40, 60]
+            .map((n) => `<option value="${n}" ${n === s.size ? 'selected' : ''}>成交额前 ${n} 只</option>`)
+            .join('')}
+        </select>
+      </label>
+      <button class="btn primary" type="button" data-action="screener-run" id="screenerRunBtn">
+        ${ico('spark', 'sm')}<span>${s.running ? '扫描中…' : '开始扫描'}</span>
+      </button>
+      <button class="btn ghost" type="button" data-action="screener-stop" id="screenerStopBtn" ${s.running ? '' : 'hidden'}>
+        ${ico('x', 'sm')}<span>停止</span>
+      </button>
+    </div>
+    <div class="screener-progress" id="screenerProgress" ${s.running ? '' : 'hidden'}>
+      <div class="screener-progress-track"><i id="screenerProgressBar" style="width:${s.progressPct}%"></i></div>
+      <span id="screenerProgressText">${esc(s.progressText)}</span>
+    </div>
+  </div>`;
+}
+
+function screenerPageHTML() {
+  return `
+  <div class="screener-page">
+    <section class="screener-hero">
+      <span class="eyebrow"><i class="dot"></i>反向选股 · 批量研判</span>
+      <h1>从热门股里，<br><span>筛出高分标的。</span></h1>
+      <p class="lede">取沪深 A 股成交额前列的股票，逐只运行与个股研判页完全相同的四维评分引擎，按综合分降序排列。阈值可调，超过门槛的标的自动高亮。</p>
+      <div class="screener-hero-note">${ico('info', 'sm')}扫描受公开接口限流约束，逐只串行获取研报与财务数据，通常需 1–3 分钟；已缓存的数据会直接复用。</div>
+    </section>
+
+    ${screenerControlHTML()}
+
+    <section class="screener-result" id="screenerResult">
+      ${screenerIdleHTML()}
+    </section>
+
+    <div class="source-note screener-disclaimer">
+      候选池：东方财富沪深 A 股成交额排行（剔除 ST / 退市）。评分口径与个股研判页一致：研报 30% · 盈利成长 25% · 技术动量 25% · 新闻舆情 20%（缺失维度从权重中剔除）。高分仅代表公开数据在该口径下的相对优势，不构成投资建议。
+    </div>
+  </div>`;
+}
+
+function screenerIdleHTML() {
+  return `<div class="card screener-empty">${emptyState({
+    icon: 'filter',
+    title: '设置门槛后开始扫描',
+    desc: '默认筛选综合分 80 分以上的 A 股。扫描结果按分数降序展示，可随时调整门槛查看不同区间。',
+  })}</div>`;
+}
+
+function screenerLoadingHTML() {
+  return `<div class="card screener-empty">${loadingCard('正在拉取热门榜单与四维数据…', 5)}</div>`;
+}
+
+/* 单只候选股的一行 */
+function screenerRowHTML(row, threshold) {
+  const stock = row.stock || {};
+  const quote = row.quote || {};
+  const score = row.score || {};
+  const total = Number.isFinite(score.total) ? score.total : null;
+  const hit = total !== null && total >= threshold;
+  const verdict = total !== null ? verdictFor(total) : { label: '数据不足', cls: 'muted' };
+  const cls = hit ? 'hit' : total !== null ? 'miss' : 'nodata';
+  const dims = Array.isArray(score.dims) ? score.dims : [];
+  const dimCells = dims
+    .map(
+      (d) => `
+      <div class="sd-cell" title="${esc(d.name)}${d.available ? `：${d.score} 分（${esc(d.note || '')}）` : '：数据不足'}">
+        <span class="sd-label">${esc(d.short)}</span>
+        <span class="sd-bar"><i class="${d.available ? scoreColorClass(d.score) : 'muted'}" style="width:${
+          d.available ? clamp(d.score, 0, 100) : 0
+        }%"></i></span>
+        <span class="sd-num ${d.available ? '' : 'muted'}">${d.available ? d.score : '—'}</span>
+      </div>`
+    )
+    .join('');
+  return `
+  <tr class="screener-row ${cls}" ${stockDataset(stock)}>
+    <td class="sr-rank"><span class="rank-num ${hit ? 'gold' : ''}">${row.rank || '—'}</span>${hit ? '<span class="hit-mark">达标</span>' : ''}</td>
+    <td class="sr-name">
+      ${stockButton(stock, 'sr-stock-btn')}
+      <span class="sr-meta">${esc(stock.code)} · ${esc(stock.name)}</span>
+    </td>
+    <td class="sr-price">
+      <b class="${pctClass(quote.changePct)}">${fmtPrice(quote.price)}</b>
+      <span class="${pctClass(quote.changePct)}">${fmtPct(quote.changePct)}</span>
+    </td>
+    <td class="sr-score">
+      <div class="sr-score-num ${scoreColorClass(total)}">${total === null ? '—' : total}</div>
+      <span class="verdict-pill ${verdict.cls}">${esc(verdict.label)}</span>
+    </td>
+    <td class="sr-dims">${dimCells || '<span class="muted">—</span>'}</td>
+    <td class="sr-cover"><span class="badge ${score.coverage === 100 ? 'teal' : ''}">${Number.isFinite(score.coverage) ? score.coverage + '%' : '—'}</span></td>
+    <td class="sr-action"><button class="btn sm" type="button" data-action="screener-open">查看研判 ${ico('arrow', 'sm')}</button></td>
+  </tr>`;
+}
+
+/* 汇总 + 全榜（达标高亮 + 未达标降序保留） */
+function screenerResultsHTML(rows, threshold, meta = {}) {
+  const list = rankScreenerRows(rows);
+  const hits = filterScreenerRows(list, threshold);
+  const scored = list.filter((r) => r && r.score && Number.isFinite(r.score.total));
+  const best = scored.length ? scored[0].score.total : null;
+  const avg = scored.length
+    ? Math.round(scored.reduce((a, r) => a + r.score.total, 0) / scored.length)
+    : null;
+  const ranAt = meta.ranAt ? fmtDate(meta.ranAt, true) : '';
+  const stopped = meta.stopped ? '<span class="badge orange">已停止</span>' : '';
+  const summary = `
+    <div class="screener-summary">
+      <div class="ss-card"><span>扫描标的</span><b>${scored.length}</b><small>只${meta.candidates ? ` / 候选 ${meta.candidates}` : ''}</small></div>
+      <div class="ss-card gold"><span>达标 (≥${threshold})</span><b>${hits.length}</b><small>只</small></div>
+      <div class="ss-card teal"><span>最高分</span><b>${best === null ? '—' : best}</b><small>${best === null ? '' : esc(verdictFor(best).label)}</small></div>
+      <div class="ss-card"><span>平均分</span><b>${avg === null ? '—' : avg}</b><small>全体候选</small></div>
+    </div>`;
+  const notice = hits.length
+    ? `<div class="screener-notice ok">${ico('check', 'sm')}当前门槛 ${threshold} 分，共 <b>${hits.length}</b> 只达标，已置顶高亮；下方保留全榜便于对照。</div>`
+    : `<div class="screener-notice warn">${ico('info', 'sm')}当前门槛 ${threshold} 分下暂无达标标的，最高分为 <b>${best === null ? '—' : best}</b>。可下调左侧门槛查看接近达标的股票。</div>`;
+  if (!list.length) {
+    return `${summary}<div class="card screener-empty">${emptyState({
+      icon: 'alert',
+      title: '未能完成扫描',
+      desc: (meta.error || '热门榜单或行情接口暂不可用，请稍后重试。'),
+    })}</div>`;
+  }
+  return `
+    ${summary}
+    <div class="screener-meta">${ico('clock', 'sm')}更新于 ${esc(ranAt)} · 门槛 ${threshold} 分${stopped}</div>
+    ${notice}
+    <div class="card screener-table-card">
+      <div class="screener-table-scroll">
+        <table class="screener-table">
+          <thead><tr>
+            <th>#</th><th>股票</th><th>现价 / 涨跌</th><th>综合分</th>
+            <th>四维分（研报 / 盈利 / 技术 / 舆情）</th><th>覆盖</th><th></th>
+          </tr></thead>
+          <tbody>${list.map((r) => screenerRowHTML(r, threshold)).join('')}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+/* 渲染整页（路由进入时） */
+function renderScreenerPage() {
+  setViewHTML(screenerPageHTML());
+  document.title = '高分榜 · 80 分以上 A 股 · 研值 StockLens';
+  syncTopbar('screener');
+  scrollTopSmooth();
+}
+
+/* 更新进度条与文字 */
+function updateScreenerProgress(done, total, row) {
+  const s = state.screener;
+  const bar = $('#screenerProgressBar');
+  const text = $('#screenerProgressText');
+  const wrap = $('#screenerProgress');
+  if (wrap) wrap.hidden = false;
+  if (bar) bar.style.width = `${Math.round((done / Math.max(total, 1)) * 100)}%`;
+  s.progressPct = Math.round((done / Math.max(total, 1)) * 100);
+  s.progressText = `已完成 ${done} / ${total} 只${row && row.stock ? ` · 最近：${row.stock.name}` : ''}`;
+  if (text) text.textContent = s.progressText;
+}
+
+/* 仅更新结果区（扫描过程中增量刷新 / 阈值变更后重绘） */
+function refreshScreenerResult() {
+  const box = $('#screenerResult');
+  if (!box) return;
+  const s = state.screener;
+  box.innerHTML = s.rows.length
+    ? screenerResultsHTML(s.rows, s.threshold, { ranAt: s.ranAt, stopped: s.stopped, error: s.error })
+    : loadingCard('正在获取候选池与行情…', 4);
+  hydrateIcons(box);
+}
+
+/* 更新门槛：只重绘结果，不重复请求 */
+function updateScreenerThreshold(value) {
+  const v = clamp(Math.round(Number(value) || SCREENER_DEFAULT_THRESHOLD), 60, 95);
+  state.screener.threshold = v;
+  const label = $('#screenerThresholdVal');
+  if (label) label.textContent = String(v);
+  if (state.screener.rows.length) refreshScreenerResult();
+}
+
+
 /* ===== js/50-main.js ===== */
 /* ============================================================
    App shell — routing, search, orchestration, interactions
@@ -5438,6 +5919,18 @@ const state = {
   technical: null,
   subChart: 'volume',
   bollOn: false,
+  screener: {
+    threshold: SCREENER_DEFAULT_THRESHOLD,
+    size: SCREENER_DEFAULT_SIZE,
+    rows: [],
+    ranAt: null,
+    stopped: false,
+    error: '',
+    running: false,
+    token: 0,
+    progressPct: 0,
+    progressText: '准备中…',
+  },
   search: { items: [], active: -1, query: '', seq: 0 },
 };
 
@@ -5546,8 +6039,10 @@ function syncTopbar(route) {
   state.route = route;
   const topSearch = $('#topSearchTrigger');
   const printBtn = $('#printBtn');
+  const screenerBtn = $('#topScreenerBtn');
   if (topSearch) topSearch.hidden = route !== 'analysis';
   if (printBtn) printBtn.hidden = route !== 'analysis';
+  if (screenerBtn) screenerBtn.classList.toggle('active', route === 'screener');
   document.body.dataset.route = route;
 }
 
@@ -5591,6 +6086,12 @@ function addRecent(stock) {
 
 /* ---------------- routing ---------------- */
 function routeFromHash() {
+  if ((location.hash || '').startsWith('#/screener')) {
+    state.pendingStock = null;
+    ++state.token; /* 中止可能进行中的个股研判 */
+    enterScreener();
+    return;
+  }
   const stock = stockFromHash();
   if (!stock) {
     if ((location.hash || '').startsWith('#/stock/')) {
@@ -5622,6 +6123,96 @@ function goHome() {
   } else {
     location.hash = '';
   }
+}
+
+/* ---------------- 高分榜（反向选股）编排 ---------------- */
+function goScreener() {
+  if ((location.hash || '') === '#/screener') {
+    enterScreener();
+  } else {
+    location.hash = '#/screener';
+  }
+}
+
+function enterScreener() {
+  ++state.screener.token; /* 取消上一次可能仍在进行的扫描 */
+  state.screener.running = false;
+  state.screener.rows = [];
+  state.screener.ranAt = null;
+  state.screener.stopped = false;
+  state.screener.error = '';
+  state.screener.progressPct = 0;
+  state.screener.progressText = '准备中…';
+  renderScreenerPage();
+  startScreener();
+}
+
+async function runScreenerFlow() {
+  const sc = state.screener;
+  const token = ++sc.token;
+  sc.running = true;
+  sc.rows = [];
+  sc.stopped = false;
+  sc.error = '';
+  sc.progressPct = 0;
+  sc.progressText = '正在获取候选池…';
+  syncScreenerButtons(true);
+  refreshScreenerResult();
+  try {
+    const result = await runScreener({
+      size: sc.size,
+      onProgress: (done, total, row) => {
+        if (token !== sc.token) return;
+        updateScreenerProgress(done, total, row);
+        if (row) sc.rows.push(row);
+        refreshScreenerResult();
+      },
+      shouldStop: () => token !== sc.token,
+    });
+    if (token !== sc.token) return;
+    sc.rows = result.rows;
+    sc.ranAt = result.ranAt;
+    sc.stopped = !!result.stopped;
+    refreshScreenerResult();
+  } catch (err) {
+    if (token !== sc.token) return;
+    sc.error = err && err.message ? err.message : '扫描失败，请稍后重试';
+    sc.rows = [];
+    refreshScreenerResult();
+  } finally {
+    if (token !== sc.token) return;
+    sc.running = false;
+    syncScreenerButtons(false);
+  }
+}
+
+function startScreener() {
+  if (state.screener.running) return;
+  runScreenerFlow();
+}
+
+function stopScreener() {
+  const sc = state.screener;
+  if (!sc.running) return;
+  ++sc.token;
+  sc.running = false;
+  sc.stopped = true;
+  syncScreenerButtons(false);
+  refreshScreenerResult();
+  toast('扫描已停止，已完成的结果保留在下表', 'info');
+}
+
+function syncScreenerButtons(running) {
+  const runBtn = $('#screenerRunBtn');
+  const stopBtn = $('#screenerStopBtn');
+  const prog = $('#screenerProgress');
+  if (runBtn) {
+    runBtn.disabled = running;
+    const label = runBtn.querySelector('span:last-child');
+    if (label) label.textContent = running ? '扫描中…' : '开始扫描';
+  }
+  if (stopBtn) stopBtn.hidden = !running;
+  if (prog) prog.hidden = !running;
 }
 
 /* ---------------- analysis orchestration ---------------- */
@@ -6341,6 +6932,27 @@ function handleClick(e) {
       goStock(HOT_STOCKS[0]);
       return;
     }
+    if (action === 'screener') {
+      e.preventDefault();
+      goScreener();
+      return;
+    }
+    if (action === 'screener-run') {
+      e.preventDefault();
+      startScreener();
+      return;
+    }
+    if (action === 'screener-stop') {
+      e.preventDefault();
+      stopScreener();
+      return;
+    }
+    if (action === 'screener-open') {
+      e.preventDefault();
+      const stockEl = actionEl.closest('[data-market][data-code]');
+      if (stockEl) goStock(stockFromDataset(stockEl.dataset));
+      return;
+    }
   }
 
   const sug = e.target.closest('[data-sug-index]');
@@ -6381,6 +6993,14 @@ function initEvents() {
   document.addEventListener('input', (e) => {
     if (e.target && e.target.id === 'stockSearch') handleSearchInput(e.target);
     if (e.target && e.target.matches('[data-filter-target]')) updateFilter(e.target);
+    if (e.target && e.target.id === 'screenerThreshold') updateScreenerThreshold(e.target.value);
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target && e.target.id === 'screenerSize') {
+      state.screener.size = Number(e.target.value) || SCREENER_DEFAULT_SIZE;
+      if (state.screener.running) stopScreener();
+      toast(`候选池已切换，请点击「开始扫描」重新获取`, 'info');
+    }
   });
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'k') {
@@ -6408,6 +7028,10 @@ function init() {
   hydrateIcons(document);
   syncThemeButton();
   initEvents();
+  if ((location.hash || '').startsWith('#/screener')) {
+    enterScreener();
+    return;
+  }
   const route = stockFromHash();
   if (route) analyzeStock(route);
   else {

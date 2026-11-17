@@ -23,6 +23,9 @@ vm.runInThisContext(fs.readFileSync(path.join(src, '00-utils.js'), 'utf8'), { fi
 vm.runInThisContext(fs.readFileSync(path.join(src, '22-indicators.js'), 'utf8'), { filename: '22-indicators.js' });
 vm.runInThisContext(fs.readFileSync(path.join(src, '21-charts.js'), 'utf8'), { filename: '21-charts.js' });
 vm.runInThisContext(fs.readFileSync(path.join(src, '23-technical.js'), 'utf8'), { filename: '23-technical.js' });
+vm.runInThisContext(fs.readFileSync(path.join(src, '20-scoring.js'), 'utf8'), { filename: '20-scoring.js' });
+/* 高分榜引擎：纯函数部分（normalize / rank / filter）可离线验证；网络函数不在测试中调用 */
+vm.runInThisContext(fs.readFileSync(path.join(src, '24-screener.js'), 'utf8'), { filename: '24-screener.js' });
 
 const enc = encodeURIComponent;
 let failures = 0;
@@ -169,6 +172,34 @@ function auditCandlestick(html, expectBars) {
   check('数据不足时五维度降级为不可用', techShort.dims.every((d) => !d.available) && !techShort.consensus.available);
   const techNull = analyzeTechnical(null);
   check('null 输入安全降级', techNull.rows === 0 && techNull.dims.length === 5);
+
+  console.log('高分榜 / 反向选股（FR-8，离线纯函数）');
+  /* push2 榜单行 → 股票对象 */
+  const cand = normalizeScreenerRow({ f12: '600519', f13: '1', f14: '贵州茅台', f6: '123456', f20: '2.1e12' });
+  check('候选池正股解析代码与前缀', cand && cand.code === '600519' && cand.quoteKey === 'sh600519');
+  check('候选池剔除 ST 标的', normalizeScreenerRow({ f12: '000001', f14: '*ST某某' }) === null);
+  check('候选池剔除退市标的', normalizeScreenerRow({ f12: '000002', f14: '某某退' }) === null);
+  check('候选池拒绝非法代码', normalizeScreenerRow({ f12: '', f14: '空' }) === null);
+  const szCand = normalizeScreenerRow({ f12: '300750', f14: '宁德时代' });
+  check('创业板使用 sz 前缀', szCand && szCand.quoteKey === 'sz300750');
+
+  /* 排名：高分优先，无分置末，rank 连续 */
+  const mkRow = (code, total) => ({
+    stock: { code },
+    score: total === null ? { total: null } : computeScore({ market: 'A', quote: { price: 10 } }) && { total },
+  });
+  const ranked = rankScreenerRows([mkRow('a', 70), mkRow('b', 92), mkRow('c', null), mkRow('d', 81)]);
+  check('排名按综合分降序', ranked.map((r) => r.score.total).slice(0, 3).join(',') === '92,81,70');
+  check('无分标的排在最末', ranked[ranked.length - 1].score.total === null);
+  check('rank 从 1 连续编号', ranked.every((r, i) => r.rank === i + 1));
+
+  /* 阈值筛选：边界包含、过滤无分 */
+  const pool = [mkRow('a', 79), mkRow('b', 80), mkRow('c', 95), mkRow('d', null)];
+  check('阈值筛选含边界 80 分', filterScreenerRows(pool, 80).length === 2);
+  check('阈值 90 仅保留最高分', filterScreenerRows(pool, 90).length === 1);
+  check('阈值筛选剔除无分', filterScreenerRows(pool, 60).length === 3);
+  check('阈值非数字回退默认 80', filterScreenerRows(pool, 'x').length === 2);
+  check('空数组筛选安全', filterScreenerRows(null, 80).length === 0);
 
   console.log(failures ? `\n${failures} 项失败` : '\n全部通过');
   process.exit(failures ? 1 : 0);
