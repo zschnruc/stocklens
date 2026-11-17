@@ -20,6 +20,7 @@ const state = {
   pendingStock: null,
   klinePeriod: 'day',
   periodKlines: {},
+  technical: null,
   subChart: 'volume',
   bollOn: false,
   search: { items: [], active: -1, query: '', seq: 0 },
@@ -227,6 +228,7 @@ async function analyzeStock(inputStock, opts = {}) {
   state.industryStarted = false;
   state.klinePeriod = 'day';
   state.periodKlines = {};
+  state.technical = null;
   renderAnalysisSkeleton(stock);
   if (!opts.keepScroll) scrollTopSmooth();
 
@@ -271,11 +273,17 @@ function bindCoreData(token, quote) {
       state.periodKlines.day = kline;
       markCoreSettled('kline', kline);
       updateChart(kline);
+      /* 技术研判模块：基于完整日 K 纯本地计算，零新增网络请求 */
+      const technical = analyzeTechnical(kline && kline.points);
+      state.technical = technical;
+      updateTechnicalSection(technical);
     })
     .catch(() => {
       if (token !== state.token) return;
       markCoreSettled('kline', null);
       updateChart(null);
+      state.technical = null;
+      updateTechnicalSection(null);
     });
 
   getStockReports(stock)

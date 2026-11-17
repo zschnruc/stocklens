@@ -22,6 +22,7 @@ const src = path.join(root, 'src', 'js');
 vm.runInThisContext(fs.readFileSync(path.join(src, '00-utils.js'), 'utf8'), { filename: '00-utils.js' });
 vm.runInThisContext(fs.readFileSync(path.join(src, '22-indicators.js'), 'utf8'), { filename: '22-indicators.js' });
 vm.runInThisContext(fs.readFileSync(path.join(src, '21-charts.js'), 'utf8'), { filename: '21-charts.js' });
+vm.runInThisContext(fs.readFileSync(path.join(src, '23-technical.js'), 'utf8'), { filename: '23-technical.js' });
 
 const enc = encodeURIComponent;
 let failures = 0;
@@ -144,6 +145,30 @@ function auditCandlestick(html, expectBars) {
   check('无目标价时不渲染锚点', !(renderCandlestick(okRows, { window: 60 }).match(/target-line/g) || []).length);
   const half = renderCandlestick(okRows, { window: 60, targets: { high: 12.5, mid: 11.8, low: 300, count: 3 } });
   check('混合目标价只绘制区间内的锚线', (half.match(/class="target-line"/g) || []).length === 2);
+
+  console.log('技术研判引擎（FR-7，离线合成数据）');
+  /* 合成 90 根温和上涨、量能配合的行情，验证五维度全部可用且方向合理 */
+  const techRows = Array.from({ length: 90 }, (_, i) => ({
+    date: `2026-${String(Math.floor(i / 28) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`,
+    open: 10 + i * 0.08,
+    close: 10.05 + i * 0.08,
+    high: 10.2 + i * 0.08,
+    low: 9.9 + i * 0.08,
+    volume: 1000 + i * 12,
+  }));
+  const tech = analyzeTechnical(techRows);
+  check('技术模块输出 5 个维度', tech.dims.length === 5 && tech.dims.every((d) => d.key));
+  check('充足数据下各维度均可用', tech.dims.every((d) => d.available), tech.dims.filter((d) => !d.available).map((d) => d.key).join(','));
+  check('各维度得分在 0-100 且无 NaN', tech.dims.every((d) => Number.isFinite(d.score) && d.score >= 0 && d.score <= 100));
+  check('各维度信号方向合法', tech.dims.every((d) => ['bullish', 'bearish', 'neutral'].includes(d.dir)));
+  check('综合研判可用且分数合法', tech.consensus.available && Number.isFinite(tech.consensus.score) && tech.consensus.score >= 0 && tech.consensus.score <= 100);
+  check('上涨行情趋势维度偏多', tech.dims.find((d) => d.key === 'trend').dir === 'bullish');
+  check('每个可用维度均含可解释依据', tech.dims.every((d) => d.details.length >= 2));
+  check('JSON 序列化无 NaN/Infinity', !/NaN|Infinity/.test(JSON.stringify(tech)));
+  const techShort = analyzeTechnical(okRows.slice(0, 8));
+  check('数据不足时五维度降级为不可用', techShort.dims.every((d) => !d.available) && !techShort.consensus.available);
+  const techNull = analyzeTechnical(null);
+  check('null 输入安全降级', techNull.rows === 0 && techNull.dims.length === 5);
 
   console.log(failures ? `\n${failures} 项失败` : '\n全部通过');
   process.exit(failures ? 1 : 0);

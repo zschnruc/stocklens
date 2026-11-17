@@ -1,0 +1,131 @@
+/* ============================================================
+   Technical module styles — 技术研判独立章节
+   信号语义色遵循项目红涨绿跌惯例（--up / --down）
+   ============================================================ */
+
+/* ---------- 综合研判卡 ---------- */
+.tech-consensus{padding:20px 22px;margin-bottom:16px}
+.tech-source{font-size:9px;color:var(--faint);letter-spacing:.02em;text-transform:none;margin-left:auto}
+.tech-consensus-main{display:flex;align-items:center;gap:24px;margin-top:14px;flex-wrap:wrap}
+.tech-score-ring{position:relative;width:132px;height:132px;flex:none}
+.tech-score-ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.tech-ring-track{fill:none;stroke:var(--line);stroke-width:9}
+.tech-ring-fill{fill:none;stroke-width:9;stroke-linecap:round;transition:stroke-dasharray .8s ease}
+.tech-score-ring.bullish .tech-ring-fill{stroke:var(--up)}
+.tech-score-ring.bearish .tech-ring-fill{stroke:var(--down)}
+.tech-score-ring.neutral .tech-ring-fill{stroke:var(--gold)}
+.tech-score-ring.unavailable .tech-ring-fill{stroke:var(--faint)}
+.tech-score-inner{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1px
+}
+.tech-score-inner strong{font-family:var(--serif);font-size:37px;line-height:1;letter-spacing:-.03em}
+.tech-score-inner span{font-size:10px;color:var(--muted);letter-spacing:.06em}
+.tech-consensus-text{flex:1;min-width:240px}
+.tech-consensus-text>p{font-size:12px;line-height:1.75;color:var(--text-2);margin:0 0 12px}
+.tech-votes{display:flex;gap:16px;flex-wrap:wrap;font-size:10px;font-variant-numeric:tabular-nums}
+.tech-votes span{font-weight:600}
+.tech-votes .bullish{color:var(--up)}
+.tech-votes .bearish{color:var(--down)}
+.tech-votes .neutral{color:var(--gold)}
+.tech-votes .muted{color:var(--faint)}
+.tech-divergence{
+  display:flex;align-items:center;gap:6px;margin-top:12px;padding-top:11px;
+  border-top:1px dashed var(--line);font-size:10px;color:var(--muted)
+}
+.tech-divergence.warn{color:var(--orange)}
+.tech-divergence .ico{width:13px;height:13px;flex:none}
+.tech-consensus-empty{padding:22px 0;font-size:12px;color:var(--muted)}
+
+/* ---------- 雷达 + 说明双栏 ---------- */
+.tech-overview-grid{display:grid;grid-template-columns:minmax(260px,320px) 1fr;gap:16px;margin-bottom:16px}
+.tech-radar-card{padding:16px 18px;display:flex;flex-direction:column}
+.tech-radar-wrap{display:flex;align-items:center;justify-content:center;flex:1;min-height:200px}
+.tech-radar-wrap svg{width:100%;max-width:236px;height:auto;overflow:visible}
+.tech-radar-grid{fill:none;stroke:var(--line);stroke-width:1}
+.tech-radar-axis{stroke:var(--line);stroke-width:1}
+.tech-radar-area{fill:var(--gold);fill-opacity:.14;stroke:var(--gold);stroke-width:1.6;stroke-linejoin:round}
+.tech-radar-area.bullish{fill:var(--up);stroke:var(--up)}
+.tech-radar-area.bearish{fill:var(--down);stroke:var(--down)}
+.tech-radar-dot{fill:var(--gold)}
+.tech-radar-label{fill:var(--muted);font-size:10px;font-family:var(--sans)}
+.tech-summary-card{padding:16px 20px}
+.tech-summary-list{list-style:none;margin:12px 0 0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:9px 18px}
+.tech-summary-list li{
+  display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums
+}
+.tech-summary-list b{color:var(--text-2);font-weight:600;min-width:30px}
+.tech-sum-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--faint)}
+.tech-sum-dot.bullish{background:var(--up)}
+.tech-sum-dot.bearish{background:var(--down)}
+.tech-sum-dot.neutral{background:var(--gold)}
+.tech-note{
+  margin-top:15px;padding-top:12px;border-top:1px dashed var(--line);
+  font-size:9.5px;color:var(--faint);line-height:1.7
+}
+
+/* ---------- 五维详情卡 ---------- */
+.tech-dim-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.tech-dim{padding:16px 18px;border-left:2px solid var(--line)}
+.tech-dim.bullish{border-left-color:var(--up)}
+.tech-dim.bearish{border-left-color:var(--down)}
+.tech-dim.neutral{border-left-color:var(--gold)}
+.tech-dim.unavailable{opacity:.66}
+.tech-dim-head{display:flex;align-items:flex-start;gap:11px}
+.tech-dim-icon{color:var(--gold);flex:none;margin-top:1px}
+.tech-dim-icon .ico{width:18px;height:18px}
+.tech-dim-title{flex:1;min-width:0}
+.tech-dim-title h4{font-size:12.5px;font-weight:600;color:var(--text);margin:0;letter-spacing:.01em}
+.tech-dim-title p{font-size:9px;color:var(--faint);margin:2px 0 0}
+.tech-dim-score{text-align:right;flex:none;line-height:1}
+.tech-dim-score b{font-family:var(--serif);font-size:22px;font-weight:600}
+.tech-dim-score small{font-size:9px;color:var(--faint);margin-left:1px}
+.tech-dim-score.bullish b{color:var(--up)}
+.tech-dim-score.bearish b{color:var(--down)}
+.tech-dim-score.neutral b{color:var(--gold)}
+.tech-dim-signal{
+  display:flex;align-items:center;gap:9px;margin:12px 0 10px;
+  font-size:10px;color:var(--muted);line-height:1.55
+}
+.tech-sig{
+  display:inline-flex;align-items:center;gap:4px;flex:none;
+  padding:3px 8px;border-radius:6px;font-size:9.5px;font-weight:600;
+  border:1px solid var(--line-2)
+}
+.tech-sig .ico{width:12px;height:12px}
+.tech-sig.bullish{color:var(--up);border-color:rgba(240,112,112,.3);background:rgba(240,112,112,.08)}
+.tech-sig.bearish{color:var(--down);border-color:rgba(67,197,158,.3);background:rgba(67,197,158,.08)}
+.tech-sig.neutral{color:var(--gold);border-color:rgba(231,180,92,.3);background:rgba(231,180,92,.08)}
+.tech-sig.unavailable{color:var(--faint)}
+.tech-details{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.tech-details li{
+  position:relative;padding-left:12px;font-size:10px;color:var(--muted);line-height:1.65
+}
+.tech-details li::before{
+  content:"";position:absolute;left:0;top:.68em;width:4px;height:4px;
+  border-radius:50%;background:var(--faint)
+}
+.tech-unavailable{font-size:10.5px;color:var(--faint);line-height:1.7;margin:12px 0 0}
+
+html[data-theme="light"] .tech-sig.bullish{background:rgba(201,74,74,.07)}
+html[data-theme="light"] .tech-sig.bearish{background:rgba(30,146,114,.07)}
+html[data-theme="light"] .tech-sig.neutral{background:rgba(169,118,35,.07)}
+
+@media (max-width:980px){
+  .tech-overview-grid{grid-template-columns:1fr}
+  .tech-dim-grid{grid-template-columns:1fr}
+  .tech-radar-card{min-height:auto}
+}
+@media (max-width:560px){
+  .tech-consensus{padding:16px}
+  .tech-consensus-main{gap:14px}
+  .tech-score-ring{width:106px;height:106px}
+  .tech-score-inner strong{font-size:30px}
+  .tech-summary-list{grid-template-columns:1fr}
+  .tech-votes{gap:10px}
+}
+@media print{
+  .tech-dim{break-inside:avoid;background:#fff!important}
+  .tech-radar-area{fill-opacity:.06}
+}

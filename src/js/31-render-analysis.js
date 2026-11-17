@@ -5,6 +5,7 @@
 
 const SECTION_NAV = [
   ['overview', '综合研判'],
+  ['technical', '技术研判'],
   ['reports', '个股研报'],
   ['industry', '行业研报'],
   ['peers', '同业对照'],
@@ -99,28 +100,33 @@ function analysisShell(stock) {
       <div id="chartSection" style="margin-top:16px">${loadingCard('正在绘制近一年走势…', 2)}</div>
     </div>
 
+    <section class="section-block" id="technical">
+      ${sectionHead('02', '技术研判', '趋势、动量、随机、波动与量价五维度分析')}
+      <div id="technicalSlot">${loadingCard('正在计算多维技术信号…', 4)}</div>
+    </section>
+
     <section class="section-block" id="reports">
-      ${sectionHead('02', '个股研报', '近 6 个月最新 20 篇，含机构评级、盈利预测与目标价')}
+      ${sectionHead('03', '个股研报', '近 6 个月最新 20 篇，含机构评级、盈利预测与目标价')}
       <div id="reportsBody">${loadingCard('正在检索个股研报…', 4)}</div>
     </section>
 
     <section class="section-block" id="industry">
-      ${sectionHead('03', '行业研报', '按所属行业聚合近 6 个月行业研报')}
+      ${sectionHead('04', '行业研报', '按所属行业聚合近 6 个月行业研报')}
       <div id="industryBody">${loadingCard('正在识别行业并检索行业研报…', 3)}</div>
     </section>
 
     <section class="section-block" id="peers">
-      ${sectionHead('04', '同业对照', '行业市值前三与利润前三，并附同行最新研报')}
+      ${sectionHead('05', '同业对照', '行业市值前三与利润前三，并附同行最新研报')}
       <div id="peersBody">${loadingCard('正在获取行业成分股与同行数据…', 4)}</div>
     </section>
 
     <section class="section-block" id="financial">
-      ${sectionHead('05', '财务与成长', '最近报告期核心指标，用于盈利与成长维度评分')}
+      ${sectionHead('06', '财务与成长', '最近报告期核心指标，用于盈利与成长维度评分')}
       <div id="financialBody">${loadingCard('正在获取财务指标…', 3)}</div>
     </section>
 
     <section class="section-block" id="news">
-      ${sectionHead('06', '新闻舆情', '公开资讯与关键词情绪，仅代表文本倾向，不代表股价方向')}
+      ${sectionHead('07', '新闻舆情', '公开资讯与关键词情绪，仅代表文本倾向，不代表股价方向')}
       <div id="newsBody">${loadingCard('正在检索相关新闻…', 4)}</div>
     </section>
 
