@@ -163,6 +163,36 @@ function homeHTML() {
       </div>
     </div>
 
+    <section class="home-boards" aria-labelledby="boardsTitle">
+      <div class="boards-head">
+        <div class="section-kicker">市场动向</div>
+        <h2 id="boardsTitle">当下热门 · 资金流向</h2>
+        <p>点击任意一只，进入完整四维研判。榜单随行情刷新，数据来自公开接口。</p>
+      </div>
+      <div class="boards-grid">
+        <article class="card board-card" id="hotBoardCard">
+          <div class="board-card-head">
+            <span class="board-ico">${ico('pulse', 'lg')}</span>
+            <div>
+              <h3>成交热门 TOP 10</h3>
+              <span>沪深 A 股 · 按当日成交额</span>
+            </div>
+          </div>
+          <div class="board-list" id="hotBoardBody">${loadingCard('正在获取热门榜…', 4)}</div>
+        </article>
+        <article class="card board-card" id="inflowBoardCard">
+          <div class="board-card-head">
+            <span class="board-ico inflow">${ico('trendUp', 'lg')}</span>
+            <div>
+              <h3>主力净流入 TOP 10</h3>
+              <span>沪深 A 股 · 按当日主力资金净额</span>
+            </div>
+          </div>
+          <div class="board-list" id="inflowBoardBody">${loadingCard('正在获取资金流向…', 4)}</div>
+        </article>
+      </div>
+    </section>
+
     <section class="features" aria-labelledby="featureTitle">
       <div class="features-head">
         <div>
@@ -197,6 +227,64 @@ function renderHome() {
   syncTopbar('home');
   loadHotQuotes();
   loadWatchQuotes();
+  loadHomeBoards();
+}
+
+/* ---------------- 首页双榜单（FR-9） ---------------- */
+function boardRowHTML(stock, index, metric) {
+  const chgCls = pctClass(stock.changePct);
+  const metricCls = metric === 'inflow' ? pctClass(stock.netInflow) : '';
+  const metricText =
+    metric === 'inflow'
+      ? fmtBig(stock.netInflow != null ? stock.netInflow / 1e8 : null, '亿')
+      : fmtBig(stock.amount != null ? stock.amount / 1e8 : null, '亿');
+  return `
+    <button type="button" class="board-row" ${stockDataset(stock)} ${extraBoardAttrs(stock)}>
+      <span class="br-rank ${index < 3 ? 'top' : ''}">${index + 1}</span>
+      <span class="br-name">
+        <b>${esc(stock.name)}</b>
+        <small>${esc(stock.code)}</small>
+      </span>
+      <span class="br-quote">
+        <b>${fmtPrice(stock.price)}</b>
+        <small class="${chgCls}">${fmtPct(stock.changePct)}</small>
+      </span>
+      <span class="br-metric ${metricCls}">${esc(metricText)}</span>
+    </button>`;
+}
+
+/* 榜单行携带指标，进入研判后 header 可展示（沿用既有 dataset，不新增请求） */
+function extraBoardAttrs(stock) {
+  return [
+    `data-amount="${stock.amount != null ? Number(stock.amount) : ''}"`,
+    `data-netinflow="${stock.netInflow != null ? Number(stock.netInflow) : ''}"`,
+  ].join(' ');
+}
+
+function boardEmptyHTML(kind) {
+  return `<div class="board-empty">${ico('info', 'sm')}<span>${
+    kind === 'inflow' ? '资金流向数据暂不可用，稍后刷新重试' : '热门榜单暂不可用，稍后刷新重试'
+  }</span></div>`;
+}
+
+function renderHomeBoard(kind, rows, error) {
+  const body = $(kind === 'inflow' ? '#inflowBoardBody' : '#hotBoardBody');
+  if (!body) return; /* 用户已离开首页 */
+  if (error || !Array.isArray(rows) || !rows.length) {
+    body.innerHTML = boardEmptyHTML(kind);
+    return;
+  }
+  body.innerHTML = rows.map((s, i) => boardRowHTML(s, i, kind)).join('');
+}
+
+async function loadHomeBoards() {
+  const hot = getHotBoard()
+    .then((rows) => renderHomeBoard('hot', rows))
+    .catch(() => renderHomeBoard('hot', null, true));
+  const inflow = getInflowBoard()
+    .then((rows) => renderHomeBoard('inflow', rows))
+    .catch(() => renderHomeBoard('inflow', null, true));
+  await Promise.all([hot, inflow]);
 }
 
 /* FR-6.2：自选股行情速览，批量接口一次拉取 */

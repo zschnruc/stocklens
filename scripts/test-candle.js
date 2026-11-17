@@ -26,6 +26,8 @@ vm.runInThisContext(fs.readFileSync(path.join(src, '23-technical.js'), 'utf8'), 
 vm.runInThisContext(fs.readFileSync(path.join(src, '20-scoring.js'), 'utf8'), { filename: '20-scoring.js' });
 /* 高分榜引擎：纯函数部分（normalize / rank / filter）可离线验证；网络函数不在测试中调用 */
 vm.runInThisContext(fs.readFileSync(path.join(src, '24-screener.js'), 'utf8'), { filename: '24-screener.js' });
+/* 首页双榜单：normalizeHotlistRow 为纯函数，可离线验证 */
+vm.runInThisContext(fs.readFileSync(path.join(src, '25-hotlists.js'), 'utf8'), { filename: '25-hotlists.js' });
 
 const enc = encodeURIComponent;
 let failures = 0;
@@ -200,6 +202,16 @@ function auditCandlestick(html, expectBars) {
   check('阈值筛选剔除无分', filterScreenerRows(pool, 60).length === 3);
   check('阈值非数字回退默认 80', filterScreenerRows(pool, 'x').length === 2);
   check('空数组筛选安全', filterScreenerRows(null, 80).length === 0);
+
+  console.log('首页双榜单（FR-9，离线纯函数）');
+  const hotRow = normalizeHotlistRow({ f12: '600519', f14: '贵州茅台', f2: '1688.00', f3: '1.23', f6: '5200000000', f62: '320000000' });
+  check('热门榜解析现价与涨跌', hotRow && hotRow.price === 1688 && hotRow.changePct === 1.23);
+  check('热门榜携带成交额与净流入', hotRow.amount === 5.2e9 && hotRow.netInflow === 3.2e8);
+  check('热门榜复用市场前缀', hotRow.quoteKey === 'sh600519');
+  const inflowRow = normalizeHotlistRow({ f12: '300750', f14: '宁德时代', f2: '200.50', f3: '-0.50', f6: '1000000000', f62: '-50000000' });
+  check('资金榜解析负净流入', inflowRow && inflowRow.netInflow === -5e7 && inflowRow.quoteKey === 'sz300750');
+  check('榜单剔除 ST 与非法代码', normalizeHotlistRow({ f12: '000001', f14: 'ST某某', f2: '10' }) === null && normalizeHotlistRow({ f12: '', f2: '10' }) === null);
+  check('榜单无现价行被过滤条件识别', !Number.isFinite(normalizeHotlistRow({ f12: '600000', f14: '某股' }).price));
 
   console.log(failures ? `\n${failures} 项失败` : '\n全部通过');
   process.exit(failures ? 1 : 0);

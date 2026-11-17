@@ -1249,6 +1249,69 @@ html[data-theme="light"] .tech-sig.neutral{background:rgba(169,118,35,.07)}
   .screener-table{min-width:0}
 }
 
+
+/* ===== css/24-home-boards.css ===== */
+/* ============================================================
+   首页双榜单 — 成交热门 / 主力净流入
+   ============================================================ */
+.home-boards{margin-top:70px}
+.boards-head{margin-bottom:22px}
+.boards-head h2{font-family:var(--serif);font-size:30px;font-weight:600;letter-spacing:-.01em;margin-top:8px}
+.boards-head p{color:var(--muted);font-size:12.5px;margin-top:6px}
+.boards-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+
+.board-card{padding:18px 14px 12px;min-width:0}
+.board-card-head{display:flex;align-items:center;gap:12px;padding:2px 8px 14px;border-bottom:1px solid var(--line)}
+.board-ico{
+  width:38px;height:38px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;
+  color:var(--gold);background:rgba(231,180,92,.1);border:1px solid rgba(231,180,92,.22)
+}
+.board-ico.inflow{color:var(--red);background:rgba(240,112,112,.1);border-color:rgba(240,112,112,.22)}
+.board-ico .ico{width:21px;height:21px}
+.board-ico .ico svg{width:21px;height:21px}
+.board-card-head h3{font-size:15px;font-weight:600;margin:0;letter-spacing:.01em}
+.board-card-head span:not(.board-ico){display:block;font-size:10.5px;color:var(--faint);margin-top:2px}
+
+.board-list{padding-top:6px}
+.board-row{
+  width:100%;display:grid;grid-template-columns:26px 1fr auto auto;align-items:center;gap:10px;
+  padding:9px 8px;border:none;border-bottom:1px solid var(--line);border-radius:8px;
+  background:transparent;color:var(--text);text-align:left;cursor:pointer;transition:background .16s;
+  font-family:var(--sans)
+}
+.board-row:last-child{border-bottom:none}
+.board-row:hover{background:rgba(255,255,255,.035)}
+.board-row:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+.br-rank{font-family:var(--mono);font-size:12px;color:var(--faint);text-align:center}
+.br-rank.top{color:var(--gold);font-weight:700}
+.br-name{min-width:0;display:flex;flex-direction:column}
+.br-name b{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.br-name small{font-size:10px;color:var(--faint);font-family:var(--mono)}
+.br-quote{display:flex;flex-direction:column;align-items:flex-end;white-space:nowrap}
+.br-quote b{font-family:var(--mono);font-size:12px}
+.br-quote small{font-size:10px;font-family:var(--mono)}
+.br-metric{
+  min-width:66px;text-align:right;font-family:var(--mono);font-size:11.5px;color:var(--text-2);
+  padding:3px 7px;border-radius:6px;background:var(--panel-2);white-space:nowrap
+}
+.board-empty{display:flex;align-items:center;justify-content:center;gap:8px;padding:34px 10px;color:var(--muted);font-size:12px}
+
+@media(max-width:860px){
+  .boards-grid{grid-template-columns:1fr}
+  .home-boards{margin-top:54px}
+  .boards-head h2{font-size:25px}
+}
+@media(max-width:520px){
+  .board-row{grid-template-columns:22px 1fr auto;gap:8px}
+  .br-metric{grid-column:3;min-width:0}
+  .br-quote{display:none}
+}
+
+@media print{
+  .board-row{break-inside:avoid}
+  .board-card{box-shadow:none}
+}
+
 </style>
 </head>
 <body>
@@ -1301,7 +1364,7 @@ html[data-theme="light"] .tech-sig.neutral{background:rgba(169,118,35,.07)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v1.4.0 · 构建于 2026/11/17 11:13:18</p>
+      <p>研值 StockLens v1.5.0 · 构建于 2026/11/17 11:22:38</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -4451,6 +4514,67 @@ async function runScreener({ size = SCREENER_DEFAULT_SIZE, onProgress, shouldSto
 }
 
 
+/* ===== js/25-hotlists.js ===== */
+/* ============================================================
+   Home board lists — 成交热门榜 / 主力资金净流入榜
+   每个榜单仅 1 个东财 push2 请求；现价与涨跌幅随榜单一起返回，
+   无需额外行情请求。失败/空数据独立降级，不阻塞另一榜单。
+   ============================================================ */
+'use strict';
+
+const HOTLIST_SIZE = 10;
+const HOTLIST_TTL = 90 * 1000; /* 榜单为盘中动态数据，短 TTL 避免长期陈旧 */
+
+/* 纯函数：push2 榜单行 → 带行情的 stock 对象
+   复用 24-screener.js 的 normalizeScreenerRow（代码/前缀/ST 过滤），附加现价与涨跌与榜单指标 */
+function normalizeHotlistRow(r) {
+  const stock = normalizeScreenerRow(r);
+  if (!stock) return null;
+  return {
+    ...stock,
+    price: num(r.f2),
+    changePct: num(r.f3),
+    amount: num(r.f6),      /* 成交额（元） */
+    netInflow: num(r.f62),  /* 主力净流入（元） */
+  };
+}
+
+/* 通用榜单拉取：fid 决定排序字段，fields 决定返回列 */
+function fetchRankBoard(kind, fid, fields, size = HOTLIST_SIZE) {
+  const n = clamp(Math.round(Number(size) || HOTLIST_SIZE), 5, 30);
+  return cached(`hotlist:${kind}:${n}`, HOTLIST_TTL, async () => {
+    const params = new URLSearchParams({
+      pn: '1',
+      pz: String(n),
+      po: '1',
+      np: '1',
+      fltt: '2',
+      invt: '2',
+      fid,
+      fs: 'm:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23',
+      fields,
+    });
+    const data = await emJsonp(`${API.push2}clist/get?${params}`);
+    const diff = data && data.data && data.data.diff;
+    const rows = Array.isArray(diff) ? diff : diff ? Object.values(diff) : [];
+    return rows
+      .map(normalizeHotlistRow)
+      .filter((s) => s && Number.isFinite(s.price))
+      .slice(0, n);
+  });
+}
+
+/* 当下最热门：按成交额排序 */
+function getHotBoard(size = HOTLIST_SIZE) {
+  return fetchRankBoard('hot', 'f6', 'f12,f14,f2,f3,f6', size);
+}
+
+/* 主力资金净流入最多：按 f62（今日主力净流入额）排序 */
+function getInflowBoard(size = HOTLIST_SIZE) {
+  return fetchRankBoard('inflow', 'f62', 'f12,f14,f2,f3,f62,f184', size);
+}
+
+
 /* ===== js/30-render-home.js ===== */
 /* ============================================================
    Home / landing renderer
@@ -4617,6 +4741,36 @@ function homeHTML() {
       </div>
     </div>
 
+    <section class="home-boards" aria-labelledby="boardsTitle">
+      <div class="boards-head">
+        <div class="section-kicker">市场动向</div>
+        <h2 id="boardsTitle">当下热门 · 资金流向</h2>
+        <p>点击任意一只，进入完整四维研判。榜单随行情刷新，数据来自公开接口。</p>
+      </div>
+      <div class="boards-grid">
+        <article class="card board-card" id="hotBoardCard">
+          <div class="board-card-head">
+            <span class="board-ico">${ico('pulse', 'lg')}</span>
+            <div>
+              <h3>成交热门 TOP 10</h3>
+              <span>沪深 A 股 · 按当日成交额</span>
+            </div>
+          </div>
+          <div class="board-list" id="hotBoardBody">${loadingCard('正在获取热门榜…', 4)}</div>
+        </article>
+        <article class="card board-card" id="inflowBoardCard">
+          <div class="board-card-head">
+            <span class="board-ico inflow">${ico('trendUp', 'lg')}</span>
+            <div>
+              <h3>主力净流入 TOP 10</h3>
+              <span>沪深 A 股 · 按当日主力资金净额</span>
+            </div>
+          </div>
+          <div class="board-list" id="inflowBoardBody">${loadingCard('正在获取资金流向…', 4)}</div>
+        </article>
+      </div>
+    </section>
+
     <section class="features" aria-labelledby="featureTitle">
       <div class="features-head">
         <div>
@@ -4651,6 +4805,64 @@ function renderHome() {
   syncTopbar('home');
   loadHotQuotes();
   loadWatchQuotes();
+  loadHomeBoards();
+}
+
+/* ---------------- 首页双榜单（FR-9） ---------------- */
+function boardRowHTML(stock, index, metric) {
+  const chgCls = pctClass(stock.changePct);
+  const metricCls = metric === 'inflow' ? pctClass(stock.netInflow) : '';
+  const metricText =
+    metric === 'inflow'
+      ? fmtBig(stock.netInflow != null ? stock.netInflow / 1e8 : null, '亿')
+      : fmtBig(stock.amount != null ? stock.amount / 1e8 : null, '亿');
+  return `
+    <button type="button" class="board-row" ${stockDataset(stock)} ${extraBoardAttrs(stock)}>
+      <span class="br-rank ${index < 3 ? 'top' : ''}">${index + 1}</span>
+      <span class="br-name">
+        <b>${esc(stock.name)}</b>
+        <small>${esc(stock.code)}</small>
+      </span>
+      <span class="br-quote">
+        <b>${fmtPrice(stock.price)}</b>
+        <small class="${chgCls}">${fmtPct(stock.changePct)}</small>
+      </span>
+      <span class="br-metric ${metricCls}">${esc(metricText)}</span>
+    </button>`;
+}
+
+/* 榜单行携带指标，进入研判后 header 可展示（沿用既有 dataset，不新增请求） */
+function extraBoardAttrs(stock) {
+  return [
+    `data-amount="${stock.amount != null ? Number(stock.amount) : ''}"`,
+    `data-netinflow="${stock.netInflow != null ? Number(stock.netInflow) : ''}"`,
+  ].join(' ');
+}
+
+function boardEmptyHTML(kind) {
+  return `<div class="board-empty">${ico('info', 'sm')}<span>${
+    kind === 'inflow' ? '资金流向数据暂不可用，稍后刷新重试' : '热门榜单暂不可用，稍后刷新重试'
+  }</span></div>`;
+}
+
+function renderHomeBoard(kind, rows, error) {
+  const body = $(kind === 'inflow' ? '#inflowBoardBody' : '#hotBoardBody');
+  if (!body) return; /* 用户已离开首页 */
+  if (error || !Array.isArray(rows) || !rows.length) {
+    body.innerHTML = boardEmptyHTML(kind);
+    return;
+  }
+  body.innerHTML = rows.map((s, i) => boardRowHTML(s, i, kind)).join('');
+}
+
+async function loadHomeBoards() {
+  const hot = getHotBoard()
+    .then((rows) => renderHomeBoard('hot', rows))
+    .catch(() => renderHomeBoard('hot', null, true));
+  const inflow = getInflowBoard()
+    .then((rows) => renderHomeBoard('inflow', rows))
+    .catch(() => renderHomeBoard('inflow', null, true));
+  await Promise.all([hot, inflow]);
 }
 
 /* FR-6.2：自选股行情速览，批量接口一次拉取 */

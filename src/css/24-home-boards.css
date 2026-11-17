@@ -1,0 +1,60 @@
+/* ============================================================
+   首页双榜单 — 成交热门 / 主力净流入
+   ============================================================ */
+.home-boards{margin-top:70px}
+.boards-head{margin-bottom:22px}
+.boards-head h2{font-family:var(--serif);font-size:30px;font-weight:600;letter-spacing:-.01em;margin-top:8px}
+.boards-head p{color:var(--muted);font-size:12.5px;margin-top:6px}
+.boards-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+
+.board-card{padding:18px 14px 12px;min-width:0}
+.board-card-head{display:flex;align-items:center;gap:12px;padding:2px 8px 14px;border-bottom:1px solid var(--line)}
+.board-ico{
+  width:38px;height:38px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;
+  color:var(--gold);background:rgba(231,180,92,.1);border:1px solid rgba(231,180,92,.22)
+}
+.board-ico.inflow{color:var(--red);background:rgba(240,112,112,.1);border-color:rgba(240,112,112,.22)}
+.board-ico .ico{width:21px;height:21px}
+.board-ico .ico svg{width:21px;height:21px}
+.board-card-head h3{font-size:15px;font-weight:600;margin:0;letter-spacing:.01em}
+.board-card-head span:not(.board-ico){display:block;font-size:10.5px;color:var(--faint);margin-top:2px}
+
+.board-list{padding-top:6px}
+.board-row{
+  width:100%;display:grid;grid-template-columns:26px 1fr auto auto;align-items:center;gap:10px;
+  padding:9px 8px;border:none;border-bottom:1px solid var(--line);border-radius:8px;
+  background:transparent;color:var(--text);text-align:left;cursor:pointer;transition:background .16s;
+  font-family:var(--sans)
+}
+.board-row:last-child{border-bottom:none}
+.board-row:hover{background:rgba(255,255,255,.035)}
+.board-row:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+.br-rank{font-family:var(--mono);font-size:12px;color:var(--faint);text-align:center}
+.br-rank.top{color:var(--gold);font-weight:700}
+.br-name{min-width:0;display:flex;flex-direction:column}
+.br-name b{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.br-name small{font-size:10px;color:var(--faint);font-family:var(--mono)}
+.br-quote{display:flex;flex-direction:column;align-items:flex-end;white-space:nowrap}
+.br-quote b{font-family:var(--mono);font-size:12px}
+.br-quote small{font-size:10px;font-family:var(--mono)}
+.br-metric{
+  min-width:66px;text-align:right;font-family:var(--mono);font-size:11.5px;color:var(--text-2);
+  padding:3px 7px;border-radius:6px;background:var(--panel-2);white-space:nowrap
+}
+.board-empty{display:flex;align-items:center;justify-content:center;gap:8px;padding:34px 10px;color:var(--muted);font-size:12px}
+
+@media(max-width:860px){
+  .boards-grid{grid-template-columns:1fr}
+  .home-boards{margin-top:54px}
+  .boards-head h2{font-size:25px}
+}
+@media(max-width:520px){
+  .board-row{grid-template-columns:22px 1fr auto;gap:8px}
+  .br-metric{grid-column:3;min-width:0}
+  .br-quote{display:none}
+}
+
+@media print{
+  .board-row{break-inside:avoid}
+  .board-card{box-shadow:none}
+}
