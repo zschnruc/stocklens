@@ -626,9 +626,172 @@ async function getIndustryReports(industryCode, industryName, opts = {}) {
 }
 
 /* ---------------- Eastmoney financials / profile ---------------- */
+/* 美股 secucode：腾讯 .OQ/.N/.PS → 东财 .O/.N/.A，缺省按纳斯达克 .O */
+function usSecucode(stock, quote) {
+  const raw = String((quote && quote.rawCode) || (stock && stock.rawCode) || (stock && stock.code) || '')
+    .replace(/^us/i, '')
+    .trim();
+  if (!raw) return '';
+  if (/\.OQ$/i.test(raw)) return raw.replace(/\.OQ$/i, '.O');
+  if (/\.PS$/i.test(raw)) return raw.replace(/\.PS$/i, '.O');
+  if (/\.[A-Z]{1,2}$/i.test(raw)) return raw;
+  return raw + '.O';
+}
+
+/* 东财美股财报为长表：每行一个科目，按 REPORT（如 2026/FY）分组后透视 */
+function usReportGroups(rows) {
+  const map = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((r) => {
+    if (!r || !r.REPORT) return;
+    const key = String(r.REPORT);
+    let g = map.get(key);
+    if (!g) {
+      g = {
+        report: key,
+        date: String(r.REPORT_DATE || ''),
+        type: String(r.REPORT_TYPE || ''),
+        label: String(r.REPORT_TYPE_DETAILS || r.REPORT_TYPE || key),
+        currency: r.CURRENCY_ABBR || r.CURRENCY || 'USD',
+        items: new Map(),
+      };
+      map.set(key, g);
+    }
+    const name = String(r.ITEM_NAME || '').trim();
+    if (name && !g.items.has(name)) g.items.set(name, r);
+  });
+  return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function usItem(group, names) {
+  if (!group) return null;
+  for (const name of names) {
+    const row = group.items.get(name);
+    if (row && Number.isFinite(num(row.AMOUNT))) return row;
+  }
+  return null;
+}
+
+const US_REVENUE_ITEMS = ['营业收入', '主营收入', '收入总额', '营业总收入', '总营业收入'];
+const US_PROFIT_ITEMS = ['归属于母公司股东净利润', '归属于普通股股东净利润', '净利润'];
+const US_EQUITY_ITEMS = ['股东权益合计', '归属于母公司股东权益', '总权益'];
+const US_EPS_ITEMS = ['基本每股收益-普通股', '摊薄每股收益-普通股'];
+const US_SHARES_ITEMS = ['基本加权平均股数-普通股', '摊薄加权平均股数-普通股'];
+
+/* 纯函数：长表行 → 与 A 股/港股同字段口径的财务对象（可离线单测） */
+function buildUSFinancials(incomeRows, balanceRows) {
+  const groups = usReportGroups(incomeRows);
+  if (!groups.length) return { supported: true, empty: true, history: [] };
+  const balanceMap = new Map(usReportGroups(balanceRows).map((g) => [g.report, g]));
+  const isAnnual = (g) => /年报|年度/.test(g.type || '') || /FY$/i.test(g.report || '');
+
+  const readGroup = (g) => {
+    const b = balanceMap.get(g.report) || null;
+    const revenue = usItem(g, US_REVENUE_ITEMS);
+    const profit = usItem(g, US_PROFIT_ITEMS);
+    const gross = usItem(g, ['毛利']);
+    const eps = usItem(g, US_EPS_ITEMS);
+    const shares = usItem(g, US_SHARES_ITEMS);
+    const equity = usItem(b, US_EQUITY_ITEMS);
+    const assets = usItem(b, ['总资产']);
+    const liabilities = usItem(b, ['总负债']);
+    return {
+      revenue: revenue ? num(revenue.AMOUNT) : null,
+      revenueYoY: revenue ? num(revenue.YOY_RATIO) : null,
+      profit: profit ? num(profit.AMOUNT) : null,
+      profitYoY: profit ? num(profit.YOY_RATIO) : null,
+      gross: gross ? num(gross.AMOUNT) : null,
+      eps: eps ? num(eps.AMOUNT) : null,
+      shares: shares ? num(shares.AMOUNT) : null,
+      equity: equity ? num(equity.AMOUNT) : null,
+      assets: assets ? num(assets.AMOUNT) : null,
+      liabilities: liabilities ? num(liabilities.AMOUNT) : null,
+    };
+  };
+
+  const latest = groups[0];
+  const cur = readGroup(latest);
+  const prev = groups[1] ? readGroup(groups[1]) : null;
+  const avgEquity =
+    Number.isFinite(cur.equity) && prev && Number.isFinite(prev.equity) && prev.equity > 0
+      ? (cur.equity + prev.equity) / 2
+      : cur.equity;
+  /* 单季/中报利润不能直接当年度回报，ROE 仅在年报口径下计算 */
+  const roe = isAnnual(latest) && cur.profit > 0 && avgEquity > 0 ? (cur.profit / avgEquity) * 100 : null;
+  const grossMargin = cur.gross > 0 && cur.revenue > 0 ? (cur.gross / cur.revenue) * 100 : null;
+  const debtRatio = cur.liabilities > 0 && cur.assets > 0 ? (cur.liabilities / cur.assets) * 100 : null;
+  const bps = cur.equity > 0 && cur.shares > 0 ? cur.equity / cur.shares : null;
+
+  const history = groups.slice(0, 4).map((g, i) => {
+    const row = readGroup(g);
+    const prior = groups[i + 1] ? readGroup(groups[i + 1]) : null;
+    const eqAvg =
+      Number.isFinite(row.equity) && prior && Number.isFinite(prior.equity) && prior.equity > 0
+        ? (row.equity + prior.equity) / 2
+        : row.equity;
+    return {
+      period: g.label,
+      revenueYoY: row.revenueYoY,
+      profitYoY: row.profitYoY,
+      roe: isAnnual(g) && row.profit > 0 && eqAvg > 0 ? (row.profit / eqAvg) * 100 : null,
+    };
+  });
+
+  return {
+    supported: true,
+    period: latest.label,
+    reportDate: fmtDate(latest.date),
+    revenue: cur.revenue,
+    revenueYoY: cur.revenueYoY,
+    profit: cur.profit,
+    profitYoY: cur.profitYoY,
+    grossMargin,
+    roe,
+    eps: cur.eps,
+    bps,
+    debtRatio,
+    pe: null,
+    pb: null,
+    currency: latest.currency || 'USD',
+    history,
+    source: '东方财富 F10 · 美股年报',
+  };
+}
+
+async function fetchUSReport(reportName, secucode, filterExtra = '', pageSize = 200) {
+  const params = new URLSearchParams({
+    reportName,
+    columns: 'ALL',
+    filter: `(SECUCODE="${secucode}")${filterExtra}`,
+    pageNumber: '1',
+    pageSize: String(pageSize),
+    sortTypes: '-1',
+    sortColumns: 'REPORT_DATE',
+    source: 'HSF10',
+    client: 'PC',
+  });
+  const data = await emJSON(`${API.datacenter}?${params}`);
+  return (data && data.result && data.result.data) || [];
+}
+
 async function getFinancials(stock) {
   if (stock.market === 'US') {
-    return { supported: false, reason: '美股盈利与成长数据暂无稳定免费源' };
+    const secucode = usSecucode(stock);
+    if (!secucode) return { supported: false, reason: '缺少美股代码，无法获取财务数据' };
+    return cached('financial:' + secucode, TTL.financial, async () => {
+      const [annualIncome, annualBalance] = await Promise.all([
+        fetchUSReport('RPT_USF10_FN_INCOME', secucode, '(REPORT_TYPE="年报")'),
+        fetchUSReport('RPT_USF10_FN_BALANCE', secucode, '(REPORT_TYPE="年报")'),
+      ]);
+      if (!annualIncome.length) {
+        /* 无年报（部分外国私人发行人）时回退最近报告期，ROE 自动留空 */
+        const [income, balance] = await Promise.all([
+          fetchUSReport('RPT_USF10_FN_INCOME', secucode),
+          fetchUSReport('RPT_USF10_FN_BALANCE', secucode),
+        ]);
+        return buildUSFinancials(income, balance);
+      }
+      return buildUSFinancials(annualIncome, annualBalance);
+    });
   }
   const code = stock.code;
   const isHK = stock.market === 'HK';
@@ -638,7 +801,8 @@ async function getFinancials(stock) {
     let columns;
     if (isHK) {
       reportName = 'RPT_HKF10_FN_MAININDICATOR';
-      columns = 'SECUCODE,SECURITY_NAME_ABBR,REPORT_DATE,REPORT_TYPE,OPERATE_INCOME,OPERATE_INCOME_YOY,GROSS_PROFIT,GROSS_PROFIT_YOY,HOLDER_PROFIT,HOLDER_PROFIT_YOY,GROSS_PROFIT_RATIO,ROE_YEARLY,ROE_AVG,PE_TTM,PB_TTM,TOTAL_MARKET_CAP,CURRENCY';
+      columns =
+        'SECUCODE,SECURITY_NAME_ABBR,REPORT_DATE,REPORT_TYPE,OPERATE_INCOME,OPERATE_INCOME_YOY,GROSS_PROFIT,GROSS_PROFIT_YOY,HOLDER_PROFIT,HOLDER_PROFIT_YOY,GROSS_PROFIT_RATIO,ROE_YEARLY,ROE_AVG,ROIC_YEARLY,BASIC_EPS,BPS,DEBT_ASSET_RATIO,DIVIDEND_RATE,PE_TTM,PB_TTM,TOTAL_MARKET_CAP,CURRENCY';
     } else {
       reportName = 'RPT_F10_FINANCE_MAINFINADATA';
       columns = 'SECUCODE,SECURITY_NAME_ABBR,REPORT_DATE,REPORT_DATE_NAME,EPSJB,BPS,TOTALOPERATEREVE,PARENTNETPROFIT,TOTALOPERATEREVETZ,PARENTNETPROFITTZ,XSMLL,ROEJQ,ZCFZL';
@@ -667,10 +831,13 @@ async function getFinancials(stock) {
           profitYoY: num(latest.HOLDER_PROFIT_YOY),
           grossMargin: num(latest.GROSS_PROFIT_RATIO),
           roe: num(latest.ROE_YEARLY, num(latest.ROE_AVG)),
+          roic: num(latest.ROIC_YEARLY),
           pe: num(latest.PE_TTM),
           pb: num(latest.PB_TTM),
           eps: num(latest.BASIC_EPS),
           bps: num(latest.BPS),
+          debtRatio: num(latest.DEBT_ASSET_RATIO),
+          dividendRate: num(latest.DIVIDEND_RATE),
           currency: latest.CURRENCY || 'HKD',
           reportDate: fmtDate(latest.REPORT_DATE),
           history: rows.map((r) => ({
@@ -721,12 +888,7 @@ async function getOrgProfile(stock, quote) {
       secucode = `${code}.HK`;
     } else {
       reportName = 'RPT_USF10_INFO_ORGPROFILE';
-      const raw = (quote && quote.rawCode) || stock.rawCode || code;
-      const c = String(raw).replace(/^us/i, '');
-      if (/\.OQ$/i.test(c)) secucode = c.replace(/\.OQ$/i, '.O');
-      else if (/\.PS$/i.test(c)) secucode = c.replace(/\.PS$/i, '.O');
-      else if (/\.[A-Z]{1,2}$/i.test(c)) secucode = c;
-      else secucode = c + '.O';
+      secucode = usSecucode(stock, quote);
     }
     const params = new URLSearchParams({
       reportName,

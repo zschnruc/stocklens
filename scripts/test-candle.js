@@ -313,6 +313,76 @@ function auditCandlestick(html, expectBars) {
   check('东财 klines 解析列序正确（开收高低量）', emParsed.length === 2 && emParsed[0].open === 10 && emParsed[0].close === 12 && emParsed[0].high === 13 && emParsed[0].low === 9 && emParsed[0].volume === 500);
   check('东财 klines 脏行被过滤', parseEmKlines(['bad,row', '2026-11-17,10,12,13,9,500']).length === 1);
 
+  console.log('美股财务长表透视（v1.8，离线纯函数）');
+  const usRow = (report, date, type, label, name, amount, yoy = null) => ({
+    REPORT: report,
+    REPORT_DATE: date,
+    REPORT_TYPE: type,
+    REPORT_TYPE_DETAILS: label,
+    ITEM_NAME: name,
+    AMOUNT: amount,
+    YOY_RATIO: yoy,
+    CURRENCY_ABBR: 'USD',
+  });
+  const usIncome = [
+    usRow('2026/FY', '2026-09-26', '年报', '2026年 年报', '营业收入', 100e9, 20),
+    usRow('2026/FY', '2026-09-26', '年报', '2026年 年报', '归属于母公司股东净利润', 20e9, 25),
+    usRow('2026/FY', '2026-09-26', '年报', '2026年 年报', '毛利', 40e9),
+    usRow('2026/FY', '2026-09-26', '年报', '2026年 年报', '基本每股收益-普通股', 5),
+    usRow('2026/FY', '2026-09-26', '年报', '2026年 年报', '基本加权平均股数-普通股', 10e9),
+    usRow('2025/FY', '2025-09-27', '年报', '2025年 年报', '营业收入', 80e9),
+    usRow('2025/FY', '2025-09-27', '年报', '2025年 年报', '归属于母公司股东净利润', 16e9),
+  ];
+  const usBalance = [
+    usRow('2026/FY', '2026-09-26', '年报', '2026年 年报', '总资产', 200e9),
+    usRow('2026/FY', '2026-09-26', '年报', '2026年 年报', '总负债', 120e9),
+    usRow('2026/FY', '2026-09-26', '年报', '2026年 年报', '股东权益合计', 80e9),
+    usRow('2025/FY', '2025-09-27', '年报', '2025年 年报', '股东权益合计', 60e9),
+  ];
+  const usFin = buildUSFinancials(usIncome, usBalance);
+  check('美股长表按报告期透视取营收与净利', usFin.revenue === 100e9 && usFin.profit === 20e9);
+  check('美股同比取接口 YOY_RATIO', usFin.revenueYoY === 20 && usFin.profitYoY === 25);
+  check('美股毛利率 = 毛利 ÷ 营收', Math.round(usFin.grossMargin) === 40);
+  check('美股 ROE = 归母净利 ÷ 平均股东权益', Math.abs(usFin.roe - 28.5714) < 0.01);
+  check('美股负债率 = 总负债 ÷ 总资产', Math.round(usFin.debtRatio) === 60);
+  check('美股 BPS = 股东权益 ÷ 加权股数', usFin.bps === 8);
+  check('美股历史含最近两期且标注报告期', usFin.history.length === 2 && usFin.history[0].period === '2026年 年报');
+  check('美股期间标注为年报口径', /年报/.test(usFin.period) && usFin.currency === 'USD');
+
+  const bankFin = buildUSFinancials(
+    [
+      usRow('2026/FY', '2026-12-31', '年报', '2026年 年报', '收入总额', 90e9, 3),
+      usRow('2026/FY', '2026-12-31', '年报', '2026年 年报', '归属于母公司股东净利润', 18e9, -2),
+    ],
+    [usRow('2026/FY', '2026-12-31', '年报', '2026年 年报', '股东权益合计', 100e9)]
+  );
+  check('金融股缺毛利时毛利率留空', bankFin.revenue === 90e9 && bankFin.grossMargin === null);
+  check('收入总额可作为营业收入兜底', bankFin.revenueYoY === 3 && bankFin.profitYoY === -2);
+
+  const quarterFin = buildUSFinancials(
+    [
+      usRow('2026/Q2', '2026-06-30', '单季报', '2026年 第二季报', '营业收入', 30e9, 10),
+      usRow('2026/Q2', '2026-06-30', '单季报', '2026年 第二季报', '归属于母公司股东净利润', 6e9, 8),
+    ],
+    [usRow('2026/Q2', '2026-06-30', '单季报', '2026年 第二季报', '股东权益合计', 50e9)]
+  );
+  check('非年报口径 ROE 留空（不冒充年度回报）', quarterFin.roe === null && quarterFin.revenueYoY === 10);
+  check('美股财务空数据返回 empty', buildUSFinancials([], []).empty === true);
+  check('美股 secucode：.OQ → .O', usSecucode({ code: 'AAPL', rawCode: 'AAPL.OQ' }) === 'AAPL.O');
+  check('美股 secucode：.N 保持', usSecucode({ code: 'JPM', rawCode: 'JPM.N' }) === 'JPM.N');
+  check('美股 secucode：无后缀补 .O', usSecucode({ code: 'NVDA' }) === 'NVDA.O');
+
+  const usScore = computeScore({
+    market: 'US',
+    quote: { price: 100 },
+    kline: { metrics: { r20: 5, r60: 10, r120: 15, trend: '多头排列', maxDrawdown: -5, ma20: 10, ma60: 9, volatility: 0.3 } },
+    reports: null,
+    financials: { supported: true, revenueYoY: 10, profitYoY: 12, roe: 8, period: '2026年 年报' },
+    news: [{ title: '公司增长强劲', content: '' }],
+  });
+  check('评分返回可用维度数与总维度数', usScore.availableCount === 3 && usScore.dimCount === 4 && usScore.coverage === 70);
+  check('非 A 股评分附带跨市场不可直接比较提示', /请勿与 A 股评分直接比较高低/.test(usScore.desc));
+
   console.log(failures ? `\n${failures} 项失败` : '\n全部通过');
   process.exit(failures ? 1 : 0);
 })();

@@ -247,6 +247,8 @@ function computeScore({ market, quote, kline, reports, financials, news }) {
     total = Math.round(available.reduce((a, d) => a + d.score * d.weight, 0) / weightSum);
   }
   const coverage = Math.round((weightSum / 100) * 100);
+  const availableCount = available.length;
+  const dimCount = dims.length;
   const verdict = verdictFor(total === null ? 0 : total);
   const sorted = available.slice().sort((a, b) => b.score - a.score);
   let desc = total === null ? '有效数据不足，暂不给出综合分。' : verdict.desc + '。';
@@ -256,13 +258,19 @@ function computeScore({ market, quote, kline, reports, financials, news }) {
     }）。`;
   }
   if (coverage < 100) {
-    desc += `当前数据覆盖 ${coverage}%，缺失维度已从权重中剔除。`;
+    desc += `当前可用 ${availableCount}/${dimCount} 个维度、权重覆盖 ${coverage}%，缺失维度已从权重中剔除。`;
+    if (market !== 'A') {
+      desc += '港美股缺少免费中文研报等维度，分数仅在可用维度内可比，请勿与 A 股评分直接比较高低。';
+    }
   }
   return {
     total,
     verdict,
     dims,
     coverage,
+    availableCount,
+    dimCount,
+    market,
     desc,
     missing: dims.filter((d) => !d.available).map((d) => d.short),
     createdAt: new Date(),

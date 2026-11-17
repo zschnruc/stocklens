@@ -260,6 +260,10 @@ function dimRow(d) {
 }
 
 function renderFactorCard(score) {
+  const dimCount = Number.isFinite(score.dimCount) ? score.dimCount : score.dims.length;
+  const availCount = Number.isFinite(score.availableCount)
+    ? score.availableCount
+    : score.dims.filter((d) => d.available).length;
   const explain = score.dims
     .map(
       (d) => `<div class="explain-item ${d.available ? '' : 'unavailable'}">
@@ -279,7 +283,7 @@ function renderFactorCard(score) {
       <div class="dims">${score.dims.map(dimRow).join('')}</div>
     </div>
     <details class="score-explain" open>
-      <summary>评分依据 <span>数据覆盖 ${score.coverage}% · ${score.missing.length ? `缺失 ${esc(score.missing.join('、'))}` : '四维齐全'}</span></summary>
+      <summary>评分依据 <span>可用 ${availCount}/${dimCount} 维 · 权重覆盖 ${score.coverage}% · ${score.missing.length ? `缺失 ${esc(score.missing.join('、'))}` : '四维齐全'}</span></summary>
       <div class="explain-grid">${explain}</div>
       <p class="inline-note">综合分 = 可用维度加权平均（研报 30% / 盈利 25% / 技术 25% / 舆情 20%），缺失维度从权重中剔除。评级、目标价、财务与情绪均来自公开数据，不做主观填充。</p>
     </details>
@@ -287,14 +291,21 @@ function renderFactorCard(score) {
 }
 
 function renderScoreCard(score, createdAt) {
-  const coverageText = score.coverage === 100 ? '四维数据齐全' : `缺失 ${score.missing.join('、')}，已折算`;
+  const dimCount = Number.isFinite(score.dimCount) ? score.dimCount : score.dims.length;
+  const availCount = Number.isFinite(score.availableCount)
+    ? score.availableCount
+    : score.dims.filter((d) => d.available).length;
+  const coverageText =
+    score.coverage === 100
+      ? `${dimCount} 维数据齐全`
+      : `可用 ${availCount}/${dimCount} 维 · 缺失 ${score.missing.join('、')}`;
   return `<aside class="card score-card">
     <div class="card-kicker">${ico('spark')}综合研判</div>
     ${renderGauge(score.total, score.verdict, score.coverage)}
     <p class="score-desc">${esc(score.desc)}</p>
     <div class="score-foot">
-      <span class="confidence">${ico('shield', 'sm')}<span>数据覆盖 <b>${score.coverage}%</b><br>${esc(coverageText)}</span></span>
-      <span class="score-mini-bars" title="数据覆盖 ${score.coverage}%">${renderScoreMiniBars(score.coverage)}</span>
+      <span class="confidence">${ico('shield', 'sm')}<span>权重覆盖 <b>${score.coverage}%</b><br>${esc(coverageText)}</span></span>
+      <span class="score-mini-bars" title="权重覆盖 ${score.coverage}%">${renderScoreMiniBars(score.coverage)}</span>
     </div>
     <div class="score-updated">更新于 ${esc(
       createdAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -686,10 +697,10 @@ function renderFinancialSection(f, market) {
   if (!f || !f.supported) {
     body.innerHTML = emptyState({
       icon: 'database',
-      title: market === 'US' ? '美股盈利与成长数据暂缺' : '财务数据暂不可用',
+      title: market === 'US' ? '美股财务数据暂不可用' : '财务数据暂不可用',
       desc:
         (f && f.reason) ||
-        '当前没有稳定的免费财务数据源。盈利与成长维度会标记为不可用，评分按剩余维度折算，不会用估值字段替代成长数据。',
+        '当前接口未返回可用的财务数据。盈利与成长维度会标记为不可用，评分按剩余维度折算，不会用估值字段替代成长数据。',
     });
     updateStatus('financial', 'empty', '财务 暂无数据');
     return;
@@ -703,16 +714,23 @@ function renderFinancialSection(f, market) {
     updateStatus('financial', 'empty', '财务 无有效数据');
     return;
   }
-  const currency = f.currency || (market === 'HK' ? 'HKD' : 'CNY');
+  const currency = f.currency || (market === 'HK' ? 'HKD' : market === 'US' ? 'USD' : 'CNY');
   const periodLabel = f.period || f.reportDate || '最近报告期';
   const history = (f.history || []).slice(0, 4);
+  const f10Label = market === 'A' ? 'A 股 F10' : market === 'HK' ? '港股 F10' : '美股 F10';
+  const sourceNote =
+    market === 'US'
+      ? '美股为年报口径；ROE = 归母净利 ÷ 平均股东权益，BPS 以加权股数近似计算'
+      : market === 'HK'
+        ? '港股为年报 / 中报口径，指标来自东财港股 F10'
+        : '财务口径可能与公司公告存在差异';
   body.innerHTML = `<div class="card financial-card">
     <div class="fin-head">
       <div>
         <span class="card-kicker">${ico('database')}核心财务指标</span>
         <div class="fin-period">${esc(periodLabel)} <span>· ${esc(f.reportDate || '')}</span></div>
       </div>
-      <span class="badge">${market === 'A' ? 'A 股 F10' : '港股 F10'} · ${esc(currency)}</span>
+      <span class="badge">${f10Label} · ${esc(currency)}</span>
     </div>
     <div class="fin-grid">
       <div class="fin-item"><label>营业收入</label><strong>${finMoney(f.revenue, currency)}</strong>${
@@ -745,7 +763,7 @@ function renderFinancialSection(f, market) {
           </table></div>`
         : ''
     }
-    <div class="source-note" style="margin-top:12px">${esc(f.source || '东方财富 F10')} · 财务口径可能与公司公告存在差异，请以正式报告为准</div>
+    <div class="source-note" style="margin-top:12px">${esc(f.source || '东方财富 F10')} · ${esc(sourceNote)}，请以正式报告为准</div>
   </div>`;
   updateStatus('financial', 'ok', `财务 ${f.period || '已获取'}`);
 }
