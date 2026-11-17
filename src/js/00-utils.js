@@ -141,6 +141,20 @@ function fmtEps(n, currency) {
 function ratioText(n, digits = 1) {
   return Number.isFinite(n) ? `${n.toFixed(digits)}%` : '—';
 }
+/* A 股代码 → 腾讯行情前缀。ETF/基金代码段：沪市 50/51/52/56/58，深市 15/16/18。
+   对普通个股代码返回与原规则完全一致的结果（6/9→sh、4/8→bj、其余→sz）。 */
+function aSharePrefix(code) {
+  const c = String(code || '').replace(/\D/g, '');
+  if (/^(50|51|52|56|58)/.test(c)) return 'sh';
+  if (/^(15|16|18)/.test(c)) return 'sz';
+  if (/^(6|9)/.test(c)) return 'sh';
+  if (/^(4|8)/.test(c)) return 'bj';
+  return 'sz';
+}
+/* ETF/场内基金代码段判定（用于搜索与输入自动打标） */
+function isEtfCode(code) {
+  return /^(50|51|52|56|58|15|16|18)\d{4}$/.test(String(code || '').replace(/\D/g, ''));
+}
 function marketFromKey(key) {
   if (!key) return 'A';
   if (key.startsWith('us')) return 'US';

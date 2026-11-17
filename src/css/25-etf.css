@@ -1,0 +1,44 @@
+/* ============================================================
+   ETF 研判模块样式 — 首页 ETF 榜 + ETF 专属研判页
+   复用 base/analysis 变量与布局，仅补充 ETF 专属区块。
+   红涨绿跌沿用 --up/--down，明暗主题自动适配。
+   ============================================================ */
+
+/* 首页 ETF 榜卡片：单卡占满一行更舒展 */
+.home-boards.etf-board{margin-top:26px}
+.etf-board .boards-grid{grid-template-columns:1fr}
+.board-ico.etf{color:var(--violet);background:rgba(179,157,246,.1);border-color:rgba(179,157,246,.22)}
+.etf-board .board-card-head h3{color:var(--violet)}
+
+/* ETF 页：行业主题标签与研报说明 */
+.etf-industry-head{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:13px 16px;margin-bottom:12px;border:1px solid var(--line);
+  border-radius:12px;background:rgba(88,211,195,.05);font-size:11.5px;color:var(--muted)
+}
+html[data-theme="light"] .etf-industry-head{background:rgba(15,110,86,.045)}
+.etf-report-list{border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.etf-report-item{padding:14px 17px;border-bottom:1px solid var(--line);transition:background .16s}
+.etf-report-item:last-child{border-bottom:0}
+.etf-report-item:hover{background:rgba(255,255,255,.025)}
+html[data-theme="light"] .etf-report-item:hover{background:rgba(24,32,45,.025)}
+.etf-report-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.etf-report-org{font-size:11px;font-weight:600;color:var(--gold)}
+.etf-report-date{font-family:var(--mono);font-size:10px;color:var(--faint)}
+.etf-report-rating{font-size:10px;color:var(--up);border:1px solid rgba(240,112,112,.3);border-radius:6px;padding:1px 7px}
+.etf-report-item h4{font-size:13px;line-height:1.55;margin:0 0 5px;font-weight:600}
+.etf-report-item h4 a{color:var(--text);text-decoration:none}
+.etf-report-item h4 a:hover{color:var(--gold)}
+.etf-report-item p{font-size:11.5px;line-height:1.6;color:var(--muted);margin:0}
+
+/* ETF 头部 industry 徽标使用 teal 语义色 */
+.badge.teal{color:var(--teal);border-color:rgba(88,211,195,.32);background:rgba(88,211,195,.08)}
+
+@media (max-width: 640px){
+  .etf-industry-head{font-size:11px;padding:11px 13px}
+  .etf-report-item{padding:12px 13px}
+}
+
+@media print{
+  .etf-report-item,.etf-industry-head{break-inside:avoid}
+}

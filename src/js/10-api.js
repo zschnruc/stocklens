@@ -140,11 +140,13 @@ function normalizeSearchItem(part) {
   const name = stripTags(f[2] || '');
   const pinyin = (f[3] || '').trim();
   const type = f[4] || '';
-  if (!/^GP/i.test(type)) return null;
+  /* 放行个股(GP)与场内基金/ETF(ETF/ET/JJ)，其余类型维持原样丢弃 */
+  if (!/^(GP|ETF|ET|JJ)/i.test(type)) return null;
   if (!rawCode || !name) return null;
+  const kind = /^(ETF|ET|JJ)/i.test(type) ? 'etf' : 'stock';
 
   if (mk === 'sh' || mk === 'sz' || mk === 'bj') {
-    return { market: 'A', code: rawCode, name, pinyin, quoteKey: mk + rawCode, rawCode, klineCode: mk + rawCode };
+    return { market: 'A', code: rawCode, name, pinyin, quoteKey: mk + rawCode, rawCode, klineCode: mk + rawCode, kind };
   }
   if (mk === 'hk') {
     const code = rawCode.replace(/\D/g, '').padStart(5, '0');
@@ -204,8 +206,8 @@ function parseSymbolInput(input) {
     return { market: 'A', code, name: code, quoteKey: mk + code, rawCode: code, klineCode: mk + code };
   }
   if (/^\d{6}$/.test(q)) {
-    const mk = /^(6|9)/.test(q) ? 'sh' : /^(4|8)/.test(q) ? 'bj' : 'sz';
-    return { market: 'A', code: q, name: q, quoteKey: mk + q, rawCode: q, klineCode: mk + q };
+    const mk = aSharePrefix(q);
+    return { market: 'A', code: q, name: q, quoteKey: mk + q, rawCode: q, klineCode: mk + q, kind: isEtfCode(q) ? 'etf' : 'stock' };
   }
   m = q.match(/^hk(\d{1,5})$/i);
   if (m) {
@@ -439,9 +441,8 @@ async function getKline(stock, quote, period = 'day') {
 /* ---------------- Eastmoney reports ---------------- */
 function aShareSecucode(code) {
   const c = String(code || '');
-  if (/^(6|9)/.test(c)) return c + '.SH';
-  if (/^(4|8)/.test(c)) return c + '.BJ';
-  return c + '.SZ';
+  const p = aSharePrefix(c);
+  return c + (p === 'sh' ? '.SH' : p === 'bj' ? '.BJ' : '.SZ');
 }
 
 function normalizeReport(r) {

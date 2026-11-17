@@ -36,6 +36,7 @@ const state = {
     progressText: '准备中…',
   },
   search: { items: [], active: -1, query: '', seq: 0 },
+  etf: null,
 };
 
 /* ---------------- stock objects ---------------- */
@@ -47,14 +48,14 @@ function normalizeStock(input) {
   let quoteKey = s.quoteKey || '';
   let klineCode = s.klineCode || '';
   let name = s.name || code;
+  /* 标的类型：'etf' 走 ETF 专属研判，其余为个股。搜索/榜单/输入已带 kind，这里保留 */
+  let kind = s.kind === 'etf' ? 'etf' : 'stock';
 
   if (market === 'A') {
     code = code.replace(/\D/g, '').slice(0, 6);
     rawCode = code;
-    if (!quoteKey) {
-      const prefix = /^(6|9)/.test(code) ? 'sh' : /^(4|8)/.test(code) ? 'bj' : 'sz';
-      quoteKey = prefix + code;
-    }
+    if (isEtfCode(code)) kind = 'etf'; /* 以代码为准，避免数据集丢失 kind 时误判 */
+    if (!quoteKey) quoteKey = aSharePrefix(code) + code;
     if (!klineCode) klineCode = quoteKey;
   } else if (market === 'HK') {
     code = code.replace(/\D/g, '').padStart(5, '0').slice(-5);
@@ -68,7 +69,7 @@ function normalizeStock(input) {
     if (!klineCode) klineCode = 'us' + rawCode;
     name = s.name || code;
   }
-  return { market, code, name, quoteKey, klineCode, rawCode };
+  return { market, code, name, quoteKey, klineCode, rawCode, kind };
 }
 
 function stockFromDataset(ds) {
@@ -79,11 +80,16 @@ function stockFromDataset(ds) {
     quoteKey: ds.quotekey,
     klineCode: ds.klinecode,
     rawCode: ds.rawcode,
+    kind: ds.kind,
   });
 }
 
 function hashForStock(stock) {
   const raw = stock.market === 'US' ? stock.rawCode || stock.code : stock.code;
+  /* ETF 使用独立路由，与个股研判分流 */
+  if (stock.kind === 'etf' && stock.market === 'A') {
+    return `#/etf/A/${encodeURIComponent(raw)}`;
+  }
   return `#/stock/${stock.market}/${encodeURIComponent(raw)}`;
 }
 
@@ -100,6 +106,15 @@ function lookupKnownStock(market, code) {
 
 function stockFromHash() {
   const hash = location.hash || '';
+  /* ETF 独立路由优先识别 */
+  const etfHash = hash.match(/^#\/etf\/A\/([^/?#]+)/i);
+  if (etfHash) {
+    const code = decodeURIComponent(etfHash[1]).replace(/\D/g, '');
+    if (code.length !== 6) return null;
+    const known = lookupKnownStock('A', code);
+    if (known) return normalizeStock({ ...known, kind: 'etf' });
+    return normalizeStock({ market: 'A', code, name: code, kind: 'etf' });
+  }
   const m = hash.match(/^#\/stock\/(A|HK|US)\/([^/?#]+)/i);
   if (!m) return null;
   const market = m[1].toUpperCase();
@@ -109,8 +124,7 @@ function stockFromHash() {
     if (code.length !== 6) return null;
     const known = lookupKnownStock('A', code);
     if (known) return known;
-    const prefix = /^(6|9)/.test(code) ? 'sh' : /^(4|8)/.test(code) ? 'bj' : 'sz';
-    return normalizeStock({ market: 'A', code, name: code, quoteKey: prefix + code, klineCode: prefix + code });
+    return normalizeStock({ market: 'A', code, name: code });
   }
   if (market === 'HK') {
     const code = raw.replace(/\D/g, '').padStart(5, '0').slice(-5);
@@ -198,8 +212,8 @@ function routeFromHash() {
   }
   const stock = stockFromHash();
   if (!stock) {
-    if ((location.hash || '').startsWith('#/stock/')) {
-      toast('链接中的股票代码无效，已返回首页', 'error');
+    if ((location.hash || '').startsWith('#/stock/') || (location.hash || '').startsWith('#/etf/')) {
+      toast('链接中的代码无效，已返回首页', 'error');
       try {
         history.replaceState(null, '', location.pathname + location.search);
       } catch (e) {
@@ -321,6 +335,10 @@ function syncScreenerButtons(running) {
 
 /* ---------------- analysis orchestration ---------------- */
 async function analyzeStock(inputStock, opts = {}) {
+  /* ETF 标的统一分流到专属编排（覆盖搜索/榜单/路由/刷新所有入口） */
+  if (normalizeStock(inputStock).kind === 'etf') {
+    return analyzeEtf(inputStock, opts);
+  }
   const token = ++state.token;
   const stock = normalizeStock(inputStock);
   state.route = 'analysis';
@@ -484,6 +502,140 @@ function refreshScore() {
   state.score = score;
   /* 优先使用用户当前所选周期（周/月K），避免评分刷新时图表被重置回日K */
   renderOverview(score, state.periodKlines[state.klinePeriod] || state.core.kline);
+}
+
+/* ---------------- ETF 研判编排（独立路由 #/etf） ---------------- */
+function goEtf(input) {
+  const stock = normalizeStock({ ...input, kind: 'etf' });
+  state.pendingStock = stock;
+  closeSuggestions();
+  const hash = hashForStock(stock);
+  if (location.hash === hash) {
+    state.pendingStock = null;
+    analyzeEtf(stock);
+  } else {
+    location.hash = hash;
+  }
+}
+
+/* ETF 榜单/快照指标：从缓存榜单中按代码查找规模与成交额（零新增请求）；找不到时降级 */
+function findEtfBoardMeta(code) {
+  const boards = [getEtfBoard(ETF_BOARD_SIZE)];
+  return Promise.all(boards.map((p) => p.catch(() => []))).then((lists) => {
+    const all = lists.flat();
+    return all.find((s) => s && s.code === code) || null;
+  });
+}
+
+async function analyzeEtf(inputStock) {
+  const token = ++state.token;
+  const stock = normalizeStock({ ...inputStock, kind: 'etf' });
+  state.route = 'analysis';
+  state.stock = stock;
+  state.quote = null;
+  state.core = {};
+  state.coreSettled = new Set();
+  state.technical = null;
+  state.score = null;
+  state.reports = null; /* ETF 无个股研报，清空避免沿用上一只股票的目标价锚点 */
+  state.profile = null;
+  state.periodKlines = {};
+  state.klinePeriod = 'day';
+  state.etf = { token, fundamentals: null, boardMeta: null, score: null };
+  renderEtfSkeleton(stock);
+  scrollTopSmooth();
+
+  let quote;
+  try {
+    quote = await getQuote(stock);
+    if (token !== state.token) return;
+    stock.name = quote.name || stock.name;
+    stock.rawCode = quote.rawCode || stock.rawCode;
+    state.stock = stock;
+    state.quote = quote;
+    addRecent(stock);
+    renderEtfHeader(stock, quote, null);
+    document.title = `${stock.name} ${stock.code} · ETF 研判 · 研值 StockLens`;
+    bindEtfData(token, quote, stock);
+  } catch (err) {
+    if (token !== state.token) return;
+    renderFatal(stock, quoteErrorText(err));
+    toast('ETF 行情获取失败：' + quoteErrorText(err), 'error');
+  }
+}
+
+function bindEtfData(token, quote, stock) {
+  /* 榜单指标（规模/成交额）：从缓存读取，零新增请求 */
+  findEtfBoardMeta(stock.code)
+    .then((meta) => {
+      if (token !== state.token) return;
+      state.etf.boardMeta = meta;
+      /* 榜单指标到达后，若评分已算过则重算以纳入规模/量能维度 */
+      if (state.etf.score) maybeRefreshEtfScore(token);
+    })
+    .catch(() => {});
+
+  /* 技术研判：复用个股流程，日 K 到达即渲染五维技术 */
+  getKline(stock, quote)
+    .then((kline) => {
+      if (token !== state.token) return;
+      state.periodKlines.day = kline;
+      state.core.kline = kline;
+      state.coreSettled.add('kline');
+      updateChart(kline);
+      const technical = analyzeTechnical(kline && kline.points);
+      state.technical = technical;
+      updateTechnicalSection(technical);
+      maybeRefreshEtfScore(token);
+    })
+    .catch(() => {
+      if (token !== state.token) return;
+      state.core.kline = null;
+      state.coreSettled.add('kline');
+      updateChart(null);
+      state.technical = null;
+      updateTechnicalSection(null);
+      maybeRefreshEtfScore(token);
+    });
+
+  /* 行业研报 + 新闻：ETF 专属五维中的两维 */
+  getEtfFundamentals(stock, quote)
+    .then((result) => {
+      if (token !== state.token) return;
+      state.etf.fundamentals = result;
+      renderEtfIndustrySection(result, stock);
+      if (result.news) {
+        state.core.news = result.news;
+        state.coreSettled.add('news');
+        renderNewsSection(result.news, stock.market);
+      }
+      renderEtfHeader(stock, quote, result);
+      maybeRefreshEtfScore(token);
+    })
+    .catch(() => {
+      if (token !== state.token) return;
+      state.coreSettled.add('news');
+      renderEtfIndustrySection(null, stock);
+      maybeRefreshEtfScore(token);
+    });
+}
+
+function maybeRefreshEtfScore(token) {
+  if (token !== state.token) return;
+  if (!state.quote || !state.stock) return;
+  /* 等待技术(K线)与行业/舆情两路都结算后再算分，避免早算导致覆盖偏低 */
+  if (!state.coreSettled.has('kline') || !state.coreSettled.has('news')) return;
+  const board = state.etf.boardMeta;
+  const score = computeEtfScore({
+    quote: state.quote,
+    kline: state.core.kline,
+    technical: state.technical,
+    fundamentals: state.etf.fundamentals,
+    boardMeta: board,
+  });
+  state.etf.score = score;
+  state.score = score;
+  renderEtfOverview(score, state.core.kline);
 }
 
 /* ---------------- 自选股清单（FR-6） ---------------- */

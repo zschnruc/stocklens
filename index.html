@@ -1312,6 +1312,53 @@ html[data-theme="light"] .tech-sig.neutral{background:rgba(169,118,35,.07)}
   .board-card{box-shadow:none}
 }
 
+
+/* ===== css/25-etf.css ===== */
+/* ============================================================
+   ETF 研判模块样式 — 首页 ETF 榜 + ETF 专属研判页
+   复用 base/analysis 变量与布局，仅补充 ETF 专属区块。
+   红涨绿跌沿用 --up/--down，明暗主题自动适配。
+   ============================================================ */
+
+/* 首页 ETF 榜卡片：单卡占满一行更舒展 */
+.home-boards.etf-board{margin-top:26px}
+.etf-board .boards-grid{grid-template-columns:1fr}
+.board-ico.etf{color:var(--violet);background:rgba(179,157,246,.1);border-color:rgba(179,157,246,.22)}
+.etf-board .board-card-head h3{color:var(--violet)}
+
+/* ETF 页：行业主题标签与研报说明 */
+.etf-industry-head{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:13px 16px;margin-bottom:12px;border:1px solid var(--line);
+  border-radius:12px;background:rgba(88,211,195,.05);font-size:11.5px;color:var(--muted)
+}
+html[data-theme="light"] .etf-industry-head{background:rgba(15,110,86,.045)}
+.etf-report-list{border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.etf-report-item{padding:14px 17px;border-bottom:1px solid var(--line);transition:background .16s}
+.etf-report-item:last-child{border-bottom:0}
+.etf-report-item:hover{background:rgba(255,255,255,.025)}
+html[data-theme="light"] .etf-report-item:hover{background:rgba(24,32,45,.025)}
+.etf-report-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.etf-report-org{font-size:11px;font-weight:600;color:var(--gold)}
+.etf-report-date{font-family:var(--mono);font-size:10px;color:var(--faint)}
+.etf-report-rating{font-size:10px;color:var(--up);border:1px solid rgba(240,112,112,.3);border-radius:6px;padding:1px 7px}
+.etf-report-item h4{font-size:13px;line-height:1.55;margin:0 0 5px;font-weight:600}
+.etf-report-item h4 a{color:var(--text);text-decoration:none}
+.etf-report-item h4 a:hover{color:var(--gold)}
+.etf-report-item p{font-size:11.5px;line-height:1.6;color:var(--muted);margin:0}
+
+/* ETF 头部 industry 徽标使用 teal 语义色 */
+.badge.teal{color:var(--teal);border-color:rgba(88,211,195,.32);background:rgba(88,211,195,.08)}
+
+@media (max-width: 640px){
+  .etf-industry-head{font-size:11px;padding:11px 13px}
+  .etf-report-item{padding:12px 13px}
+}
+
+@media print{
+  .etf-report-item,.etf-industry-head{break-inside:avoid}
+}
+
 </style>
 </head>
 <body>
@@ -1364,7 +1411,7 @@ html[data-theme="light"] .tech-sig.neutral{background:rgba(169,118,35,.07)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v1.5.0 · 构建于 2026/11/17 11:22:38</p>
+      <p>研值 StockLens v1.6.0 · 构建于 2026/11/17 12:06:49</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -1520,6 +1567,20 @@ function fmtEps(n, currency) {
 }
 function ratioText(n, digits = 1) {
   return Number.isFinite(n) ? `${n.toFixed(digits)}%` : '—';
+}
+/* A 股代码 → 腾讯行情前缀。ETF/基金代码段：沪市 50/51/52/56/58，深市 15/16/18。
+   对普通个股代码返回与原规则完全一致的结果（6/9→sh、4/8→bj、其余→sz）。 */
+function aSharePrefix(code) {
+  const c = String(code || '').replace(/\D/g, '');
+  if (/^(50|51|52|56|58)/.test(c)) return 'sh';
+  if (/^(15|16|18)/.test(c)) return 'sz';
+  if (/^(6|9)/.test(c)) return 'sh';
+  if (/^(4|8)/.test(c)) return 'bj';
+  return 'sz';
+}
+/* ETF/场内基金代码段判定（用于搜索与输入自动打标） */
+function isEtfCode(code) {
+  return /^(50|51|52|56|58|15|16|18)\d{4}$/.test(String(code || '').replace(/\D/g, ''));
 }
 function marketFromKey(key) {
   if (!key) return 'A';
@@ -1899,11 +1960,13 @@ function normalizeSearchItem(part) {
   const name = stripTags(f[2] || '');
   const pinyin = (f[3] || '').trim();
   const type = f[4] || '';
-  if (!/^GP/i.test(type)) return null;
+  /* 放行个股(GP)与场内基金/ETF(ETF/ET/JJ)，其余类型维持原样丢弃 */
+  if (!/^(GP|ETF|ET|JJ)/i.test(type)) return null;
   if (!rawCode || !name) return null;
+  const kind = /^(ETF|ET|JJ)/i.test(type) ? 'etf' : 'stock';
 
   if (mk === 'sh' || mk === 'sz' || mk === 'bj') {
-    return { market: 'A', code: rawCode, name, pinyin, quoteKey: mk + rawCode, rawCode, klineCode: mk + rawCode };
+    return { market: 'A', code: rawCode, name, pinyin, quoteKey: mk + rawCode, rawCode, klineCode: mk + rawCode, kind };
   }
   if (mk === 'hk') {
     const code = rawCode.replace(/\D/g, '').padStart(5, '0');
@@ -1963,8 +2026,8 @@ function parseSymbolInput(input) {
     return { market: 'A', code, name: code, quoteKey: mk + code, rawCode: code, klineCode: mk + code };
   }
   if (/^\d{6}$/.test(q)) {
-    const mk = /^(6|9)/.test(q) ? 'sh' : /^(4|8)/.test(q) ? 'bj' : 'sz';
-    return { market: 'A', code: q, name: q, quoteKey: mk + q, rawCode: q, klineCode: mk + q };
+    const mk = aSharePrefix(q);
+    return { market: 'A', code: q, name: q, quoteKey: mk + q, rawCode: q, klineCode: mk + q, kind: isEtfCode(q) ? 'etf' : 'stock' };
   }
   m = q.match(/^hk(\d{1,5})$/i);
   if (m) {
@@ -2198,9 +2261,8 @@ async function getKline(stock, quote, period = 'day') {
 /* ---------------- Eastmoney reports ---------------- */
 function aShareSecucode(code) {
   const c = String(code || '');
-  if (/^(6|9)/.test(c)) return c + '.SH';
-  if (/^(4|8)/.test(c)) return c + '.BJ';
-  return c + '.SZ';
+  const p = aSharePrefix(c);
+  return c + (p === 'sh' ? '.SH' : p === 'bj' ? '.BJ' : '.SZ');
 }
 
 function normalizeReport(r) {
@@ -4401,11 +4463,12 @@ function normalizeScreenerRow(r) {
   if (code.length !== 6) return null;
   const name = stripTags(String(r.f14 || code));
   if (/ST|退|\*/.test(name)) return null;
-  const prefix = /^(6|9)/.test(code) ? 'sh' : /^(4|8)/.test(code) ? 'bj' : 'sz';
+  const prefix = aSharePrefix(code);
   return {
     market: 'A',
     code,
     name,
+    kind: isEtfCode(code) ? 'etf' : 'stock',
     quoteKey: prefix + code,
     klineCode: prefix + code,
     rawCode: code,
@@ -4575,6 +4638,306 @@ function getInflowBoard(size = HOTLIST_SIZE) {
 }
 
 
+/* ===== js/26-etf.js ===== */
+/* ============================================================
+   ETF 研判引擎 — 数据层 + 专属评分
+   ETF 无个股研报/F10 财务，采用五维专属口径：
+   技术动量 / 规模流动性 / 行业景气 / 资金量能 / 新闻舆情。
+   全部基于公开接口现有字段，缺失维度降级不臆造；
+   低数据覆盖时对总分施加惩罚，避免「两维缺失仍得满分」。
+   ============================================================ */
+'use strict';
+
+const ETF_DIM_META = [
+  { key: 'technical', name: '技术动量', short: '技术', weight: 28, icon: 'activity' },
+  { key: 'scale', name: '规模与流动性', short: '规模', weight: 22, icon: 'layers' },
+  { key: 'industry', name: '行业景气度', short: '行业', weight: 20, icon: 'building' },
+  { key: 'capital', name: '量能与换手', short: '量能', weight: 15, icon: 'pulse' },
+  { key: 'news', name: '新闻舆情', short: '舆情', weight: 15, icon: 'news' },
+];
+
+const ETF_BOARD_SIZE = 10;
+const ETF_BOARD_TTL = 90 * 1000;
+
+/* ETF 名称 → 行业关键词（用于映射东财行业研报，复用 10-api 的 findIndustryCode） */
+const ETF_THEME_HINTS = [
+  '半导体', '芯片', '集成电路', '科创芯片', '生物医药', '创新药', '医药', '医疗', '中药', '生物科技',
+  '证券', '券商', '银行', '保险', '金融', '白酒', '食品饮料', '消费', '新能源', '电池', '光伏', '风电',
+  '军工', '国防', '航空', '航天', '房地产', '地产', '煤炭', '有色', '工业金属', '黄金', '钢铁',
+  '汽车', '新能源车', '智能汽车', '科技', '电子', '计算机', '软件', '通信', '5G', '人工智能', 'AI',
+  '传媒', '游戏', '动漫', '教育', '旅游', '农业', '养殖', '化工', '机械', '电力', '基建', '建材',
+  '恒生', '港股通', '海外', '纳斯达克', '标普', '中概', '央企', '国企', '红利', '价值', '成长',
+];
+
+/* ---------------- 数据层 ---------------- */
+
+/* 纯函数：ETF 榜单行 → 带行情的 etf stock 对象
+   复用 normalizeScreenerRow 的代码清洗与 ST 过滤，附加榜单指标并强制 kind='etf' */
+function normalizeEtfRow(r) {
+  const base = normalizeScreenerRow(r);
+  if (!base) return null;
+  /* f13=1 沪市 / 0 深市，以接口市场号为准，避免纯代码段误判 */
+  const mk = r.f13 === 1 || r.f13 === '1' ? 'sh' : aSharePrefix(base.code);
+  const quoteKey = mk + base.code;
+  return {
+    ...base,
+    kind: 'etf',
+    quoteKey,
+    klineCode: quoteKey,
+    marketCap: num(r.f20) != null ? num(r.f20) : base.marketCap, // 元，规模
+    price: num(r.f2),
+    changePct: num(r.f3),
+    amount: num(r.f6), // 成交额（元）
+  };
+}
+
+/* 东财 ETF 榜单（b:MK0021 为场内基金板块），按成交额排序。
+   f12代码 f13市场 f14名称 f2现价 f3涨跌 f6成交额 f20规模(元) */
+function getEtfBoard(size = ETF_BOARD_SIZE) {
+  const n = clamp(Math.round(Number(size) || ETF_BOARD_SIZE), 5, 30);
+  return cached(`etf-board:${n}`, ETF_BOARD_TTL, async () => {
+    const params = new URLSearchParams({
+      pn: '1',
+      pz: String(n),
+      po: '1',
+      np: '1',
+      fltt: '2',
+      invt: '2',
+      fid: 'f6',
+      fs: 'b:MK0021',
+      fields: 'f12,f13,f14,f2,f3,f6,f20',
+    });
+    const data = await emJsonp(`${API.push2}clist/get?${params}`);
+    const diff = data && data.data && data.data.diff;
+    const rows = Array.isArray(diff) ? diff : diff ? Object.values(diff) : [];
+    return rows
+      .map(normalizeEtfRow)
+      .filter((s) => s && Number.isFinite(s.price))
+      .slice(0, n);
+  });
+}
+
+/* 从 ETF 名称推断行业主题词（供行业研报映射，纯函数） */
+function etfThemeOf(name) {
+  const src = String(name || '');
+  const hit = ETF_THEME_HINTS.find((k) => src.includes(k));
+  return hit || '';
+}
+
+/* 拉取 ETF 的行业研报（用于「行业景气度」维度）与新闻。
+   行业映射：名称主题词 → findIndustryCode → getIndustryReports */
+function getEtfFundamentals(stock, quote) {
+  const theme = etfThemeOf(stock.name);
+  const mapped = findIndustryCode(theme);
+  const industryReports = mapped
+    ? getIndustryReports(mapped.code, mapped.name, { months: 6, pageSize: 20 }).catch(() => ({
+        supported: true,
+        hits: 0,
+        list: [],
+        industryName: mapped.name,
+      }))
+    : Promise.resolve({ supported: false, hits: 0, list: [], industryName: theme });
+  const news = getNews(stock).catch(() => []);
+  return Promise.all([industryReports, news]).then(([reports, newsList]) => ({
+    theme,
+    mapped,
+    reports,
+    news: newsList,
+  }));
+}
+
+/* ---------------- 专属评分（纯函数，可离线测试） ---------------- */
+
+function scoreEtfTechnical(technical) {
+  if (!technical || !technical.consensus || !technical.consensus.available || !Number.isFinite(technical.consensus.score)) {
+    return { available: false, note: '日 K 数据不足，技术动量不计入', reasons: [] };
+  }
+  const c = technical.consensus;
+  const score = clamp(Math.round(c.score), 0, 100);
+  const availableDims = technical.dims.filter((d) => d.available);
+  const bull = technical.dims.filter((d) => d.available && d.dir === 'bullish').length;
+  const bear = technical.dims.filter((d) => d.available && d.dir === 'bearish').length;
+  return {
+    available: true,
+    score,
+    note: `${availableDims.length}/5 维可用 · 偏多 ${bull} / 偏空 ${bear}`,
+    reasons: [
+      `五维技术信号等权合成 ${score} 分（趋势/动量/随机/波动/量价）。`,
+      `当前偏多 ${bull} 项、偏空 ${bear} 项，其余中性；方向一致性${bull >= 4 ? '较强' : bear >= 4 ? '偏空一致' : '一般'}。`,
+      '基于前复权日 K 本地计算，存在滞后与钝化可能。',
+    ],
+  };
+}
+
+function scoreEtfScale(stock, quote, boardMeta) {
+  const cap = num((boardMeta && boardMeta.marketCap) || (quote && quote.marketCap));
+  const amount = num((boardMeta && boardMeta.amount) || (quote && quote.amount));
+  const capYi = Number.isFinite(cap) ? cap / 1e8 : null; // 亿元
+  const amountYi = Number.isFinite(amount) ? amount / 1e8 : null;
+  if (capYi === null && amountYi === null) {
+    return { available: false, note: '规模与成交额数据缺失', reasons: [] };
+  }
+  /* 规模分档：ETF 规模越大，流动性与跟踪稳定性通常越好 */
+  const scaleScore = capYi === null ? null : band(capYi, [
+    [200, 100], [100, 92], [50, 84], [20, 74], [10, 62], [5, 50], [2, 38], [1, 26],
+  ], 16);
+  /* 成交额分档：日成交额越高，买卖冲击成本越低 */
+  const liqScore = amountYi === null ? null : band(amountYi, [
+    [10, 100], [5, 90], [2, 80], [1, 70], [0.5, 58], [0.2, 46], [0.05, 34],
+  ], 22);
+  const parts = [];
+  let w = 0;
+  if (scaleScore !== null) { parts.push(scaleScore * 0.55); w += 0.55; }
+  if (liqScore !== null) { parts.push(liqScore * 0.45); w += 0.45; }
+  const score = Math.round(parts.reduce((a, b) => a + b, 0) / w);
+  const reasons = [];
+  if (capYi !== null) reasons.push(`最新规模约 ${capYi >= 1 ? capYi.toFixed(1) + ' 亿' : (capYi * 1e4).toFixed(0) + ' 万'}元，规模分 ${scaleScore}。`);
+  if (amountYi !== null) reasons.push(`当日成交额约 ${amountYi >= 1 ? amountYi.toFixed(2) + ' 亿' : (amountYi * 1e4).toFixed(0) + ' 万'}元，流动性分 ${liqScore}。`);
+  reasons.push('规模与流动性权重 55:45；数据来自东财 ETF 榜单。');
+  return {
+    available: true,
+    score,
+    note: `规模 ${capYi !== null ? capYi.toFixed(1) + '亿' : '—'} · 成交 ${amountYi !== null ? amountYi.toFixed(2) + '亿' : '—'}`,
+    reasons,
+  };
+}
+
+function scoreEtfIndustry(reports, mapped) {
+  const list = (reports && reports.list) || [];
+  if (!list.length || !mapped) {
+    return {
+      available: false,
+      note: mapped ? '所属行业近 6 个月无研报覆盖' : '未能从 ETF 名称识别行业主题',
+      reasons: [],
+    };
+  }
+  const rated = list.filter((r) => Number.isFinite(r.ratingScore));
+  const buys = rated.filter((r) => r.ratingScore >= 0.75).length;
+  const score = Math.round(
+    band(list.length, [[12, 96], [8, 88], [5, 78], [3, 68], [2, 56], [1, 42]], 42) * 0.5 +
+      (rated.length ? (rated.reduce((a, r) => a + r.ratingScore * 100, 0) / rated.length) : 50) * 0.5
+  );
+  const note = `${mapped.name} · 近 6 月 ${list.length} 篇${rated.length ? ` · 买入/增持 ${buys} 篇` : ''}`;
+  return {
+    available: true,
+    score: clamp(score, 0, 100),
+    note,
+    reasons: [
+      `按 ETF 主题「${mapped.name}」映射至东财行业，检索近 6 个月行业研报 ${list.length} 篇。`,
+      rated.length
+        ? `已评级 ${rated.length} 篇，买入/增持 ${buys} 篇，评级均值 ${Math.round(rated.reduce((a, r) => a + r.ratingScore * 100, 0) / rated.length)}。`
+        : '研报未提供可识别评级，评级子项按中性处理。',
+      '行业景气度为研报文本的粗略代理，仅代表机构覆盖热度与评级倾向，不代表指数未来涨跌。',
+    ],
+  };
+}
+
+function scoreEtfCapital(quote, boardMeta) {
+  const vr = num((quote && quote.volumeRatio) || (boardMeta && boardMeta.volumeRatio));
+  const amount = num((boardMeta && boardMeta.amount) || (quote && quote.amount));
+  const cap = num((boardMeta && boardMeta.marketCap) || (quote && quote.marketCap));
+  const turnover = Number.isFinite(amount) && Number.isFinite(cap) && cap > 0 ? (amount / cap) * 100 : null;
+  if (!Number.isFinite(vr) && turnover === null) {
+    return { available: false, note: '量比与换手数据缺失', reasons: [] };
+  }
+  let sum = 0;
+  let w = 0;
+  const reasons = [];
+  if (Number.isFinite(vr)) {
+    const s = band(vr, [[3, 96], [2, 88], [1.5, 78], [1, 68], [0.7, 56], [0.4, 42]], 34);
+    sum += s * 0.6;
+    w += 0.6;
+    reasons.push(`量比 ${vr.toFixed(2)}，量能分 ${s}。`);
+  }
+  if (turnover !== null) {
+    const s = band(turnover, [[15, 94], [8, 86], [4, 76], [2, 66], [1, 54], [0.3, 40]], 28);
+    sum += s * 0.4;
+    w += 0.4;
+    reasons.push(`成交额/规模 约 ${turnover.toFixed(2)}%，活跃度分 ${s}。`);
+  }
+  reasons.push('量比权重 60%、换手代理 40%；ETF 资金净流入字段多数为空，故不纳入评分。');
+  return {
+    available: true,
+    score: Math.round(sum / w),
+    note: `量比 ${Number.isFinite(vr) ? vr.toFixed(2) : '—'}${turnover !== null ? ` · 换手 ${turnover.toFixed(2)}%` : ''}`,
+    reasons,
+  };
+}
+
+function scoreEtfNews(news) {
+  const s = analyzeSentiment(news);
+  if (!s.total) return { available: false, note: '暂未获取到相关新闻', reasons: [] };
+  const score = Math.round(s.score);
+  return {
+    available: true,
+    score,
+    note: `${s.total} 条 · 正 ${s.pos} / 中 ${s.neu} / 负 ${s.neg}`,
+    reasons: [
+      `共 ${s.total} 条相关新闻：正面 ${s.pos}、中性 ${s.neu}、负面 ${s.neg}。`,
+      s.pos || s.neg ? `情绪净值 ${s.pos - s.neg}，换算得分 ${score}。` : '未命中明显正负面关键词，按中性处理。',
+      '新闻情绪与 ETF 净值涨跌无必然因果关系。',
+    ],
+  };
+}
+
+/* 主入口：ETF 五维综合评分。低覆盖惩罚：coverage<100 时按 factor 折算 */
+function computeEtfScore({ quote, kline, technical, fundamentals, boardMeta } = {}) {
+  const reports = fundamentals && fundamentals.reports;
+  const mapped = fundamentals && fundamentals.mapped;
+  const news = fundamentals && fundamentals.news;
+  const results = {
+    technical: scoreEtfTechnical(technical),
+    scale: scoreEtfScale(null, quote, boardMeta),
+    industry: scoreEtfIndustry(reports, mapped),
+    capital: scoreEtfCapital(quote, boardMeta),
+    news: scoreEtfNews(news),
+  };
+  const dims = ETF_DIM_META.map((meta) => {
+    const r = results[meta.key];
+    return {
+      ...meta,
+      available: !!r.available && Number.isFinite(r.score),
+      score: r.available && Number.isFinite(r.score) ? r.score : null,
+      note: r.note,
+      reasons: r.reasons || [],
+    };
+  });
+  const available = dims.filter((d) => d.available);
+  const weightSum = available.reduce((a, d) => a + d.weight, 0);
+  const coverage = Math.round(weightSum); // 权重合计即 100，coverage 直接等于 weightSum
+  let total = null;
+  if (weightSum > 0) {
+    total = Math.round(available.reduce((a, d) => a + d.score * d.weight, 0) / weightSum);
+    /* 低覆盖惩罚：缺失维度越多，越压低总分，避免「两维缺失仍满分」 */
+    if (coverage < 100) {
+      const factor = 0.6 + 0.4 * (coverage / 100);
+      total = Math.round(total * factor);
+    }
+  }
+  const verdict = verdictFor(total === null ? 0 : total);
+  const sorted = available.slice().sort((a, b) => b.score - a.score);
+  let desc = total === null ? '有效数据不足，暂不给出综合分。' : verdict.desc + '。';
+  if (sorted.length >= 2) {
+    desc += `最强项为${sorted[0].name}（${sorted[0].score}），最弱项为${sorted[sorted.length - 1].name}（${
+      sorted[sorted.length - 1].score
+    }）。`;
+  }
+  if (coverage < 100) {
+    desc += `当前数据覆盖 ${coverage}%，缺失维度已计入覆盖惩罚。`;
+  }
+  return {
+    total,
+    verdict,
+    dims,
+    coverage,
+    desc,
+    missing: dims.filter((d) => !d.available).map((d) => d.short),
+    createdAt: new Date(),
+    kind: 'etf',
+  };
+}
+
+
 /* ===== js/30-render-home.js ===== */
 /* ============================================================
    Home / landing renderer
@@ -4639,6 +5002,7 @@ function stockDataset(stock) {
     `data-quotekey="${esc(stock.quoteKey || '')}"`,
     `data-klinecode="${esc(stock.klineCode || '')}"`,
     `data-rawcode="${esc(stock.rawCode || '')}"`,
+    `data-kind="${esc(stock.kind || 'stock')}"`,
   ].join(' ');
 }
 
@@ -4771,6 +5135,26 @@ function homeHTML() {
       </div>
     </section>
 
+    <section class="home-boards etf-board" aria-labelledby="etfBoardTitle">
+      <div class="boards-head">
+        <div class="section-kicker">行业 ETF</div>
+        <h2 id="etfBoardTitle">热门行业 ETF TOP 10</h2>
+        <p>按当日成交额排序的场内基金。点击进入 ETF 专属研判：技术 / 规模流动性 / 行业景气 / 量能 / 舆情五维评分。</p>
+      </div>
+      <div class="boards-grid">
+        <article class="card board-card" id="etfBoardCard">
+          <div class="board-card-head">
+            <span class="board-ico etf">${ico('layers', 'lg')}</span>
+            <div>
+              <h3>行业 ETF 热门榜</h3>
+              <span>沪深场内基金 · 按当日成交额 · 含规模</span>
+            </div>
+          </div>
+          <div class="board-list" id="etfBoardBody">${loadingCard('正在获取行业 ETF 榜…', 4)}</div>
+        </article>
+      </div>
+    </section>
+
     <section class="features" aria-labelledby="featureTitle">
       <div class="features-head">
         <div>
@@ -4806,6 +5190,7 @@ function renderHome() {
   loadHotQuotes();
   loadWatchQuotes();
   loadHomeBoards();
+  loadEtfBoard();
 }
 
 /* ---------------- 首页双榜单（FR-9） ---------------- */
@@ -4840,9 +5225,8 @@ function extraBoardAttrs(stock) {
 }
 
 function boardEmptyHTML(kind) {
-  return `<div class="board-empty">${ico('info', 'sm')}<span>${
-    kind === 'inflow' ? '资金流向数据暂不可用，稍后刷新重试' : '热门榜单暂不可用，稍后刷新重试'
-  }</span></div>`;
+  const text = kind === 'inflow' ? '资金流向数据暂不可用，稍后刷新重试' : kind === 'etf' ? '行业 ETF 榜单暂不可用，稍后刷新重试' : '热门榜单暂不可用，稍后刷新重试';
+  return `<div class="board-empty">${ico('info', 'sm')}<span>${text}</span></div>`;
 }
 
 function renderHomeBoard(kind, rows, error) {
@@ -4863,6 +5247,42 @@ async function loadHomeBoards() {
     .then((rows) => renderHomeBoard('inflow', rows))
     .catch(() => renderHomeBoard('inflow', null, true));
   await Promise.all([hot, inflow]);
+}
+
+/* 行业 ETF 榜单：单行沿用 boardRowHTML，指标列为规模（复用 kind='etf' 路由直达） */
+function etfRowHTML(stock, index) {
+  const chgCls = pctClass(stock.changePct);
+  const cap = num(stock.marketCap);
+  const capText = Number.isFinite(cap) ? (cap >= 1e8 ? (cap / 1e8).toFixed(1) + '亿' : (cap / 1e4).toFixed(0) + '万') : '—';
+  return `
+    <button type="button" class="board-row" ${stockDataset(stock)}>
+      <span class="br-rank ${index < 3 ? 'top' : ''}">${index + 1}</span>
+      <span class="br-name">
+        <b>${esc(stock.name)}</b>
+        <small>${esc(stock.code)} · ETF</small>
+      </span>
+      <span class="br-quote">
+        <b>${fmtPrice(stock.price, stock.price < 10 ? 3 : 2)}</b>
+        <small class="${chgCls}">${fmtPct(stock.changePct)}</small>
+      </span>
+      <span class="br-metric">${esc(capText)}</span>
+    </button>`;
+}
+
+async function loadEtfBoard() {
+  const body = $('#etfBoardBody');
+  if (!body) return;
+  try {
+    const rows = await getEtfBoard(ETF_BOARD_SIZE);
+    if (!body.isConnected) return; /* 已离开首页 */
+    if (!rows.length) {
+      body.innerHTML = boardEmptyHTML('etf');
+      return;
+    }
+    body.innerHTML = rows.map((s, i) => etfRowHTML(s, i)).join('');
+  } catch (e) {
+    if (body.isConnected) body.innerHTML = boardEmptyHTML('etf');
+  }
 }
 
 /* FR-6.2：自选股行情速览，批量接口一次拉取 */
@@ -6105,6 +6525,227 @@ function updateScreenerThreshold(value) {
 }
 
 
+/* ===== js/34-render-etf.js ===== */
+/* ============================================================
+   ETF renderers — 独立研判页（综合分 + 五维评分 + 技术研判 + 行业研报 + 舆情）
+   复用既有 gauge/radar/dimRow/chart/news 渲染器，仅 ETF 专属字段自建。
+   ============================================================ */
+'use strict';
+
+const ETF_SECTION_NAV = [
+  ['overview', '综合研判'],
+  ['technical', '技术研判'],
+  ['industry', '行业研报'],
+  ['news', '新闻舆情'],
+];
+
+function etfShell(stock) {
+  return `<div class="analysis-wrap" id="analysisWrap">
+    ${crumbHTML(stock)}
+    <div id="stockMeta">${etfHeaderSkeleton(stock)}</div>
+    <nav class="section-nav" aria-label="页面章节">
+      ${ETF_SECTION_NAV.map(([id, label]) => `<a href="#${id}" data-scroll="${id}">${label}</a>`).join('')}
+      <span class="nav-live"><i></i>数据实时拉取</span>
+    </nav>
+
+    <div id="overviewArea">
+      <div class="overview-grid">
+        <aside class="card score-card">${loadingCard('正在汇总 ETF 五维评分…', 4)}</aside>
+        <article class="card factor-card">${loadingCard('正在建立因子雷达…', 5)}</article>
+      </div>
+      <div id="chartSection" style="margin-top:16px">${loadingCard('正在绘制净值走势…', 2)}</div>
+    </div>
+
+    <section class="section-block" id="technical">
+      ${sectionHead('02', '技术研判', '趋势、动量、随机、波动与量价五维度分析')}
+      <div id="technicalSlot">${loadingCard('正在计算多维技术信号…', 4)}</div>
+    </section>
+
+    <section class="section-block" id="industry">
+      ${sectionHead('03', '行业研报', '按 ETF 行业主题映射近 6 个月行业研报，作为行业景气的粗略代理')}
+      <div id="etfIndustryBody">${loadingCard('正在识别行业主题并检索研报…', 3)}</div>
+    </section>
+
+    <section class="section-block" id="news">
+      ${sectionHead('04', '新闻舆情', '公开资讯与关键词情绪，仅代表文本倾向，不代表净值方向')}
+      <div id="newsBody">${loadingCard('正在检索相关新闻…', 4)}</div>
+    </section>
+
+    <p class="analysis-foot">ETF 数据来自腾讯财经与东方财富公开接口。ETF 无个股研报与财务报表，评分采用「技术/规模流动性/行业景气/量能/舆情」五维专属口径，缺失维度降级并计入覆盖惩罚。评分不构成投资建议。</p>
+  </div>`;
+}
+
+function etfHeaderSkeleton(stock) {
+  return `<header class="stock-head">
+    <div class="stock-title">
+      <div class="stock-tags"><span class="badge gold">ETF</span><span class="badge">场内基金</span></div>
+      <h1>${esc(stock.name || stock.code)} <span class="code">${esc(stock.code)}</span></h1>
+      <div class="stock-sub"><span class="spinner" style="width:13px;height:13px;border-width:1.5px"></span>正在获取 ETF 行情…</div>
+    </div>
+    <div class="stock-price"><div class="skeleton" style="width:160px;height:38px;margin-left:auto"></div></div>
+  </header>
+  <div class="metric-strip">
+    ${Array.from({ length: 6 }, () => '<div class="metric"><div class="skeleton" style="height:10px;width:52px"></div><div class="skeleton" style="height:16px;width:78px;margin-top:6px"></div></div>').join('')}
+  </div>`;
+}
+
+function renderEtfSkeleton(stock) {
+  setViewHTML(etfShell(stock));
+  document.title = `${stock.name || stock.code} · ETF 研判 · 研值 StockLens`;
+  syncTopbar('analysis');
+}
+
+/* ETF 头部：复用 exchange/metric 口径，规模替换市值，PE/PB 换为量比/换手代理 */
+function renderEtfHeader(stock, quote, fundamentals) {
+  const box = $('#stockMeta');
+  if (!box) return;
+  const board = state.etf && state.etf.boardMeta;
+  const cap = num((board && board.marketCap) || quote.marketCap);
+  const amount = num((board && board.amount) || quote.amount);
+  const capText = Number.isFinite(cap) ? (cap >= 1e8 ? (cap / 1e8).toFixed(2) + ' 亿' : (cap / 1e4).toFixed(0) + ' 万') : '—';
+  const theme = fundamentals && fundamentals.theme;
+  const mapped = fundamentals && fundamentals.mapped;
+  const industryBadge = mapped ? `<span class="badge teal">${esc(mapped.name)}</span>` : theme ? `<span class="badge">${esc(theme)}</span>` : '';
+  const html = `<header class="stock-head">
+    <div class="stock-title">
+      <div class="stock-tags">
+        <span class="badge gold">ETF</span>
+        ${industryBadge}
+        <span class="badge">${esc(exchangeLabel(stock, quote))}</span>
+      </div>
+      <h1>${esc(quote.name || stock.name)} <span class="code">${esc(quote.rawCode || stock.code)}</span></h1>
+      <div class="stock-sub">
+        <span>场内基金 · 跟踪主题 ${esc(theme || '未识别')}</span>
+        <span class="mini-sep"></span>
+        <span>${marketLabel(stock.market)} · ${esc(quote.currency)}</span>
+        <span class="mini-sep"></span>
+        <span class="source-note" style="margin:0">行情来自腾讯财经 · ${esc(quote.time)}</span>
+      </div>
+      <div class="data-status" id="dataStatus">
+        ${statusPill('industry', 'loading', '行业 加载中')}
+        ${statusPill('news', 'loading', '舆情 加载中')}
+      </div>
+    </div>
+    <div class="stock-price">
+      <div class="price-row">
+        <span class="price-main ${pctClass(quote.changePct)}">${fmtPrice(quote.price, quote.price < 10 ? 3 : 2)}</span>
+        <span class="price-change ${pctClass(quote.changePct)}">${fmtSigned(quote.change)} · ${fmtPct(quote.changePct)}</span>
+      </div>
+      <div class="price-time">${esc(quote.time)} · 前收 ${fmtPrice(quote.prevClose)}</div>
+      <div class="stock-actions no-print">
+        <button class="btn sm watch-btn ${watchlistHas(stock) ? 'on' : ''}" type="button" data-action="watch-toggle" aria-pressed="${watchlistHas(stock)}">${ico('star', 'sm')}${watchlistHas(stock) ? '已自选' : '加自选'}</button>
+        <button class="btn sm" type="button" data-action="copy-link">${ico('share', 'sm')}分享</button>
+        <button class="btn sm" type="button" data-action="refresh">${ico('refresh', 'sm')}刷新</button>
+      </div>
+    </div>
+  </header>
+  <div class="metric-strip">
+    ${metricCell('基金规模', capText)}
+    ${metricCell('成交额', Number.isFinite(amount) ? fmtBig(amount / 1e8, '亿') : '—')}
+    ${metricCell('量比', Number.isFinite(quote.volumeRatio) ? quote.volumeRatio.toFixed(2) : '—')}
+    ${metricCell('今日振幅', ampText(quote))}
+    ${metricCell('52 周高', fmtPrice(quote.high52, quote.price < 10 ? 3 : 2))}
+    ${metricCell('52 周低', fmtPrice(quote.low52, quote.price < 10 ? 3 : 2))}
+  </div>`;
+  box.innerHTML = html;
+  hydrateIcons(box);
+}
+
+function ampText(quote) {
+  if (!(quote.prevClose > 0) || !Number.isFinite(quote.high) || !Number.isFinite(quote.low)) return '—';
+  return ((quote.high - quote.low) / quote.prevClose * 100).toFixed(2) + '%';
+}
+
+/* ETF 因子卡：复用雷达与 dimRow，文案改为五维专属口径 */
+function renderEtfFactorCard(score) {
+  const explain = score.dims
+    .map(
+      (d) => `<div class="explain-item ${d.available ? '' : 'unavailable'}">
+        <h4>${esc(d.name)} <span>权重 ${d.weight}% · ${d.available ? d.score + ' 分' : '不可用'}</span></h4>
+        ${
+          d.available
+            ? `<ul>${d.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>`
+            : `<p>${esc(d.note)}，该维度不计入综合分。</p>`
+        }
+      </div>`
+    )
+    .join('');
+  const weightLine = ETF_DIM_META.map((d) => `${d.short} ${d.weight}%`).join(' / ');
+  return `<article class="card factor-card">
+    <div class="card-kicker">${ico('target')}五维因子 · 权重与依据</div>
+    <div class="factor-grid">
+      <div class="radar-wrap">${renderRadar(score.dims)}</div>
+      <div class="dims">${score.dims.map(dimRow).join('')}</div>
+    </div>
+    <details class="score-explain" open>
+      <summary>评分依据 <span>数据覆盖 ${score.coverage}% · ${score.missing.length ? `缺失 ${esc(score.missing.join('、'))}` : '五维齐全'}</span></summary>
+      <div class="explain-grid">${explain}</div>
+      <p class="inline-note">综合分 = 可用维度加权平均（${weightLine}），缺失维度从权重中剔除并施加覆盖惩罚。ETF 无个股研报与财务，行业景气以行业研报代理，仅作研究整理。</p>
+    </details>
+  </article>`;
+}
+
+function renderEtfOverview(score, kline) {
+  const overview = $('#overviewArea');
+  if (!overview) return;
+  const createdAt = score.createdAt && typeof score.createdAt.toLocaleTimeString === 'function' ? score.createdAt : new Date();
+  overview.innerHTML = `<div class="overview-grid">
+    ${renderScoreCard(score, createdAt)}
+    ${renderEtfFactorCard(score)}
+  </div><div id="chartSlot">${
+    kline ? renderChartSection(kline) : emptyState({ icon: 'chart', title: '历史行情不足', desc: '无法绘制净值走势，技术面维度已按不可用处理。' })
+  }</div>`;
+  hydrateIcons(overview);
+  hydrateCandles(overview);
+}
+
+/* 行业研报区：复用标准研报卡片结构 */
+function renderEtfIndustrySection(result, stock) {
+  const body = $('#etfIndustryBody');
+  if (!body) return;
+  if (!result || !result.mapped) {
+    updateStatus('industry', 'done', '行业 未识别');
+    body.innerHTML = emptyState({
+      icon: 'building',
+      title: '未识别行业主题',
+      desc: '未能从该 ETF 名称推断所属行业，行业景气维度不计入综合分。其他维度不受影响。',
+    });
+    return;
+  }
+  const reports = (result.reports && result.reports.list) || [];
+  if (!reports.length) {
+    updateStatus('industry', 'done', '行业 无研报');
+    body.innerHTML = emptyState({
+      icon: 'book',
+      title: `${esc(result.mapped.name)} · 近 6 个月无行业研报`,
+      desc: '该行业主题暂无免费中文研报覆盖，行业景气维度不计入综合分。',
+    });
+    return;
+  }
+  updateStatus('industry', 'done', `行业 ${reports.length} 篇`);
+  const rows = reports
+    .slice(0, 20)
+    .map(
+      (r) => `<article class="etf-report-item">
+        <div class="etf-report-top">
+          <span class="etf-report-org">${esc(r.org || '机构')}</span>
+          <span class="etf-report-date">${esc(fmtDate(r.rawDate))}</span>
+          ${r.rating ? `<span class="etf-report-rating">${esc(r.rating)}</span>` : ''}
+        </div>
+        <h4>${r.pdf ? `<a href="${esc(r.pdf)}" target="_blank" rel="noopener noreferrer">${esc(r.title)} ↗</a>` : esc(r.title)}</h4>
+        <p>${esc((r.content || '').slice(0, 90))}</p>
+      </article>`
+    )
+    .join('');
+  body.innerHTML = `<div class="etf-industry-head">
+      <span class="badge teal">${esc(result.mapped.name)}</span>
+      <span>近 6 个月 ${reports.length} 篇行业研报 · 用于行业景气代理，不代表该 ETF 净值方向</span>
+    </div>
+    <div class="etf-report-list">${rows}</div>`;
+  hydrateIcons(body);
+}
+
+
 /* ===== js/50-main.js ===== */
 /* ============================================================
    App shell — routing, search, orchestration, interactions
@@ -6144,6 +6785,7 @@ const state = {
     progressText: '准备中…',
   },
   search: { items: [], active: -1, query: '', seq: 0 },
+  etf: null,
 };
 
 /* ---------------- stock objects ---------------- */
@@ -6155,14 +6797,14 @@ function normalizeStock(input) {
   let quoteKey = s.quoteKey || '';
   let klineCode = s.klineCode || '';
   let name = s.name || code;
+  /* 标的类型：'etf' 走 ETF 专属研判，其余为个股。搜索/榜单/输入已带 kind，这里保留 */
+  let kind = s.kind === 'etf' ? 'etf' : 'stock';
 
   if (market === 'A') {
     code = code.replace(/\D/g, '').slice(0, 6);
     rawCode = code;
-    if (!quoteKey) {
-      const prefix = /^(6|9)/.test(code) ? 'sh' : /^(4|8)/.test(code) ? 'bj' : 'sz';
-      quoteKey = prefix + code;
-    }
+    if (isEtfCode(code)) kind = 'etf'; /* 以代码为准，避免数据集丢失 kind 时误判 */
+    if (!quoteKey) quoteKey = aSharePrefix(code) + code;
     if (!klineCode) klineCode = quoteKey;
   } else if (market === 'HK') {
     code = code.replace(/\D/g, '').padStart(5, '0').slice(-5);
@@ -6176,7 +6818,7 @@ function normalizeStock(input) {
     if (!klineCode) klineCode = 'us' + rawCode;
     name = s.name || code;
   }
-  return { market, code, name, quoteKey, klineCode, rawCode };
+  return { market, code, name, quoteKey, klineCode, rawCode, kind };
 }
 
 function stockFromDataset(ds) {
@@ -6187,11 +6829,16 @@ function stockFromDataset(ds) {
     quoteKey: ds.quotekey,
     klineCode: ds.klinecode,
     rawCode: ds.rawcode,
+    kind: ds.kind,
   });
 }
 
 function hashForStock(stock) {
   const raw = stock.market === 'US' ? stock.rawCode || stock.code : stock.code;
+  /* ETF 使用独立路由，与个股研判分流 */
+  if (stock.kind === 'etf' && stock.market === 'A') {
+    return `#/etf/A/${encodeURIComponent(raw)}`;
+  }
   return `#/stock/${stock.market}/${encodeURIComponent(raw)}`;
 }
 
@@ -6208,6 +6855,15 @@ function lookupKnownStock(market, code) {
 
 function stockFromHash() {
   const hash = location.hash || '';
+  /* ETF 独立路由优先识别 */
+  const etfHash = hash.match(/^#\/etf\/A\/([^/?#]+)/i);
+  if (etfHash) {
+    const code = decodeURIComponent(etfHash[1]).replace(/\D/g, '');
+    if (code.length !== 6) return null;
+    const known = lookupKnownStock('A', code);
+    if (known) return normalizeStock({ ...known, kind: 'etf' });
+    return normalizeStock({ market: 'A', code, name: code, kind: 'etf' });
+  }
   const m = hash.match(/^#\/stock\/(A|HK|US)\/([^/?#]+)/i);
   if (!m) return null;
   const market = m[1].toUpperCase();
@@ -6217,8 +6873,7 @@ function stockFromHash() {
     if (code.length !== 6) return null;
     const known = lookupKnownStock('A', code);
     if (known) return known;
-    const prefix = /^(6|9)/.test(code) ? 'sh' : /^(4|8)/.test(code) ? 'bj' : 'sz';
-    return normalizeStock({ market: 'A', code, name: code, quoteKey: prefix + code, klineCode: prefix + code });
+    return normalizeStock({ market: 'A', code, name: code });
   }
   if (market === 'HK') {
     const code = raw.replace(/\D/g, '').padStart(5, '0').slice(-5);
@@ -6306,8 +6961,8 @@ function routeFromHash() {
   }
   const stock = stockFromHash();
   if (!stock) {
-    if ((location.hash || '').startsWith('#/stock/')) {
-      toast('链接中的股票代码无效，已返回首页', 'error');
+    if ((location.hash || '').startsWith('#/stock/') || (location.hash || '').startsWith('#/etf/')) {
+      toast('链接中的代码无效，已返回首页', 'error');
       try {
         history.replaceState(null, '', location.pathname + location.search);
       } catch (e) {
@@ -6429,6 +7084,10 @@ function syncScreenerButtons(running) {
 
 /* ---------------- analysis orchestration ---------------- */
 async function analyzeStock(inputStock, opts = {}) {
+  /* ETF 标的统一分流到专属编排（覆盖搜索/榜单/路由/刷新所有入口） */
+  if (normalizeStock(inputStock).kind === 'etf') {
+    return analyzeEtf(inputStock, opts);
+  }
   const token = ++state.token;
   const stock = normalizeStock(inputStock);
   state.route = 'analysis';
@@ -6592,6 +7251,140 @@ function refreshScore() {
   state.score = score;
   /* 优先使用用户当前所选周期（周/月K），避免评分刷新时图表被重置回日K */
   renderOverview(score, state.periodKlines[state.klinePeriod] || state.core.kline);
+}
+
+/* ---------------- ETF 研判编排（独立路由 #/etf） ---------------- */
+function goEtf(input) {
+  const stock = normalizeStock({ ...input, kind: 'etf' });
+  state.pendingStock = stock;
+  closeSuggestions();
+  const hash = hashForStock(stock);
+  if (location.hash === hash) {
+    state.pendingStock = null;
+    analyzeEtf(stock);
+  } else {
+    location.hash = hash;
+  }
+}
+
+/* ETF 榜单/快照指标：从缓存榜单中按代码查找规模与成交额（零新增请求）；找不到时降级 */
+function findEtfBoardMeta(code) {
+  const boards = [getEtfBoard(ETF_BOARD_SIZE)];
+  return Promise.all(boards.map((p) => p.catch(() => []))).then((lists) => {
+    const all = lists.flat();
+    return all.find((s) => s && s.code === code) || null;
+  });
+}
+
+async function analyzeEtf(inputStock) {
+  const token = ++state.token;
+  const stock = normalizeStock({ ...inputStock, kind: 'etf' });
+  state.route = 'analysis';
+  state.stock = stock;
+  state.quote = null;
+  state.core = {};
+  state.coreSettled = new Set();
+  state.technical = null;
+  state.score = null;
+  state.reports = null; /* ETF 无个股研报，清空避免沿用上一只股票的目标价锚点 */
+  state.profile = null;
+  state.periodKlines = {};
+  state.klinePeriod = 'day';
+  state.etf = { token, fundamentals: null, boardMeta: null, score: null };
+  renderEtfSkeleton(stock);
+  scrollTopSmooth();
+
+  let quote;
+  try {
+    quote = await getQuote(stock);
+    if (token !== state.token) return;
+    stock.name = quote.name || stock.name;
+    stock.rawCode = quote.rawCode || stock.rawCode;
+    state.stock = stock;
+    state.quote = quote;
+    addRecent(stock);
+    renderEtfHeader(stock, quote, null);
+    document.title = `${stock.name} ${stock.code} · ETF 研判 · 研值 StockLens`;
+    bindEtfData(token, quote, stock);
+  } catch (err) {
+    if (token !== state.token) return;
+    renderFatal(stock, quoteErrorText(err));
+    toast('ETF 行情获取失败：' + quoteErrorText(err), 'error');
+  }
+}
+
+function bindEtfData(token, quote, stock) {
+  /* 榜单指标（规模/成交额）：从缓存读取，零新增请求 */
+  findEtfBoardMeta(stock.code)
+    .then((meta) => {
+      if (token !== state.token) return;
+      state.etf.boardMeta = meta;
+      /* 榜单指标到达后，若评分已算过则重算以纳入规模/量能维度 */
+      if (state.etf.score) maybeRefreshEtfScore(token);
+    })
+    .catch(() => {});
+
+  /* 技术研判：复用个股流程，日 K 到达即渲染五维技术 */
+  getKline(stock, quote)
+    .then((kline) => {
+      if (token !== state.token) return;
+      state.periodKlines.day = kline;
+      state.core.kline = kline;
+      state.coreSettled.add('kline');
+      updateChart(kline);
+      const technical = analyzeTechnical(kline && kline.points);
+      state.technical = technical;
+      updateTechnicalSection(technical);
+      maybeRefreshEtfScore(token);
+    })
+    .catch(() => {
+      if (token !== state.token) return;
+      state.core.kline = null;
+      state.coreSettled.add('kline');
+      updateChart(null);
+      state.technical = null;
+      updateTechnicalSection(null);
+      maybeRefreshEtfScore(token);
+    });
+
+  /* 行业研报 + 新闻：ETF 专属五维中的两维 */
+  getEtfFundamentals(stock, quote)
+    .then((result) => {
+      if (token !== state.token) return;
+      state.etf.fundamentals = result;
+      renderEtfIndustrySection(result, stock);
+      if (result.news) {
+        state.core.news = result.news;
+        state.coreSettled.add('news');
+        renderNewsSection(result.news, stock.market);
+      }
+      renderEtfHeader(stock, quote, result);
+      maybeRefreshEtfScore(token);
+    })
+    .catch(() => {
+      if (token !== state.token) return;
+      state.coreSettled.add('news');
+      renderEtfIndustrySection(null, stock);
+      maybeRefreshEtfScore(token);
+    });
+}
+
+function maybeRefreshEtfScore(token) {
+  if (token !== state.token) return;
+  if (!state.quote || !state.stock) return;
+  /* 等待技术(K线)与行业/舆情两路都结算后再算分，避免早算导致覆盖偏低 */
+  if (!state.coreSettled.has('kline') || !state.coreSettled.has('news')) return;
+  const board = state.etf.boardMeta;
+  const score = computeEtfScore({
+    quote: state.quote,
+    kline: state.core.kline,
+    technical: state.technical,
+    fundamentals: state.etf.fundamentals,
+    boardMeta: board,
+  });
+  state.etf.score = score;
+  state.score = score;
+  renderEtfOverview(score, state.core.kline);
 }
 
 /* ---------------- 自选股清单（FR-6） ---------------- */

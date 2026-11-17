@@ -28,6 +28,8 @@ vm.runInThisContext(fs.readFileSync(path.join(src, '20-scoring.js'), 'utf8'), { 
 vm.runInThisContext(fs.readFileSync(path.join(src, '24-screener.js'), 'utf8'), { filename: '24-screener.js' });
 /* 首页双榜单：normalizeHotlistRow 为纯函数，可离线验证 */
 vm.runInThisContext(fs.readFileSync(path.join(src, '25-hotlists.js'), 'utf8'), { filename: '25-hotlists.js' });
+/* ETF 研判：数据层与评分纯函数可离线验证（网络函数不在测试中调用） */
+vm.runInThisContext(fs.readFileSync(path.join(src, '26-etf.js'), 'utf8'), { filename: '26-etf.js' });
 
 const enc = encodeURIComponent;
 let failures = 0;
@@ -212,6 +214,53 @@ function auditCandlestick(html, expectBars) {
   check('资金榜解析负净流入', inflowRow && inflowRow.netInflow === -5e7 && inflowRow.quoteKey === 'sz300750');
   check('榜单剔除 ST 与非法代码', normalizeHotlistRow({ f12: '000001', f14: 'ST某某', f2: '10' }) === null && normalizeHotlistRow({ f12: '', f2: '10' }) === null);
   check('榜单无现价行被过滤条件识别', !Number.isFinite(normalizeHotlistRow({ f12: '600000', f14: '某股' }).price));
+
+  console.log('ETF 研判（v1.6，离线纯函数）');
+  /* 市场前缀：沪市 ETF 段 51/56/58 → sh，深市 15/16 → sz，个股口径不变 */
+  check('沪市 ETF 51 段判为 sh', aSharePrefix('510050') === 'sh');
+  check('沪市 ETF 56/58 段判为 sh', aSharePrefix('588000') === 'sh' && aSharePrefix('511010') === 'sh');
+  check('深市 ETF 15/16 段判为 sz', aSharePrefix('159915') === 'sz' && aSharePrefix('161725') === 'sz');
+  check('个股前缀口径不变 6→sh 0→sz 8→bj', aSharePrefix('600519') === 'sh' && aSharePrefix('000001') === 'sz' && aSharePrefix('830001') === 'bj');
+  check('isEtfCode 识别 ETF 与排除个股', isEtfCode('510050') && isEtfCode('159915') && !isEtfCode('600519') && !isEtfCode('300750'));
+  /* 榜单行解析：f13 市场号为准，规模/现价/涨跌/成交额带出，强制 kind=etf */
+  const etfRow = normalizeEtfRow({ f12: '512480', f13: 1, f14: '半导体ETF国联安', f2: '0.779', f3: '4.01', f6: '908719940', f20: '21290007200' });
+  check('ETF 行解析强制 kind 与沪市前缀', etfRow && etfRow.kind === 'etf' && etfRow.quoteKey === 'sh512480');
+  check('ETF 行携带现价/涨跌/规模/成交额', etfRow.price === 0.779 && etfRow.changePct === 4.01 && etfRow.marketCap === 2.12900072e10 && etfRow.amount === 908719940);
+  const etfSz = normalizeEtfRow({ f12: '159915', f13: 0, f14: '创业板ETF', f2: '2.354', f3: '0.86', f6: '6046426540', f20: '108760579164' });
+  check('ETF 深市 f13=0 判为 sz', etfSz && etfSz.quoteKey === 'sz159915');
+  check('ETF 行剔除无效代码与非数字现价', normalizeEtfRow({ f12: '', f14: 'x', f2: '1' }) === null);
+  /* 行业主题词提取 */
+  check('行业主题识别半导体', etfThemeOf('科创半导体ETF华夏') === '半导体');
+  check('行业主题识别券商', etfThemeOf('证券ETF国泰') === '证券');
+  check('宽基 ETF 无主题返回空', etfThemeOf('沪深300ETF') === '');
+  /* 评分纯函数：规模流动性 / 行业 / 低覆盖惩罚 */
+  const scaleHi = scoreEtfScale(null, { marketCap: 1e10, amount: 2e9 }, null);
+  const scaleLo = scoreEtfScale(null, { marketCap: 1e8, amount: 2e7 }, null);
+  check('规模流动性高规模得分高于低规模', scaleHi.available && scaleLo.available && scaleHi.score > scaleLo.score);
+  check('规模流动性缺数据时降级', !scoreEtfScale(null, {}, null).available);
+  const indHi = scoreEtfIndustry({ list: Array.from({ length: 12 }, () => ({ ratingScore: 0.9 })) }, { name: '半导体' });
+  const indNa = scoreEtfIndustry({ list: [] }, { name: '半导体' });
+  check('行业景气有研报可用且高分', indHi.available && indHi.score > 80);
+  check('行业景气无研报降级', !indNa.available);
+  const capOk = scoreEtfCapital({ volumeRatio: 2.5, amount: 5e9 }, { marketCap: 5e10, amount: 5e9 });
+  check('量能换手可用', capOk.available && Number.isFinite(capOk.score));
+  /* 综合评分：五维齐全不惩罚，缺失维度施加覆盖惩罚 */
+  const fullEtf = computeEtfScore({
+    quote: { marketCap: 1e10, amount: 2e9, volumeRatio: 1.8, high: 11, low: 10, prevClose: 10, price: 10.5 },
+    technical: { consensus: { available: true, score: 80 }, dims: [{ available: true, dir: 'bullish' }, { available: true, dir: 'bullish' }] },
+    fundamentals: { mapped: { name: '半导体' }, reports: { list: [{ ratingScore: 0.9 }] }, news: [{ title: '增长 超预期', content: '' }] },
+    boardMeta: null,
+  });
+  check('ETF 五维齐全覆盖 100 且分数有效', fullEtf.coverage === 100 && fullEtf.total > 0 && fullEtf.total <= 100);
+  check('ETF 评分返回 kind=etf 与五维', fullEtf.kind === 'etf' && fullEtf.dims.length === 5);
+  const thinEtf = computeEtfScore({
+    quote: {},
+    technical: null,
+    fundamentals: { mapped: null, reports: { list: [] }, news: [] },
+    boardMeta: null,
+  });
+  check('ETF 低覆盖施加惩罚（总分显著低于满分）', thinEtf.total === null || thinEtf.total <= 85);
+  check('ETF 缺数据标记覆盖不足与缺失维度', thinEtf.coverage < 100 && thinEtf.missing.length > 0);
 
   console.log(failures ? `\n${failures} 项失败` : '\n全部通过');
   process.exit(failures ? 1 : 0);

@@ -61,6 +61,7 @@ function stockDataset(stock) {
     `data-quotekey="${esc(stock.quoteKey || '')}"`,
     `data-klinecode="${esc(stock.klineCode || '')}"`,
     `data-rawcode="${esc(stock.rawCode || '')}"`,
+    `data-kind="${esc(stock.kind || 'stock')}"`,
   ].join(' ');
 }
 
@@ -193,6 +194,26 @@ function homeHTML() {
       </div>
     </section>
 
+    <section class="home-boards etf-board" aria-labelledby="etfBoardTitle">
+      <div class="boards-head">
+        <div class="section-kicker">行业 ETF</div>
+        <h2 id="etfBoardTitle">热门行业 ETF TOP 10</h2>
+        <p>按当日成交额排序的场内基金。点击进入 ETF 专属研判：技术 / 规模流动性 / 行业景气 / 量能 / 舆情五维评分。</p>
+      </div>
+      <div class="boards-grid">
+        <article class="card board-card" id="etfBoardCard">
+          <div class="board-card-head">
+            <span class="board-ico etf">${ico('layers', 'lg')}</span>
+            <div>
+              <h3>行业 ETF 热门榜</h3>
+              <span>沪深场内基金 · 按当日成交额 · 含规模</span>
+            </div>
+          </div>
+          <div class="board-list" id="etfBoardBody">${loadingCard('正在获取行业 ETF 榜…', 4)}</div>
+        </article>
+      </div>
+    </section>
+
     <section class="features" aria-labelledby="featureTitle">
       <div class="features-head">
         <div>
@@ -228,6 +249,7 @@ function renderHome() {
   loadHotQuotes();
   loadWatchQuotes();
   loadHomeBoards();
+  loadEtfBoard();
 }
 
 /* ---------------- 首页双榜单（FR-9） ---------------- */
@@ -262,9 +284,8 @@ function extraBoardAttrs(stock) {
 }
 
 function boardEmptyHTML(kind) {
-  return `<div class="board-empty">${ico('info', 'sm')}<span>${
-    kind === 'inflow' ? '资金流向数据暂不可用，稍后刷新重试' : '热门榜单暂不可用，稍后刷新重试'
-  }</span></div>`;
+  const text = kind === 'inflow' ? '资金流向数据暂不可用，稍后刷新重试' : kind === 'etf' ? '行业 ETF 榜单暂不可用，稍后刷新重试' : '热门榜单暂不可用，稍后刷新重试';
+  return `<div class="board-empty">${ico('info', 'sm')}<span>${text}</span></div>`;
 }
 
 function renderHomeBoard(kind, rows, error) {
@@ -285,6 +306,42 @@ async function loadHomeBoards() {
     .then((rows) => renderHomeBoard('inflow', rows))
     .catch(() => renderHomeBoard('inflow', null, true));
   await Promise.all([hot, inflow]);
+}
+
+/* 行业 ETF 榜单：单行沿用 boardRowHTML，指标列为规模（复用 kind='etf' 路由直达） */
+function etfRowHTML(stock, index) {
+  const chgCls = pctClass(stock.changePct);
+  const cap = num(stock.marketCap);
+  const capText = Number.isFinite(cap) ? (cap >= 1e8 ? (cap / 1e8).toFixed(1) + '亿' : (cap / 1e4).toFixed(0) + '万') : '—';
+  return `
+    <button type="button" class="board-row" ${stockDataset(stock)}>
+      <span class="br-rank ${index < 3 ? 'top' : ''}">${index + 1}</span>
+      <span class="br-name">
+        <b>${esc(stock.name)}</b>
+        <small>${esc(stock.code)} · ETF</small>
+      </span>
+      <span class="br-quote">
+        <b>${fmtPrice(stock.price, stock.price < 10 ? 3 : 2)}</b>
+        <small class="${chgCls}">${fmtPct(stock.changePct)}</small>
+      </span>
+      <span class="br-metric">${esc(capText)}</span>
+    </button>`;
+}
+
+async function loadEtfBoard() {
+  const body = $('#etfBoardBody');
+  if (!body) return;
+  try {
+    const rows = await getEtfBoard(ETF_BOARD_SIZE);
+    if (!body.isConnected) return; /* 已离开首页 */
+    if (!rows.length) {
+      body.innerHTML = boardEmptyHTML('etf');
+      return;
+    }
+    body.innerHTML = rows.map((s, i) => etfRowHTML(s, i)).join('');
+  } catch (e) {
+    if (body.isConnected) body.innerHTML = boardEmptyHTML('etf');
+  }
 }
 
 /* FR-6.2：自选股行情速览，批量接口一次拉取 */

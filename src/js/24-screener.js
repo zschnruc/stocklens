@@ -41,11 +41,12 @@ function normalizeScreenerRow(r) {
   if (code.length !== 6) return null;
   const name = stripTags(String(r.f14 || code));
   if (/ST|退|\*/.test(name)) return null;
-  const prefix = /^(6|9)/.test(code) ? 'sh' : /^(4|8)/.test(code) ? 'bj' : 'sz';
+  const prefix = aSharePrefix(code);
   return {
     market: 'A',
     code,
     name,
+    kind: isEtfCode(code) ? 'etf' : 'stock',
     quoteKey: prefix + code,
     klineCode: prefix + code,
     rawCode: code,
