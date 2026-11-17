@@ -20,6 +20,8 @@ global.document = {
 
 const src = path.join(root, 'src', 'js');
 vm.runInThisContext(fs.readFileSync(path.join(src, '00-utils.js'), 'utf8'), { filename: '00-utils.js' });
+/* 数据层：emSecid / EM_KLT / parseEmKlines 等纯函数可离线验证（网络函数不在测试中调用） */
+vm.runInThisContext(fs.readFileSync(path.join(src, '10-api.js'), 'utf8'), { filename: '10-api.js' });
 vm.runInThisContext(fs.readFileSync(path.join(src, '22-indicators.js'), 'utf8'), { filename: '22-indicators.js' });
 vm.runInThisContext(fs.readFileSync(path.join(src, '21-charts.js'), 'utf8'), { filename: '21-charts.js' });
 vm.runInThisContext(fs.readFileSync(path.join(src, '23-technical.js'), 'utf8'), { filename: '23-technical.js' });
@@ -44,19 +46,38 @@ function check(label, ok, detail = '') {
 }
 
 async function fetchKline(key, period, isUS) {
-  const base = isUS
-    ? 'https://web.ifzq.gtimg.cn/appstock/app/usfqkline/get'
-    : 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get';
   const count = { day: 320, week: 260, month: 140 }[period];
-  const url = `${base}?param=${enc(key)},${period},,,${count},qfq`;
-  const res = await fetch(url);
+  if (isUS) {
+    const url = `https://web.ifzq.gtimg.cn/appstock/app/usfqkline/get?param=${enc(key)},${period},,,${count},qfq`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const block = data.data[key] || Object.values(data.data)[0];
+    const arr = block[`qfq${period}`] || block[period] || [];
+    return arr
+      .map((row) => ({ date: row[0], open: +row[1], close: +row[2], high: +row[3], low: +row[4], volume: +row[5] }))
+      .filter((p) => p.date && Number.isFinite(p.close));
+  }
+  /* A股/港股改走东财前复权（腾讯 fqkline 已被 WAF 拦截返回 501） */
+  const code = key.replace(/^(sh|hk|sz|bj)/, '');
+  const market = key.startsWith('hk') ? 'HK' : 'A';
+  const secid = emSecid({ market, code });
+  const params = new URLSearchParams({
+    secid,
+    fields1: 'f1,f2,f3,f4,f5,f6',
+    fields2: 'f51,f52,f53,f54,f55,f56',
+    klt: String(EM_KLT[period]),
+    fqt: '1',
+    beg: EM_BEG[period],
+    end: '20500101',
+    lmt: String(count),
+  });
+  const res = await fetch(`https://push2his.eastmoney.com/api/qt/stock/kline/get?${params}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
-  const block = data.data[key] || Object.values(data.data)[0];
-  const arr = block[`qfq${period}`] || block[period] || [];
-  return arr
-    .map((row) => ({ date: row[0], open: +row[1], close: +row[2], high: +row[3], low: +row[4], volume: +row[5] }))
-    .filter((p) => p.date && Number.isFinite(p.close));
+  const lines = data && data.data && data.data.klines;
+  if (!Array.isArray(lines) || !lines.length) throw new Error(`东财K线为空 rc=${data && data.rc}`);
+  return parseEmKlines(lines.slice(-count));
 }
 
 function auditCandlestick(html, expectBars) {
@@ -282,6 +303,15 @@ function auditCandlestick(html, expectBars) {
   check('ETF 高分榜阈值含边界 80', filterScreenerRows(etfRanked, 80).length === 2);
   check('ETF 高分榜默认阈值常量为 80', ETF_SCREENER_DEFAULT_THRESHOLD === 80);
   check('ETF 高分榜默认候选池为正数', ETF_SCREENER_DEFAULT_SIZE > 0 && ETF_SCREENER_CONCURRENCY > 0);
+
+  console.log('K 线数据源映射（离线纯函数）');
+  check('东财 secid：沪市个股 1. 前缀', emSecid({ market: 'A', code: '600519' }) === '1.600519');
+  check('东财 secid：深市个股 0. 前缀', emSecid({ market: 'A', code: '000001' }) === '0.000001');
+  check('东财 secid：港股 116. 前缀', emSecid({ market: 'HK', code: '00700' }) === '116.00700');
+  check('东财周期映射 日/周/月 = 101/102/103', EM_KLT.day === 101 && EM_KLT.week === 102 && EM_KLT.month === 103);
+  const emParsed = parseEmKlines(['2026-11-17,10,12,13,9,500', '2026-11-18,12,11,13,10,400']);
+  check('东财 klines 解析列序正确（开收高低量）', emParsed.length === 2 && emParsed[0].open === 10 && emParsed[0].close === 12 && emParsed[0].high === 13 && emParsed[0].low === 9 && emParsed[0].volume === 500);
+  check('东财 klines 脏行被过滤', parseEmKlines(['bad,row', '2026-11-17,10,12,13,9,500']).length === 1);
 
   console.log(failures ? `\n${failures} 项失败` : '\n全部通过');
   process.exit(failures ? 1 : 0);

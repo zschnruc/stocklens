@@ -12,6 +12,7 @@ const API = {
   datacenter: 'https://datacenter-web.eastmoney.com/api/data/v1/get',
   news: 'https://search-api-web.eastmoney.com/search/jsonp',
   push2: 'https://push2.eastmoney.com/api/qt/',
+  emKline: 'https://push2his.eastmoney.com/api/qt/stock/kline/get',
   pdf: 'https://pdf.dfcfw.com/pdf/H3_',
 };
 
@@ -358,9 +359,35 @@ async function getQuoteBatch(keys) {
 /* K 线周期：同一腾讯接口切换 period 参数（FR-3.2） */
 const KLINE_PERIODS = ['day', 'week', 'month'];
 const KLINE_COUNT = { day: 320, week: 260, month: 140 };
+/* 东财周期参数：101 日 / 102 周 / 103 月 */
+const EM_KLT = { day: 101, week: 102, month: 103 };
+/* 起始日期：早于所需根数即可，东财按 beg..end 返回区间，取尾部 KLINE_COUNT 根 */
+const EM_BEG = { day: '20230101', week: '20180101', month: '20100101' };
 
 function normalizeKlinePeriod(period) {
   return KLINE_PERIODS.includes(period) ? period : 'day';
+}
+/* 东财 secid：沪市 1. / 深市及北交所 0. / 港股 116.；美股不走东财（保留腾讯 usfqkline） */
+function emSecid(stock) {
+  if (stock.market === 'HK') return '116.' + String(stock.code || '').replace(/\D/g, '').padStart(5, '0').slice(-5);
+  const c = String(stock.code || '').replace(/\D/g, '');
+  return (aSharePrefix(c) === 'sh' ? '1.' : '0.') + c;
+}
+/* 解析东财 klines：f51日期 f52开 f53收 f54高 f55低 f56量（与腾讯列序一致） */
+function parseEmKlines(lines) {
+  return lines
+    .map((line) => {
+      const row = String(line).split(',');
+      return {
+        date: row[0],
+        open: num(row[1]),
+        close: num(row[2]),
+        high: num(row[3]),
+        low: num(row[4]),
+        volume: num(row[5], 0),
+      };
+    })
+    .filter((r) => Number.isFinite(r.close) && r.date);
 }
 function klineMetrics(points) {
   const closes = points.map((p) => num(p.close)).filter((n) => Number.isFinite(n) && n > 0);
@@ -413,28 +440,59 @@ async function getKline(stock, quote, period = 'day') {
   }
   if (!key) throw new Error('缺少 K 线代码');
   const isUS = stock.market === 'US';
+  const count = KLINE_COUNT[p] || 320;
+  const build = (points, source) => {
+    if (points.length < 5) throw new Error('K 线数据不足');
+    /* 技术面指标仅在日线上有意义，周/月只返回原始点供图表使用 */
+    return { key, period: p, points, metrics: p === 'day' ? klineMetrics(points) : null, source };
+  };
   return cached(`kline:${p}:${key}`, TTL.kline, async () => {
+    /* A股/港股主源：东财 push2his 前复权（腾讯 fqkline 已被 WAF 拦截返回 501）。
+       ETF 不做前复权（fqt=0），个股与港股用前复权（fqt=1）。 */
+    if (!isUS) {
+      try {
+        const params = new URLSearchParams({
+          secid: emSecid(stock),
+          fields1: 'f1,f2,f3,f4,f5,f6',
+          fields2: 'f51,f52,f53,f54,f55,f56',
+          klt: String(EM_KLT[p]),
+          fqt: stock.kind === 'etf' || isEtfCode(stock.code) ? '0' : '1',
+          beg: EM_BEG[p],
+          end: '20500101',
+          lmt: String(count),
+        });
+        const data = await emJsonp(`${API.emKline}?${params}`);
+        const lines = data && data.data && data.data.klines;
+        if (Array.isArray(lines) && lines.length) {
+          const points = parseEmKlines(lines.slice(-count));
+          if (points.length >= 5) return build(points, '东方财富');
+        }
+      } catch (e) {
+        /* 东财不可用则回退腾讯 */
+      }
+    }
+    /* 回退 / 美股：腾讯 fqkline（美股为 usfqkline）。注：腾讯 A股/港股 fqkline 当前被 WAF 拦截，
+       仅在东财异常时才可能失败，保留兜底以便上游恢复后自动可用。 */
     const base = isUS ? API.usKline : API.kline;
-    const count = KLINE_COUNT[p] || 320;
     const url = `${base}?param=${encodeURIComponent(key)},${p},,,${count},qfq`;
     const data = await fetchJSON(url, { timeout: 15000 });
     const block = data && data.data && (data.data[key] || Object.values(data.data)[0]);
     if (!block) throw new Error('K 线数据为空');
     /* A/美股前复权键为 qfqday/qfqweek/qfqmonth，港股直接为 day/week/month（FR-3.7） */
     const arr = block[`qfq${p}`] || block[p] || [];
-    const points = arr
-      .map((row) => ({
-        date: row[0],
-        open: num(row[1]),
-        close: num(row[2]),
-        high: num(row[3]),
-        low: num(row[4]),
-        volume: num(row[5], 0),
-      }))
-      .filter((p2) => Number.isFinite(p2.close) && p2.date);
-    if (points.length < 5) throw new Error('K 线数据不足');
-    /* 技术面指标仅在日线上有意义，周/月只返回原始点供图表使用 */
-    return { key, period: p, points, metrics: p === 'day' ? klineMetrics(points) : null, source: '腾讯财经' };
+    return build(
+      arr
+        .map((row) => ({
+          date: row[0],
+          open: num(row[1]),
+          close: num(row[2]),
+          high: num(row[3]),
+          low: num(row[4]),
+          volume: num(row[5], 0),
+        }))
+        .filter((r) => Number.isFinite(r.close) && r.date),
+      '腾讯财经'
+    );
   });
 }
 
