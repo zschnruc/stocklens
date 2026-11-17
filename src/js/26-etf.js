@@ -18,6 +18,11 @@ const ETF_DIM_META = [
 const ETF_BOARD_SIZE = 10;
 const ETF_BOARD_TTL = 90 * 1000;
 
+/* ETF 高分榜：候选池与并发参数（口径与个股高分榜对称，阈值默认 80） */
+const ETF_SCREENER_DEFAULT_SIZE = 30;
+const ETF_SCREENER_DEFAULT_THRESHOLD = 80;
+const ETF_SCREENER_CONCURRENCY = 3;
+
 /* ETF 名称 → 行业关键词（用于映射东财行业研报，复用 10-api 的 findIndustryCode） */
 const ETF_THEME_HINTS = [
   '半导体', '芯片', '集成电路', '科创芯片', '生物医药', '创新药', '医药', '医疗', '中药', '生物科技',
@@ -51,10 +56,11 @@ function normalizeEtfRow(r) {
 }
 
 /* 东财 ETF 榜单（b:MK0021 为场内基金板块），按成交额排序。
-   f12代码 f13市场 f14名称 f2现价 f3涨跌 f6成交额 f20规模(元) */
-function getEtfBoard(size = ETF_BOARD_SIZE) {
-  const n = clamp(Math.round(Number(size) || ETF_BOARD_SIZE), 5, 30);
-  return cached(`etf-board:${n}`, ETF_BOARD_TTL, async () => {
+   f12代码 f13市场 f14名称 f2现价 f3涨跌 f6成交额 f20规模(元)
+   scope 用于区分首页热门榜与高分榜候选池，避免不同 size 共用缓存键。 */
+function getEtfBoard(size = ETF_BOARD_SIZE, scope = 'board') {
+  const n = clamp(Math.round(Number(size) || ETF_BOARD_SIZE), 5, 100);
+  return cached(`etf-${scope}:${n}`, ETF_BOARD_TTL, async () => {
     const params = new URLSearchParams({
       pn: '1',
       pz: String(n),
@@ -275,8 +281,7 @@ function computeEtfScore({ quote, kline, technical, fundamentals, boardMeta } = 
   }
   const verdict = verdictFor(total === null ? 0 : total);
   const sorted = available.slice().sort((a, b) => b.score - a.score);
-  let desc = total === null ? '有效数据不足，暂不给出综合分。' : verdict.desc + '。';
-  if (sorted.length >= 2) {
+  let desc = total === null ? '有效数据不足，暂不给出综合分。' : verdict.desc + '。';  if (sorted.length >= 2) {
     desc += `最强项为${sorted[0].name}（${sorted[0].score}），最弱项为${sorted[sorted.length - 1].name}（${
       sorted[sorted.length - 1].score
     }）。`;
@@ -293,5 +298,84 @@ function computeEtfScore({ quote, kline, technical, fundamentals, boardMeta } = 
     missing: dims.filter((d) => !d.available).map((d) => d.short),
     createdAt: new Date(),
     kind: 'etf',
+  };
+}
+
+/* ---------------- ETF 高分榜（反向筛选，与个股高分榜对称） ---------------- */
+
+/* 候选池：ETF 热门榜放大到指定规模，独立缓存命名空间，不与首页 10 只榜互相污染 */
+function getEtfScreenerCandidates(size = ETF_SCREENER_DEFAULT_SIZE) {
+  return getEtfBoard(size, 'screener');
+}
+
+/* 纯函数：对单只 ETF 复用与 ETF 研判页完全相同的五维评分引擎 */
+function scoreEtfCandidate({ quote, kline, technical, fundamentals, boardMeta }) {
+  return computeEtfScore({ quote, kline, technical, fundamentals, boardMeta });
+}
+
+/* 拉取单只 ETF 的五行数据；任一单项失败降级为 null，不阻断整轮扫描。
+   规模/成交额直接复用候选行 boardMeta，不额外请求 */
+async function fetchEtfCandidateData(stock, quote) {
+  const [kline, fundamentals] = await Promise.all([
+    getKline(stock, quote).catch(() => null),
+    getEtfFundamentals(stock, quote).catch(() => null),
+  ]);
+  const technical = analyzeTechnical(kline && kline.points);
+  return { kline, fundamentals, technical };
+}
+
+/* 主流程：ETF 候选池 → 批量行情 → 受控并发评分 → 排名。
+   onProgress(done, total, row) 逐只回调；shouldStop() 返回 true 时中止。
+   排名/阈值筛选复用 24-screener.js 的通用纯函数（仅依赖 score.total 与 stock.code）。 */
+async function runEtfScreener({ size = ETF_SCREENER_DEFAULT_SIZE, onProgress, shouldStop } = {}) {
+  const candidates = await getEtfScreenerCandidates(size);
+  if (!candidates.length) throw new Error('ETF 热门榜单暂不可用，请稍后重试');
+
+  if (shouldStop && shouldStop()) {
+    return { rows: [], ranAt: new Date(), candidates: candidates.length, stopped: true };
+  }
+
+  const quoteMap = await getQuoteBatch(candidates.map((s) => s.quoteKey));
+  const usable = candidates.filter((s) => quoteMap.has(s.quoteKey));
+  if (!usable.length) throw new Error('ETF 行情接口暂不可用，请稍后重试');
+
+  const rows = [];
+  let cursor = 0;
+  let done = 0;
+  const worker = async () => {
+    while (cursor < usable.length) {
+      if (shouldStop && shouldStop()) return;
+      const stock = usable[cursor++];
+      const quote = quoteMap.get(stock.quoteKey);
+      let row;
+      try {
+        const data = await fetchEtfCandidateData(stock, quote);
+        row = {
+          stock,
+          quote,
+          kline: data.kline,
+          boardMeta: stock,
+          score: scoreEtfCandidate({ quote, ...data, boardMeta: stock }),
+        };
+      } catch (e) {
+        row = { stock, quote, boardMeta: stock, score: computeEtfScore({ quote, boardMeta: stock }) };
+      }
+      rows.push(row);
+      done += 1;
+      if (onProgress) onProgress(done, usable.length, row);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(ETF_SCREENER_CONCURRENCY, usable.length) }, () => worker())
+  );
+
+  const stopped = !!(shouldStop && shouldStop());
+  return {
+    rows: rankScreenerRows(rows),
+    ranAt: new Date(),
+    candidates: candidates.length,
+    scanned: usable.length,
+    failed: rows.filter((r) => !r.score || !Number.isFinite(r.score.total)).length,
+    stopped,
   };
 }

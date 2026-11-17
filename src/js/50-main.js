@@ -35,6 +35,18 @@ const state = {
     progressPct: 0,
     progressText: '准备中…',
   },
+  etfScreener: {
+    threshold: ETF_SCREENER_DEFAULT_THRESHOLD,
+    size: ETF_SCREENER_DEFAULT_SIZE,
+    rows: [],
+    ranAt: null,
+    stopped: false,
+    error: '',
+    running: false,
+    token: 0,
+    progressPct: 0,
+    progressText: '准备中…',
+  },
   search: { items: [], active: -1, query: '', seq: 0 },
   etf: null,
 };
@@ -158,9 +170,11 @@ function syncTopbar(route) {
   const topSearch = $('#topSearchTrigger');
   const printBtn = $('#printBtn');
   const screenerBtn = $('#topScreenerBtn');
+  const etfScreenerBtn = $('#topEtfScreenerBtn');
   if (topSearch) topSearch.hidden = route !== 'analysis';
   if (printBtn) printBtn.hidden = route !== 'analysis';
   if (screenerBtn) screenerBtn.classList.toggle('active', route === 'screener');
+  if (etfScreenerBtn) etfScreenerBtn.classList.toggle('active', route === 'etf-screener');
   document.body.dataset.route = route;
 }
 
@@ -204,6 +218,12 @@ function addRecent(stock) {
 
 /* ---------------- routing ---------------- */
 function routeFromHash() {
+  if ((location.hash || '').startsWith('#/etf-screener')) {
+    state.pendingStock = null;
+    ++state.token;
+    enterEtfScreener();
+    return;
+  }
   if ((location.hash || '').startsWith('#/screener')) {
     state.pendingStock = null;
     ++state.token; /* 中止可能进行中的个股研判 */
@@ -324,6 +344,97 @@ function syncScreenerButtons(running) {
   const runBtn = $('#screenerRunBtn');
   const stopBtn = $('#screenerStopBtn');
   const prog = $('#screenerProgress');
+  if (runBtn) {
+    runBtn.disabled = running;
+    const label = runBtn.querySelector('span:last-child');
+    if (label) label.textContent = running ? '扫描中…' : '开始扫描';
+  }
+  if (stopBtn) stopBtn.hidden = !running;
+  if (prog) prog.hidden = !running;
+}
+
+/* ---------------- ETF 高分榜（ETF 五维反向选股）编排 ---------------- */
+function goEtfScreener() {
+  if ((location.hash || '') === '#/etf-screener') {
+    enterEtfScreener();
+  } else {
+    location.hash = '#/etf-screener';
+  }
+}
+
+function enterEtfScreener() {
+  const es = state.etfScreener;
+  ++es.token; /* 取消上一次可能仍在进行的扫描 */
+  es.running = false;
+  es.rows = [];
+  es.ranAt = null;
+  es.stopped = false;
+  es.error = '';
+  es.progressPct = 0;
+  es.progressText = '准备中…';
+  renderEtfScreenerPage();
+  startEtfScreener();
+}
+
+async function runEtfScreenerFlow() {
+  const es = state.etfScreener;
+  const token = ++es.token;
+  es.running = true;
+  es.rows = [];
+  es.stopped = false;
+  es.error = '';
+  es.progressPct = 0;
+  es.progressText = '正在获取候选池…';
+  syncEtfScreenerButtons(true);
+  refreshEtfScreenerResult();
+  try {
+    const result = await runEtfScreener({
+      size: es.size,
+      onProgress: (done, total, row) => {
+        if (token !== es.token) return;
+        updateEtfScreenerProgress(done, total, row);
+        if (row) es.rows.push(row);
+        refreshEtfScreenerResult();
+      },
+      shouldStop: () => token !== es.token,
+    });
+    if (token !== es.token) return;
+    es.rows = result.rows;
+    es.ranAt = result.ranAt;
+    es.stopped = !!result.stopped;
+    refreshEtfScreenerResult();
+  } catch (err) {
+    if (token !== es.token) return;
+    es.error = err && err.message ? err.message : '扫描失败，请稍后重试';
+    es.rows = [];
+    refreshEtfScreenerResult();
+  } finally {
+    if (token !== es.token) return;
+    es.running = false;
+    syncEtfScreenerButtons(false);
+  }
+}
+
+function startEtfScreener() {
+  if (state.etfScreener.running) return;
+  runEtfScreenerFlow();
+}
+
+function stopEtfScreener() {
+  const es = state.etfScreener;
+  if (!es.running) return;
+  ++es.token;
+  es.running = false;
+  es.stopped = true;
+  syncEtfScreenerButtons(false);
+  refreshEtfScreenerResult();
+  toast('扫描已停止，已完成的结果保留在下表', 'info');
+}
+
+function syncEtfScreenerButtons(running) {
+  const runBtn = $('#etfScreenerRunBtn');
+  const stopBtn = $('#etfScreenerStopBtn');
+  const prog = $('#etfScreenerProgress');
   if (runBtn) {
     runBtn.disabled = running;
     const label = runBtn.querySelector('span:last-child');
@@ -1209,6 +1320,27 @@ function handleClick(e) {
       if (stockEl) goStock(stockFromDataset(stockEl.dataset));
       return;
     }
+    if (action === 'etf-screener') {
+      e.preventDefault();
+      goEtfScreener();
+      return;
+    }
+    if (action === 'etf-screener-run') {
+      e.preventDefault();
+      startEtfScreener();
+      return;
+    }
+    if (action === 'etf-screener-stop') {
+      e.preventDefault();
+      stopEtfScreener();
+      return;
+    }
+    if (action === 'etf-screener-open') {
+      e.preventDefault();
+      const stockEl = actionEl.closest('[data-market][data-code]');
+      if (stockEl) goEtf(stockFromDataset(stockEl.dataset));
+      return;
+    }
   }
 
   const sug = e.target.closest('[data-sug-index]');
@@ -1250,11 +1382,17 @@ function initEvents() {
     if (e.target && e.target.id === 'stockSearch') handleSearchInput(e.target);
     if (e.target && e.target.matches('[data-filter-target]')) updateFilter(e.target);
     if (e.target && e.target.id === 'screenerThreshold') updateScreenerThreshold(e.target.value);
+    if (e.target && e.target.id === 'etfScreenerThreshold') updateEtfScreenerThreshold(e.target.value);
   });
   document.addEventListener('change', (e) => {
     if (e.target && e.target.id === 'screenerSize') {
       state.screener.size = Number(e.target.value) || SCREENER_DEFAULT_SIZE;
       if (state.screener.running) stopScreener();
+      toast(`候选池已切换，请点击「开始扫描」重新获取`, 'info');
+    }
+    if (e.target && e.target.id === 'etfScreenerSize') {
+      state.etfScreener.size = Number(e.target.value) || ETF_SCREENER_DEFAULT_SIZE;
+      if (state.etfScreener.running) stopEtfScreener();
       toast(`候选池已切换，请点击「开始扫描」重新获取`, 'info');
     }
   });
@@ -1284,6 +1422,10 @@ function init() {
   hydrateIcons(document);
   syncThemeButton();
   initEvents();
+  if ((location.hash || '').startsWith('#/etf-screener')) {
+    enterEtfScreener();
+    return;
+  }
   if ((location.hash || '').startsWith('#/screener')) {
     enterScreener();
     return;

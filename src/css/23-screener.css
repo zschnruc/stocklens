@@ -93,6 +93,11 @@
 /* home CTA */
 .home-cta-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:14px}
 .home-cta-row .demo-link{margin-top:0}
+.home-cta-row .btn.etf-cta{color:#08201c;border-color:transparent;background:var(--teal)}
+.home-cta-row .btn.etf-cta:hover{filter:brightness(1.05);box-shadow:0 8px 24px rgba(88,211,195,.22)}
+
+/* ETF 高分榜：五维列略宽于四维 */
+.etf-screener-table .sr-dims{min-width:340px}
 
 @media(max-width:860px){
   .screener-summary{grid-template-columns:repeat(2,1fr)}

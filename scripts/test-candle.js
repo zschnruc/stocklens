@@ -262,6 +262,27 @@ function auditCandlestick(html, expectBars) {
   check('ETF 低覆盖施加惩罚（总分显著低于满分）', thinEtf.total === null || thinEtf.total <= 85);
   check('ETF 缺数据标记覆盖不足与缺失维度', thinEtf.coverage < 100 && thinEtf.missing.length > 0);
 
+  console.log('ETF 高分榜（v1.7，离线纯函数）');
+  /* 候选用同一 ETF 榜单解析，强制 kind=etf 以便 stockDataset 路由到 /etf */
+  const screenCand = normalizeEtfRow({ f12: '512480', f13: 1, f14: '半导体ETF', f2: '0.9', f6: '9e8', f20: '2e10' });
+  check('高分榜候选为 ETF 类型且带规模', screenCand.kind === 'etf' && screenCand.marketCap === 2e10);
+  /* scoreEtfCandidate 与研判页 computeEtfScore 同口径：kind=etf、五维、覆盖 */
+  const screenScore = scoreEtfCandidate({
+    quote: { marketCap: 1e10, amount: 2e9, volumeRatio: 1.8, high: 11, low: 10, prevClose: 10, price: 10.5 },
+    kline: null,
+    technical: { consensus: { available: true, score: 80 }, dims: [{ available: true, dir: 'bullish' }] },
+    fundamentals: { mapped: { name: '半导体' }, reports: { list: [{ ratingScore: 0.9 }] }, news: [{ title: '增长 超预期', content: '' }] },
+    boardMeta: { marketCap: 2e10, amount: 9e8 },
+  });
+  check('高分榜评分与研判页同口径（kind=etf + 五维）', screenScore.kind === 'etf' && screenScore.dims.length === 5 && Number.isFinite(screenScore.total));
+  /* 排名与阈值筛选复用通用纯函数：ETF 行无分置末、边界 80 达标 */
+  const mkEtfRow = (code, total) => ({ stock: { code, kind: 'etf' }, score: { total } });
+  const etfRanked = rankScreenerRows([mkEtfRow('512480', 88), mkEtfRow('159915', null), mkEtfRow('510050', 81)]);
+  check('ETF 高分榜按分数降序且无分置末', etfRanked[0].stock.code === '512480' && etfRanked[etfRanked.length - 1].score.total === null);
+  check('ETF 高分榜阈值含边界 80', filterScreenerRows(etfRanked, 80).length === 2);
+  check('ETF 高分榜默认阈值常量为 80', ETF_SCREENER_DEFAULT_THRESHOLD === 80);
+  check('ETF 高分榜默认候选池为正数', ETF_SCREENER_DEFAULT_SIZE > 0 && ETF_SCREENER_CONCURRENCY > 0);
+
   console.log(failures ? `\n${failures} 项失败` : '\n全部通过');
   process.exit(failures ? 1 : 0);
 })();

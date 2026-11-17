@@ -154,6 +154,7 @@ function homeHTML() {
       ${watchRowHTML()}
       <div class="home-cta-row">
         <button class="btn primary" type="button" data-action="screener">${ico('filter', 'sm')}查看 80 分以上高分榜</button>
+        <button class="btn primary etf-cta" type="button" data-action="etf-screener">${ico('layers', 'sm')}查看 80 分以上 ETF 榜</button>
         <button class="demo-link" type="button" data-action="demo">${ico('spark', 'sm')}没有目标？先看一份示例研判</button>
       </div>
 
