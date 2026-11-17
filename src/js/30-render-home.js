@@ -262,7 +262,7 @@ function boardRowHTML(stock, index, metric) {
       ? fmtBig(stock.netInflow != null ? stock.netInflow / 1e8 : null, '亿')
       : fmtBig(stock.amount != null ? stock.amount / 1e8 : null, '亿');
   return `
-    <button type="button" class="board-row" ${stockDataset(stock)} ${extraBoardAttrs(stock)}>
+    <button type="button" class="board-row" ${stockDataset(stock)}>
       <span class="br-rank ${index < 3 ? 'top' : ''}">${index + 1}</span>
       <span class="br-name">
         <b>${esc(stock.name)}</b>
@@ -274,14 +274,6 @@ function boardRowHTML(stock, index, metric) {
       </span>
       <span class="br-metric ${metricCls}">${esc(metricText)}</span>
     </button>`;
-}
-
-/* 榜单行携带指标，进入研判后 header 可展示（沿用既有 dataset，不新增请求） */
-function extraBoardAttrs(stock) {
-  return [
-    `data-amount="${stock.amount != null ? Number(stock.amount) : ''}"`,
-    `data-netinflow="${stock.netInflow != null ? Number(stock.netInflow) : ''}"`,
-  ].join(' ');
 }
 
 function boardEmptyHTML(kind) {

@@ -16,6 +16,7 @@ const state = {
   reports: null,
   peers: null,
   industryName: '',
+  industryCode: '',
   industryStarted: false,
   pendingStock: null,
   klinePeriod: 'day',
@@ -631,11 +632,9 @@ function goEtf(input) {
 
 /* ETF 榜单/快照指标：从缓存榜单中按代码查找规模与成交额（零新增请求）；找不到时降级 */
 function findEtfBoardMeta(code) {
-  const boards = [getEtfBoard(ETF_BOARD_SIZE)];
-  return Promise.all(boards.map((p) => p.catch(() => []))).then((lists) => {
-    const all = lists.flat();
-    return all.find((s) => s && s.code === code) || null;
-  });
+  return getEtfBoard(ETF_BOARD_SIZE)
+    .catch(() => [])
+    .then((list) => (Array.isArray(list) ? list : []).find((s) => s && s.code === code) || null);
 }
 
 async function analyzeEtf(inputStock) {
