@@ -1421,7 +1421,7 @@ html[data-theme="light"] .etf-report-item:hover{background:rgba(24,32,45,.025)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v1.7.1 · 构建于 2026/11/17 14:48:50</p>
+      <p>研值 StockLens v1.8.0 · 构建于 2026/11/17 15:01:54</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -2456,9 +2456,172 @@ async function getIndustryReports(industryCode, industryName, opts = {}) {
 }
 
 /* ---------------- Eastmoney financials / profile ---------------- */
+/* 美股 secucode：腾讯 .OQ/.N/.PS → 东财 .O/.N/.A，缺省按纳斯达克 .O */
+function usSecucode(stock, quote) {
+  const raw = String((quote && quote.rawCode) || (stock && stock.rawCode) || (stock && stock.code) || '')
+    .replace(/^us/i, '')
+    .trim();
+  if (!raw) return '';
+  if (/\.OQ$/i.test(raw)) return raw.replace(/\.OQ$/i, '.O');
+  if (/\.PS$/i.test(raw)) return raw.replace(/\.PS$/i, '.O');
+  if (/\.[A-Z]{1,2}$/i.test(raw)) return raw;
+  return raw + '.O';
+}
+
+/* 东财美股财报为长表：每行一个科目，按 REPORT（如 2026/FY）分组后透视 */
+function usReportGroups(rows) {
+  const map = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((r) => {
+    if (!r || !r.REPORT) return;
+    const key = String(r.REPORT);
+    let g = map.get(key);
+    if (!g) {
+      g = {
+        report: key,
+        date: String(r.REPORT_DATE || ''),
+        type: String(r.REPORT_TYPE || ''),
+        label: String(r.REPORT_TYPE_DETAILS || r.REPORT_TYPE || key),
+        currency: r.CURRENCY_ABBR || r.CURRENCY || 'USD',
+        items: new Map(),
+      };
+      map.set(key, g);
+    }
+    const name = String(r.ITEM_NAME || '').trim();
+    if (name && !g.items.has(name)) g.items.set(name, r);
+  });
+  return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function usItem(group, names) {
+  if (!group) return null;
+  for (const name of names) {
+    const row = group.items.get(name);
+    if (row && Number.isFinite(num(row.AMOUNT))) return row;
+  }
+  return null;
+}
+
+const US_REVENUE_ITEMS = ['营业收入', '主营收入', '收入总额', '营业总收入', '总营业收入'];
+const US_PROFIT_ITEMS = ['归属于母公司股东净利润', '归属于普通股股东净利润', '净利润'];
+const US_EQUITY_ITEMS = ['股东权益合计', '归属于母公司股东权益', '总权益'];
+const US_EPS_ITEMS = ['基本每股收益-普通股', '摊薄每股收益-普通股'];
+const US_SHARES_ITEMS = ['基本加权平均股数-普通股', '摊薄加权平均股数-普通股'];
+
+/* 纯函数：长表行 → 与 A 股/港股同字段口径的财务对象（可离线单测） */
+function buildUSFinancials(incomeRows, balanceRows) {
+  const groups = usReportGroups(incomeRows);
+  if (!groups.length) return { supported: true, empty: true, history: [] };
+  const balanceMap = new Map(usReportGroups(balanceRows).map((g) => [g.report, g]));
+  const isAnnual = (g) => /年报|年度/.test(g.type || '') || /FY$/i.test(g.report || '');
+
+  const readGroup = (g) => {
+    const b = balanceMap.get(g.report) || null;
+    const revenue = usItem(g, US_REVENUE_ITEMS);
+    const profit = usItem(g, US_PROFIT_ITEMS);
+    const gross = usItem(g, ['毛利']);
+    const eps = usItem(g, US_EPS_ITEMS);
+    const shares = usItem(g, US_SHARES_ITEMS);
+    const equity = usItem(b, US_EQUITY_ITEMS);
+    const assets = usItem(b, ['总资产']);
+    const liabilities = usItem(b, ['总负债']);
+    return {
+      revenue: revenue ? num(revenue.AMOUNT) : null,
+      revenueYoY: revenue ? num(revenue.YOY_RATIO) : null,
+      profit: profit ? num(profit.AMOUNT) : null,
+      profitYoY: profit ? num(profit.YOY_RATIO) : null,
+      gross: gross ? num(gross.AMOUNT) : null,
+      eps: eps ? num(eps.AMOUNT) : null,
+      shares: shares ? num(shares.AMOUNT) : null,
+      equity: equity ? num(equity.AMOUNT) : null,
+      assets: assets ? num(assets.AMOUNT) : null,
+      liabilities: liabilities ? num(liabilities.AMOUNT) : null,
+    };
+  };
+
+  const latest = groups[0];
+  const cur = readGroup(latest);
+  const prev = groups[1] ? readGroup(groups[1]) : null;
+  const avgEquity =
+    Number.isFinite(cur.equity) && prev && Number.isFinite(prev.equity) && prev.equity > 0
+      ? (cur.equity + prev.equity) / 2
+      : cur.equity;
+  /* 单季/中报利润不能直接当年度回报，ROE 仅在年报口径下计算 */
+  const roe = isAnnual(latest) && cur.profit > 0 && avgEquity > 0 ? (cur.profit / avgEquity) * 100 : null;
+  const grossMargin = cur.gross > 0 && cur.revenue > 0 ? (cur.gross / cur.revenue) * 100 : null;
+  const debtRatio = cur.liabilities > 0 && cur.assets > 0 ? (cur.liabilities / cur.assets) * 100 : null;
+  const bps = cur.equity > 0 && cur.shares > 0 ? cur.equity / cur.shares : null;
+
+  const history = groups.slice(0, 4).map((g, i) => {
+    const row = readGroup(g);
+    const prior = groups[i + 1] ? readGroup(groups[i + 1]) : null;
+    const eqAvg =
+      Number.isFinite(row.equity) && prior && Number.isFinite(prior.equity) && prior.equity > 0
+        ? (row.equity + prior.equity) / 2
+        : row.equity;
+    return {
+      period: g.label,
+      revenueYoY: row.revenueYoY,
+      profitYoY: row.profitYoY,
+      roe: isAnnual(g) && row.profit > 0 && eqAvg > 0 ? (row.profit / eqAvg) * 100 : null,
+    };
+  });
+
+  return {
+    supported: true,
+    period: latest.label,
+    reportDate: fmtDate(latest.date),
+    revenue: cur.revenue,
+    revenueYoY: cur.revenueYoY,
+    profit: cur.profit,
+    profitYoY: cur.profitYoY,
+    grossMargin,
+    roe,
+    eps: cur.eps,
+    bps,
+    debtRatio,
+    pe: null,
+    pb: null,
+    currency: latest.currency || 'USD',
+    history,
+    source: '东方财富 F10 · 美股年报',
+  };
+}
+
+async function fetchUSReport(reportName, secucode, filterExtra = '', pageSize = 200) {
+  const params = new URLSearchParams({
+    reportName,
+    columns: 'ALL',
+    filter: `(SECUCODE="${secucode}")${filterExtra}`,
+    pageNumber: '1',
+    pageSize: String(pageSize),
+    sortTypes: '-1',
+    sortColumns: 'REPORT_DATE',
+    source: 'HSF10',
+    client: 'PC',
+  });
+  const data = await emJSON(`${API.datacenter}?${params}`);
+  return (data && data.result && data.result.data) || [];
+}
+
 async function getFinancials(stock) {
   if (stock.market === 'US') {
-    return { supported: false, reason: '美股盈利与成长数据暂无稳定免费源' };
+    const secucode = usSecucode(stock);
+    if (!secucode) return { supported: false, reason: '缺少美股代码，无法获取财务数据' };
+    return cached('financial:' + secucode, TTL.financial, async () => {
+      const [annualIncome, annualBalance] = await Promise.all([
+        fetchUSReport('RPT_USF10_FN_INCOME', secucode, '(REPORT_TYPE="年报")'),
+        fetchUSReport('RPT_USF10_FN_BALANCE', secucode, '(REPORT_TYPE="年报")'),
+      ]);
+      if (!annualIncome.length) {
+        /* 无年报（部分外国私人发行人）时回退最近报告期，ROE 自动留空 */
+        const [income, balance] = await Promise.all([
+          fetchUSReport('RPT_USF10_FN_INCOME', secucode),
+          fetchUSReport('RPT_USF10_FN_BALANCE', secucode),
+        ]);
+        return buildUSFinancials(income, balance);
+      }
+      return buildUSFinancials(annualIncome, annualBalance);
+    });
   }
   const code = stock.code;
   const isHK = stock.market === 'HK';
@@ -2468,7 +2631,8 @@ async function getFinancials(stock) {
     let columns;
     if (isHK) {
       reportName = 'RPT_HKF10_FN_MAININDICATOR';
-      columns = 'SECUCODE,SECURITY_NAME_ABBR,REPORT_DATE,REPORT_TYPE,OPERATE_INCOME,OPERATE_INCOME_YOY,GROSS_PROFIT,GROSS_PROFIT_YOY,HOLDER_PROFIT,HOLDER_PROFIT_YOY,GROSS_PROFIT_RATIO,ROE_YEARLY,ROE_AVG,PE_TTM,PB_TTM,TOTAL_MARKET_CAP,CURRENCY';
+      columns =
+        'SECUCODE,SECURITY_NAME_ABBR,REPORT_DATE,REPORT_TYPE,OPERATE_INCOME,OPERATE_INCOME_YOY,GROSS_PROFIT,GROSS_PROFIT_YOY,HOLDER_PROFIT,HOLDER_PROFIT_YOY,GROSS_PROFIT_RATIO,ROE_YEARLY,ROE_AVG,ROIC_YEARLY,BASIC_EPS,BPS,DEBT_ASSET_RATIO,DIVIDEND_RATE,PE_TTM,PB_TTM,TOTAL_MARKET_CAP,CURRENCY';
     } else {
       reportName = 'RPT_F10_FINANCE_MAINFINADATA';
       columns = 'SECUCODE,SECURITY_NAME_ABBR,REPORT_DATE,REPORT_DATE_NAME,EPSJB,BPS,TOTALOPERATEREVE,PARENTNETPROFIT,TOTALOPERATEREVETZ,PARENTNETPROFITTZ,XSMLL,ROEJQ,ZCFZL';
@@ -2497,10 +2661,13 @@ async function getFinancials(stock) {
           profitYoY: num(latest.HOLDER_PROFIT_YOY),
           grossMargin: num(latest.GROSS_PROFIT_RATIO),
           roe: num(latest.ROE_YEARLY, num(latest.ROE_AVG)),
+          roic: num(latest.ROIC_YEARLY),
           pe: num(latest.PE_TTM),
           pb: num(latest.PB_TTM),
           eps: num(latest.BASIC_EPS),
           bps: num(latest.BPS),
+          debtRatio: num(latest.DEBT_ASSET_RATIO),
+          dividendRate: num(latest.DIVIDEND_RATE),
           currency: latest.CURRENCY || 'HKD',
           reportDate: fmtDate(latest.REPORT_DATE),
           history: rows.map((r) => ({
@@ -2551,12 +2718,7 @@ async function getOrgProfile(stock, quote) {
       secucode = `${code}.HK`;
     } else {
       reportName = 'RPT_USF10_INFO_ORGPROFILE';
-      const raw = (quote && quote.rawCode) || stock.rawCode || code;
-      const c = String(raw).replace(/^us/i, '');
-      if (/\.OQ$/i.test(c)) secucode = c.replace(/\.OQ$/i, '.O');
-      else if (/\.PS$/i.test(c)) secucode = c.replace(/\.PS$/i, '.O');
-      else if (/\.[A-Z]{1,2}$/i.test(c)) secucode = c;
-      else secucode = c + '.O';
+      secucode = usSecucode(stock, quote);
     }
     const params = new URLSearchParams({
       reportName,
@@ -3479,6 +3641,8 @@ function computeScore({ market, quote, kline, reports, financials, news }) {
     total = Math.round(available.reduce((a, d) => a + d.score * d.weight, 0) / weightSum);
   }
   const coverage = Math.round((weightSum / 100) * 100);
+  const availableCount = available.length;
+  const dimCount = dims.length;
   const verdict = verdictFor(total === null ? 0 : total);
   const sorted = available.slice().sort((a, b) => b.score - a.score);
   let desc = total === null ? '有效数据不足，暂不给出综合分。' : verdict.desc + '。';
@@ -3488,13 +3652,19 @@ function computeScore({ market, quote, kline, reports, financials, news }) {
     }）。`;
   }
   if (coverage < 100) {
-    desc += `当前数据覆盖 ${coverage}%，缺失维度已从权重中剔除。`;
+    desc += `当前可用 ${availableCount}/${dimCount} 个维度、权重覆盖 ${coverage}%，缺失维度已从权重中剔除。`;
+    if (market !== 'A') {
+      desc += '港美股缺少免费中文研报等维度，分数仅在可用维度内可比，请勿与 A 股评分直接比较高低。';
+    }
   }
   return {
     total,
     verdict,
     dims,
     coverage,
+    availableCount,
+    dimCount,
+    market,
     desc,
     missing: dims.filter((d) => !d.available).map((d) => d.short),
     createdAt: new Date(),
@@ -5776,6 +5946,10 @@ function dimRow(d) {
 }
 
 function renderFactorCard(score) {
+  const dimCount = Number.isFinite(score.dimCount) ? score.dimCount : score.dims.length;
+  const availCount = Number.isFinite(score.availableCount)
+    ? score.availableCount
+    : score.dims.filter((d) => d.available).length;
   const explain = score.dims
     .map(
       (d) => `<div class="explain-item ${d.available ? '' : 'unavailable'}">
@@ -5795,7 +5969,7 @@ function renderFactorCard(score) {
       <div class="dims">${score.dims.map(dimRow).join('')}</div>
     </div>
     <details class="score-explain" open>
-      <summary>评分依据 <span>数据覆盖 ${score.coverage}% · ${score.missing.length ? `缺失 ${esc(score.missing.join('、'))}` : '四维齐全'}</span></summary>
+      <summary>评分依据 <span>可用 ${availCount}/${dimCount} 维 · 权重覆盖 ${score.coverage}% · ${score.missing.length ? `缺失 ${esc(score.missing.join('、'))}` : '四维齐全'}</span></summary>
       <div class="explain-grid">${explain}</div>
       <p class="inline-note">综合分 = 可用维度加权平均（研报 30% / 盈利 25% / 技术 25% / 舆情 20%），缺失维度从权重中剔除。评级、目标价、财务与情绪均来自公开数据，不做主观填充。</p>
     </details>
@@ -5803,14 +5977,21 @@ function renderFactorCard(score) {
 }
 
 function renderScoreCard(score, createdAt) {
-  const coverageText = score.coverage === 100 ? '四维数据齐全' : `缺失 ${score.missing.join('、')}，已折算`;
+  const dimCount = Number.isFinite(score.dimCount) ? score.dimCount : score.dims.length;
+  const availCount = Number.isFinite(score.availableCount)
+    ? score.availableCount
+    : score.dims.filter((d) => d.available).length;
+  const coverageText =
+    score.coverage === 100
+      ? `${dimCount} 维数据齐全`
+      : `可用 ${availCount}/${dimCount} 维 · 缺失 ${score.missing.join('、')}`;
   return `<aside class="card score-card">
     <div class="card-kicker">${ico('spark')}综合研判</div>
     ${renderGauge(score.total, score.verdict, score.coverage)}
     <p class="score-desc">${esc(score.desc)}</p>
     <div class="score-foot">
-      <span class="confidence">${ico('shield', 'sm')}<span>数据覆盖 <b>${score.coverage}%</b><br>${esc(coverageText)}</span></span>
-      <span class="score-mini-bars" title="数据覆盖 ${score.coverage}%">${renderScoreMiniBars(score.coverage)}</span>
+      <span class="confidence">${ico('shield', 'sm')}<span>权重覆盖 <b>${score.coverage}%</b><br>${esc(coverageText)}</span></span>
+      <span class="score-mini-bars" title="权重覆盖 ${score.coverage}%">${renderScoreMiniBars(score.coverage)}</span>
     </div>
     <div class="score-updated">更新于 ${esc(
       createdAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -6202,10 +6383,10 @@ function renderFinancialSection(f, market) {
   if (!f || !f.supported) {
     body.innerHTML = emptyState({
       icon: 'database',
-      title: market === 'US' ? '美股盈利与成长数据暂缺' : '财务数据暂不可用',
+      title: market === 'US' ? '美股财务数据暂不可用' : '财务数据暂不可用',
       desc:
         (f && f.reason) ||
-        '当前没有稳定的免费财务数据源。盈利与成长维度会标记为不可用，评分按剩余维度折算，不会用估值字段替代成长数据。',
+        '当前接口未返回可用的财务数据。盈利与成长维度会标记为不可用，评分按剩余维度折算，不会用估值字段替代成长数据。',
     });
     updateStatus('financial', 'empty', '财务 暂无数据');
     return;
@@ -6219,16 +6400,23 @@ function renderFinancialSection(f, market) {
     updateStatus('financial', 'empty', '财务 无有效数据');
     return;
   }
-  const currency = f.currency || (market === 'HK' ? 'HKD' : 'CNY');
+  const currency = f.currency || (market === 'HK' ? 'HKD' : market === 'US' ? 'USD' : 'CNY');
   const periodLabel = f.period || f.reportDate || '最近报告期';
   const history = (f.history || []).slice(0, 4);
+  const f10Label = market === 'A' ? 'A 股 F10' : market === 'HK' ? '港股 F10' : '美股 F10';
+  const sourceNote =
+    market === 'US'
+      ? '美股为年报口径；ROE = 归母净利 ÷ 平均股东权益，BPS 以加权股数近似计算'
+      : market === 'HK'
+        ? '港股为年报 / 中报口径，指标来自东财港股 F10'
+        : '财务口径可能与公司公告存在差异';
   body.innerHTML = `<div class="card financial-card">
     <div class="fin-head">
       <div>
         <span class="card-kicker">${ico('database')}核心财务指标</span>
         <div class="fin-period">${esc(periodLabel)} <span>· ${esc(f.reportDate || '')}</span></div>
       </div>
-      <span class="badge">${market === 'A' ? 'A 股 F10' : '港股 F10'} · ${esc(currency)}</span>
+      <span class="badge">${f10Label} · ${esc(currency)}</span>
     </div>
     <div class="fin-grid">
       <div class="fin-item"><label>营业收入</label><strong>${finMoney(f.revenue, currency)}</strong>${
@@ -6261,7 +6449,7 @@ function renderFinancialSection(f, market) {
           </table></div>`
         : ''
     }
-    <div class="source-note" style="margin-top:12px">${esc(f.source || '东方财富 F10')} · 财务口径可能与公司公告存在差异，请以正式报告为准</div>
+    <div class="source-note" style="margin-top:12px">${esc(f.source || '东方财富 F10')} · ${esc(sourceNote)}，请以正式报告为准</div>
   </div>`;
   updateStatus('financial', 'ok', `财务 ${f.period || '已获取'}`);
 }
