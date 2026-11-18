@@ -130,7 +130,19 @@ function cryptoHeader(stock, quote, meta) {
 function renderCryptoHeader(stock, quote, meta) {
   const box = $('#stockMeta');
   if (!box) return;
+  /* 市值晚到会重绘头部：保留已有的数据状态（合约/链上/舆情），避免退回「加载中」 */
+  const statuses = Array.from(box.querySelectorAll('[data-status]')).map((el) => ({
+    key: el.dataset.status,
+    cls: el.className,
+    html: el.innerHTML,
+  }));
   box.innerHTML = cryptoHeader(stock, quote, meta);
+  statuses.forEach((s) => {
+    const el = box.querySelector(`[data-status="${s.key}"]`);
+    if (!el) return;
+    el.className = s.cls;
+    el.innerHTML = s.html;
+  });
   hydrateIcons(box);
 }
 

@@ -1499,7 +1499,7 @@ html[data-theme="light"] .crypto-risk{background:rgba(169,118,35,.05)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v2.0.0 · 构建于 2026/11/18 11:09:33</p>
+      <p>研值 StockLens v2.0.0 · 构建于 2026/11/18 11:12:05</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -8759,7 +8759,19 @@ function cryptoHeader(stock, quote, meta) {
 function renderCryptoHeader(stock, quote, meta) {
   const box = $('#stockMeta');
   if (!box) return;
+  /* 市值晚到会重绘头部：保留已有的数据状态（合约/链上/舆情），避免退回「加载中」 */
+  const statuses = Array.from(box.querySelectorAll('[data-status]')).map((el) => ({
+    key: el.dataset.status,
+    cls: el.className,
+    html: el.innerHTML,
+  }));
   box.innerHTML = cryptoHeader(stock, quote, meta);
+  statuses.forEach((s) => {
+    const el = box.querySelector(`[data-status="${s.key}"]`);
+    if (!el) return;
+    el.className = s.cls;
+    el.innerHTML = s.html;
+  });
   hydrateIcons(box);
 }
 
