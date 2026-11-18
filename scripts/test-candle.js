@@ -32,6 +32,8 @@ vm.runInThisContext(fs.readFileSync(path.join(src, '24-screener.js'), 'utf8'), {
 vm.runInThisContext(fs.readFileSync(path.join(src, '25-hotlists.js'), 'utf8'), { filename: '25-hotlists.js' });
 /* ETF 研判：数据层与评分纯函数可离线验证（网络函数不在测试中调用） */
 vm.runInThisContext(fs.readFileSync(path.join(src, '26-etf.js'), 'utf8'), { filename: '26-etf.js' });
+/* 加密研判：数据解析、别名与五维评分纯函数可离线验证（网络函数不在测试中调用） */
+vm.runInThisContext(fs.readFileSync(path.join(src, '27-crypto.js'), 'utf8'), { filename: '27-crypto.js' });
 
 const enc = encodeURIComponent;
 let failures = 0;
@@ -303,6 +305,79 @@ function auditCandlestick(html, expectBars) {
   check('ETF 高分榜阈值含边界 80', filterScreenerRows(etfRanked, 80).length === 2);
   check('ETF 高分榜默认阈值常量为 80', ETF_SCREENER_DEFAULT_THRESHOLD === 80);
   check('ETF 高分榜默认候选池为正数', ETF_SCREENER_DEFAULT_SIZE > 0 && ETF_SCREENER_CONCURRENCY > 0);
+
+  console.log('加密货币数据与五维评分（v2.0，离线纯函数）');
+  const coin = normalizeCoinStock({ symbol: 'btc' });
+  check('币种对象强制 CRYPTO / coin 与独立标识', coin.market === 'CRYPTO' && coin.kind === 'coin' && coin.code === 'BTC' && coin.quoteKey === 'crypto:BTC');
+  check('币种中文名自动映射', coin.name === '比特币' && normalizeCoinStock({ symbol: 'ETH' }).name === '以太坊');
+  check('别名解析：小写代码', cryptoResolveQuery('btc') && cryptoResolveQuery('btc').code === 'BTC');
+  check('别名解析：中文名', cryptoResolveQuery('比特币').code === 'BTC' && cryptoResolveQuery('以太坊').code === 'ETH');
+  check('别名解析：普通美股不误判', cryptoResolveQuery('AAPL') === null);
+  const boardRows = cryptoBoardRows(
+    [
+      { symbol: 'USDT', rank: 3, price: 1, marketCap: 1e11, change24h: 0 },
+      { symbol: 'BTC', rank: 1, price: 64000, marketCap: 1.28e12, change24h: -0.3 },
+      { symbol: 'ETH', rank: 2, price: 1800, marketCap: 2.2e11, change24h: 1.2 },
+    ],
+    10
+  );
+  check('加密榜单排除稳定币并按市值排名', boardRows.length === 2 && boardRows[0].code === 'BTC' && boardRows[1].code === 'ETH');
+  const coinCandles = parseCryptoKlines([
+    [1794873600000, '64000', '65000', '63000', '64500', '100', 1794960000000, '6500000'],
+    [1794960000000, '64500', '66000', '64000', '65500', '120', 1795046400000, '7800000'],
+  ]);
+  check('Binance K 线按 UTC 日期与 OHLCV 解析', coinCandles.length === 2 && /^\d{4}-\d{2}-\d{2}$/.test(coinCandles[0].date) && coinCandles[1].close === 65500 && coinCandles[0].amount === 6500000);
+  const coinMetrics = cryptoKlineMetrics(
+    Array.from({ length: 120 }, (_, i) => ({
+      date: `2026-01-${String((i % 28) + 1).padStart(2, '0')}`,
+      open: 100 + i,
+      high: 103 + i,
+      low: 98 + i,
+      close: 101 + i,
+      volume: 1000 + i,
+    }))
+  );
+  check('加密指标补充 7/30/90 日收益与 ATR/30 日波动', Number.isFinite(coinMetrics.r7) && Number.isFinite(coinMetrics.r30) && Number.isFinite(coinMetrics.r90) && Number.isFinite(coinMetrics.maxDrawdown90) && Number.isFinite(coinMetrics.atrPct) && Number.isFinite(coinMetrics.vol30));
+  check('波动健康度：40%–80% 高于极端区间', cryptoVolScore(60) > cryptoVolScore(10) && cryptoVolScore(60) > cryptoVolScore(160));
+  check('换手率：8% 高于 80% 投机换手', cryptoTurnoverScore(8) > cryptoTurnoverScore(80));
+  check('资金费率：负费率（空头拥挤）高于极端正费率', cryptoFundingScore(-0.0002) > cryptoFundingScore(0.001));
+  const coinKline = {
+    points: [],
+    metrics: {
+      last: 100, r7: 6, r20: 12, r30: 25, r60: 40, r90: 55, r120: 70,
+      ma20: 92, ma60: 85, trend: '多头排列', volatility: 60, vol30: 60,
+      maxDrawdown: -12, maxDrawdown90: 15, atr14: 3, atrPct: 3,
+    },
+  };
+  const btcKline = { metrics: { last: 1, r30: 5, r60: 10, r90: 20, ma20: 1, ma60: 1, trend: '震荡' } };
+  check('趋势维度：强于 BTC 时可用且得分 > 60', scoreCryptoTrend(coinKline, btcKline).available && scoreCryptoTrend(coinKline, btcKline).score > 60);
+  check('趋势维度：无 K 线时降级不可用', !scoreCryptoTrend(null, null).available);
+  const liqHi = scoreCryptoLiquidity({ amount: 5e9 }, { marketCap: 1e12, rank: 1 });
+  const liqLo = scoreCryptoLiquidity({ amount: 2e6 }, null);
+  check('流动性维度：大成交额高分且缺失市值仍可用', liqHi.available && liqLo.available && liqHi.score > liqLo.score);
+  const derOk = scoreCryptoDerivatives({ funding: -0.0001, oiUsd: 2e10, basisPct: 0.1, mark: 100, index: 99.9 }, { marketCap: 1e12 });
+  check('合约维度：有合约数据时可用且给出得分', derOk.available && derOk.score > 40);
+  check('合约维度：无合约时降级不可用', !scoreCryptoDerivatives(null, { marketCap: 1e12 }).available);
+  const sentFear = scoreCryptoSentiment({ current: 12, classification: 'Extreme Fear' }, { change30d: 20, current: 1e11, chain: 'Ethereum' });
+  const sentGreed = scoreCryptoSentiment({ current: 88, classification: 'Extreme Greed' }, null);
+  check('情绪维度：极度恐慌得分高于极度贪婪', sentFear.available && sentGreed.available && sentFear.score > sentGreed.score);
+  const fullCoin = computeCryptoScore({
+    quote: { amount: 5e9 },
+    kline: coinKline,
+    btcKline,
+    meta: { marketCap: 1e12, rank: 1 },
+    derivatives: { funding: -0.0001, oiUsd: 2e10, basisPct: 0.1, mark: 100, index: 99.9 },
+    fng: { current: 20, classification: 'Fear' },
+    chainTvl: { change30d: 20, current: 1e11, chain: 'Ethereum' },
+  });
+  check('加密五维齐全时覆盖率 100 且总分有效', fullCoin.coverage === 100 && fullCoin.availableCount === 5 && fullCoin.total > 0 && fullCoin.total <= 100);
+  const thinCoin = computeCryptoScore({ quote: { amount: 1e7 }, kline: coinKline, meta: null });
+  const thinWeighted = thinCoin.dims.filter((d) => d.available).reduce((a, d) => a + d.score * d.weight, 0) / thinCoin.coverage;
+  check('加密低覆盖时施加 0.7+0.3×覆盖率惩罚', thinCoin.coverage === 65 && thinCoin.total === Math.round(thinWeighted * 0.895));
+  check('加密缺失维度被标记且不出现 NaN', thinCoin.coverage < 100 && thinCoin.missing.length === 2 && Number.isFinite(thinCoin.total));
+  check('USD 大数缩写格式', fmtUsdCompact(1.28e12) === '$1.28T' && fmtUsdCompact(2.5e9) === '$2.50B');
+  check('加密榜默认取前 10', CRYPTO_BOARD_SIZE === 10);
+  check('小额币价保留 8 位精度', fmtCryptoPrice(0.00000379) === '0.00000379' && fmtCryptoPrice(0.0123) === '0.0123');
 
   console.log('K 线数据源映射（离线纯函数）');
   check('东财 secid：沪市个股 1. 前缀', emSecid({ market: 'A', code: '600519' }) === '1.600519');

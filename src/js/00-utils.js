@@ -162,15 +162,16 @@ function marketFromKey(key) {
   return 'A';
 }
 function marketLabel(m) {
-  return m === 'US' ? '美股' : m === 'HK' ? '港股' : 'A股';
+  return m === 'US' ? '美股' : m === 'HK' ? '港股' : m === 'CRYPTO' ? '加密' : 'A股';
 }
 function marketBadgeClass(m) {
-  return m === 'US' ? 'blue' : m === 'HK' ? 'teal' : 'gold';
+  return m === 'US' ? 'blue' : m === 'HK' ? 'teal' : m === 'CRYPTO' ? 'violet' : 'gold';
 }
 function currencyOf(market) {
-  return market === 'US' ? 'USD' : market === 'HK' ? 'HKD' : 'CNY';
+  return market === 'US' || market === 'CRYPTO' ? 'USD' : market === 'HK' ? 'HKD' : 'CNY';
 }
 function exchangeLabel(stock, quote) {
+  if (stock.market === 'CRYPTO') return '7×24 加密市场';
   if (stock.market === 'HK') return '香港交易所';
   if (stock.market === 'US') {
     const raw = (quote && quote.rawCode) || stock.rawCode || '';

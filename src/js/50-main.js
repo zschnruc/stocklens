@@ -50,6 +50,7 @@ const state = {
   },
   search: { items: [], active: -1, query: '', seq: 0 },
   etf: null,
+  crypto: null,
 };
 
 /* ---------------- stock objects ---------------- */
@@ -61,10 +62,18 @@ function normalizeStock(input) {
   let quoteKey = s.quoteKey || '';
   let klineCode = s.klineCode || '';
   let name = s.name || code;
-  /* 标的类型：'etf' 走 ETF 专属研判，其余为个股。搜索/榜单/输入已带 kind，这里保留 */
-  let kind = s.kind === 'etf' ? 'etf' : 'stock';
+  /* 标的类型：'etf' 走 ETF 专属研判，'coin' 走加密研判，其余为个股。搜索/榜单/输入已带 kind，这里保留 */
+  let kind = s.kind === 'etf' ? 'etf' : s.kind === 'coin' ? 'coin' : 'stock';
 
-  if (market === 'A') {
+  if (market === 'CRYPTO') {
+    const symbol = (code || rawCode).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15);
+    code = symbol;
+    rawCode = symbol;
+    kind = 'coin';
+    if (!quoteKey) quoteKey = 'crypto:' + symbol;
+    if (!klineCode) klineCode = 'crypto:' + symbol;
+    name = s.name || (typeof CRYPTO_NAMES !== 'undefined' && CRYPTO_NAMES[symbol]) || symbol;
+  } else if (market === 'A') {
     code = code.replace(/\D/g, '').slice(0, 6);
     rawCode = code;
     if (isEtfCode(code)) kind = 'etf'; /* 以代码为准，避免数据集丢失 kind 时误判 */
@@ -99,7 +108,10 @@ function stockFromDataset(ds) {
 
 function hashForStock(stock) {
   const raw = stock.market === 'US' ? stock.rawCode || stock.code : stock.code;
-  /* ETF 使用独立路由，与个股研判分流 */
+  /* ETF / 加密使用独立路由，与个股研判分流 */
+  if (stock.kind === 'coin' || stock.market === 'CRYPTO') {
+    return `#/coin/${encodeURIComponent(stock.code)}`;
+  }
   if (stock.kind === 'etf' && stock.market === 'A') {
     return `#/etf/A/${encodeURIComponent(raw)}`;
   }
@@ -119,6 +131,15 @@ function lookupKnownStock(market, code) {
 
 function stockFromHash() {
   const hash = location.hash || '';
+  /* 加密独立路由优先识别 */
+  const coinHash = hash.match(/^#\/coin\/([A-Za-z0-9]{2,15})/i);
+  if (coinHash) {
+    const symbol = decodeURIComponent(coinHash[1]).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!symbol) return null;
+    const known = lookupKnownStock('CRYPTO', symbol);
+    if (known) return normalizeCoinStock(known);
+    return normalizeCoinStock({ symbol });
+  }
   /* ETF 独立路由优先识别 */
   const etfHash = hash.match(/^#\/etf\/A\/([^/?#]+)/i);
   if (etfHash) {
@@ -233,7 +254,7 @@ function routeFromHash() {
   }
   const stock = stockFromHash();
   if (!stock) {
-    if ((location.hash || '').startsWith('#/stock/') || (location.hash || '').startsWith('#/etf/')) {
+    if ((location.hash || '').startsWith('#/stock/') || (location.hash || '').startsWith('#/etf/') || (location.hash || '').startsWith('#/coin/')) {
       toast('链接中的代码无效，已返回首页', 'error');
       try {
         history.replaceState(null, '', location.pathname + location.search);
@@ -447,8 +468,12 @@ function syncEtfScreenerButtons(running) {
 
 /* ---------------- analysis orchestration ---------------- */
 async function analyzeStock(inputStock, opts = {}) {
-  /* ETF 标的统一分流到专属编排（覆盖搜索/榜单/路由/刷新所有入口） */
-  if (normalizeStock(inputStock).kind === 'etf') {
+  /* 加密/ETF 标的统一分流到专属编排（覆盖搜索/榜单/路由/刷新所有入口） */
+  const normalized = normalizeStock(inputStock);
+  if (normalized.kind === 'coin' || normalized.market === 'CRYPTO') {
+    return analyzeCoin(inputStock, opts);
+  }
+  if (normalized.kind === 'etf') {
     return analyzeEtf(inputStock, opts);
   }
   const token = ++state.token;
@@ -746,6 +771,147 @@ function maybeRefreshEtfScore(token) {
   state.etf.score = score;
   state.score = score;
   renderEtfOverview(score, state.core.kline);
+}
+
+/* ---------------- 加密研判编排（独立路由 #/coin） ---------------- */
+async function analyzeCoin(inputStock, opts = {}) {
+  const token = ++state.token;
+  const stock = normalizeCoinStock(inputStock);
+  state.route = 'analysis';
+  state.stock = stock;
+  state.quote = null;
+  state.core = {};
+  state.coreSettled = new Set();
+  state.technical = null;
+  state.score = null;
+  state.reports = null;
+  state.profile = null;
+  state.profileReady = false;
+  state.periodKlines = {};
+  state.klinePeriod = 'day';
+  state.crypto = { token, meta: null, derivatives: null, fng: null, tvl: null, btcKline: null, klineReady: false };
+  renderCryptoSkeleton(stock);
+  if (!opts.keepScroll) scrollTopSmooth();
+
+  try {
+    const quote = await getCryptoQuote(stock);
+    if (token !== state.token) return;
+    stock.name = quote.name || stock.name;
+    state.stock = stock;
+    state.quote = quote;
+    addRecent(stock);
+    renderCryptoHeader(stock, quote, null);
+    document.title = `${quote.name} ${stock.code} · 加密研判 · 研值 StockLens`;
+    bindCryptoData(token, stock, quote);
+  } catch (err) {
+    if (token !== state.token) return;
+    renderFatal(stock, '加密行情获取失败：' + quoteErrorText(err));
+    toast('加密行情获取失败：' + quoteErrorText(err), 'error');
+  }
+}
+
+function bindCryptoData(token, stock, quote) {
+  const symbol = stock.code;
+
+  getCryptoMeta(symbol)
+    .then((meta) => {
+      if (token !== state.token) return;
+      state.crypto.meta = meta;
+      renderCryptoHeader(stock, quote, meta);
+      /* 持仓量占市值依赖市值，市值晚到时要重绘合约面板 */
+      if (state.crypto.derivatives) renderCryptoDerivatives(stock, state.crypto.derivatives, meta);
+      maybeRefreshCryptoScore(token);
+    })
+    .catch(() => {
+      if (token !== state.token) return;
+      state.crypto.meta = null;
+      maybeRefreshCryptoScore(token);
+    });
+
+  getCryptoKline(stock, 'day')
+    .then((kline) => {
+      if (token !== state.token) return;
+      state.crypto.klineReady = true;
+      state.periodKlines.day = kline;
+      state.core.kline = kline;
+      state.coreSettled.add('kline');
+      updateChart(kline);
+      const technical = analyzeTechnical(kline && kline.points);
+      state.technical = technical;
+      updateTechnicalSection(technical);
+      maybeRefreshCryptoScore(token);
+    })
+    .catch(() => {
+      if (token !== state.token) return;
+      state.crypto.klineReady = true;
+      state.core.kline = null;
+      state.coreSettled.add('kline');
+      updateChart(null);
+      state.technical = null;
+      updateTechnicalSection(null);
+      maybeRefreshCryptoScore(token);
+    });
+
+  getCryptoDerivatives(symbol)
+    .then((derivatives) => {
+      if (token !== state.token) return;
+      state.crypto.derivatives = derivatives;
+      renderCryptoDerivatives(stock, derivatives, state.crypto.meta);
+      maybeRefreshCryptoScore(token);
+    })
+    .catch(() => {
+      if (token !== state.token) return;
+      state.crypto.derivatives = null;
+      renderCryptoDerivatives(stock, null, state.crypto.meta);
+      maybeRefreshCryptoScore(token);
+    });
+
+  Promise.all([
+    getCryptoFearGreed().catch(() => null),
+    getCryptoChainTvl(symbol).catch(() => null),
+    getCryptoBtcKline().catch(() => null),
+  ]).then(([fng, tvl, btcKline]) => {
+    if (token !== state.token) return;
+    state.crypto.fng = fng;
+    state.crypto.tvl = tvl;
+    state.crypto.btcKline = btcKline;
+    renderCryptoOnchain(stock, fng, tvl);
+    maybeRefreshCryptoScore(token);
+  });
+
+  getNews(stock)
+    .then((news) => {
+      if (token !== state.token) return;
+      state.core.news = news;
+      state.coreSettled.add('news');
+      renderNewsSection(news, 'CRYPTO', {
+        emptyDesc: '新闻接口未返回可展示的结果；加密情绪维度使用恐慌贪婪指数与主链数据，不受新闻缺失影响。',
+      });
+    })
+    .catch(() => {
+      if (token !== state.token) return;
+      state.coreSettled.add('news');
+      renderNewsSection([], 'CRYPTO', {
+        emptyDesc: '新闻接口暂不可用；加密情绪维度使用恐慌贪婪指数与主链数据，不受新闻缺失影响。',
+      });
+    });
+}
+
+function maybeRefreshCryptoScore(token) {
+  if (token !== state.token) return;
+  if (!state.quote || !state.stock || !state.crypto || !state.crypto.klineReady) return;
+  const c = state.crypto;
+  const score = computeCryptoScore({
+    quote: state.quote,
+    kline: state.core.kline,
+    btcKline: c.btcKline,
+    meta: c.meta,
+    derivatives: c.derivatives,
+    fng: c.fng,
+    chainTvl: c.tvl,
+  });
+  state.score = score;
+  renderCryptoOverview(score);
 }
 
 /* ---------------- 自选股清单（FR-6） ---------------- */

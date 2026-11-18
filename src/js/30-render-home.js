@@ -71,6 +71,13 @@ function stockButton(stock, cls, extra = '') {
   )}">—</span></button>`;
 }
 
+function cryptoChipHTML(symbol) {
+  const coin = normalizeCoinStock({ symbol });
+  return `<button type="button" class="hot-chip crypto-chip" ${stockDataset(coin)}>${esc(coin.name)}<span class="hot-chg" data-cchg="${esc(
+    symbol
+  )}">—</span></button>`;
+}
+
 function recentStocks() {
   const list = store.get('recent', []);
   if (!Array.isArray(list)) return [];
@@ -125,13 +132,13 @@ function homeHTML() {
     <div class="hero">
       <span class="eyebrow"><i class="dot"></i>公开数据 · 实时行情 · 可解释评分</span>
       <h1>读懂研报，<br><span>把判断交给证据。</span></h1>
-      <p class="lede">输入 A 股、港股或美股，聚合近半年个股与行业研报、同行龙头、财务与舆情，用四维打分形成一张可追溯的研究底稿。</p>
+      <p class="lede">输入 A 股、港股、美股或加密货币，聚合研报、同行、财务、行情与舆情，用可解释的评分形成一张可追溯的研究底稿。</p>
 
       <div class="search-shell">
         <form class="search-box" id="searchForm" autocomplete="off">
           ${ico('search')}
-          <input id="stockSearch" type="text" placeholder="输入股票名称、代码或拼音，如 贵州茅台 / 600519 / 00700 / NVDA"
-            aria-label="搜索股票" spellcheck="false">
+          <input id="stockSearch" type="text" placeholder="输入股票名称、代码或币种，如 贵州茅台 / 600519 / NVDA / BTC"
+            aria-label="搜索股票或加密货币" spellcheck="false">
           <button class="search-submit" type="submit" aria-label="开始分析">
             <span>开始分析</span>${ico('arrow')}
           </button>
@@ -142,6 +149,10 @@ function homeHTML() {
       <div class="hot-row" id="hotRow">
         <span class="hot-label">热门</span>
         ${HOT_STOCKS.map((s) => stockButton(s, 'hot-chip')).join('')}
+      </div>
+      <div class="hot-row crypto-hot-row" id="cryptoHotRow">
+        <span class="hot-label">加密</span>
+        ${CRYPTO_HOT.map((sym) => cryptoChipHTML(sym)).join('')}
       </div>
       ${
         recent.length
@@ -159,7 +170,7 @@ function homeHTML() {
       </div>
 
       <div class="hero-stats">
-        <div class="hero-stat"><strong>3 地市场</strong><span>A 股 · 港股 · 美股</span></div>
+        <div class="hero-stat"><strong>4 类市场</strong><span>A 股 · 港股 · 美股 · 加密</span></div>
         <div class="hero-stat"><strong>4 个维度</strong><span>研报 · 盈利 · 技术 · 舆情</span></div>
         <div class="hero-stat"><strong>20 篇</strong><span>近半年最新个股研报</span></div>
       </div>
@@ -215,6 +226,26 @@ function homeHTML() {
       </div>
     </section>
 
+    <section class="home-boards crypto-board" aria-labelledby="cryptoBoardTitle">
+      <div class="boards-head">
+        <div class="section-kicker">加密资产</div>
+        <h2 id="cryptoBoardTitle">加密热门 TOP 10</h2>
+        <p>按市值排名的加密资产（已排除稳定币）。点击进入独立研判页：趋势 / 流动 / 波动 / 合约 / 情绪五维评分。7×24 连续交易、无涨跌幅限制，仅作公开数据研究。</p>
+      </div>
+      <div class="boards-grid">
+        <article class="card board-card" id="cryptoBoardCard">
+          <div class="board-card-head">
+            <span class="board-ico crypto">${ico('spark', 'lg')}</span>
+            <div>
+              <h3>加密市值 TOP 10</h3>
+              <span>Binance 行情 · CoinLore 市值排名 · USD 计价</span>
+            </div>
+          </div>
+          <div class="board-list" id="cryptoBoardBody">${loadingCard('正在获取加密榜单…', 4)}</div>
+        </article>
+      </div>
+    </section>
+
     <section class="features" aria-labelledby="featureTitle">
       <div class="features-head">
         <div>
@@ -237,6 +268,7 @@ function homeHTML() {
         <div class="coverage-row">${ico('check', 'sm')}<span><strong>A 股 · 全功能</strong>：行情 / K 线 / 个股与行业研报 / 财务成长 / 同业双榜 / 新闻舆情。</span></div>
         <div class="coverage-row warn">${ico('info', 'sm')}<span><strong>港股 · 简版</strong>：行情 / K 线 / 财务指标 / 同业标签 / 新闻舆情；研报区显示暂无免费中文源。</span></div>
         <div class="coverage-row warn">${ico('info', 'sm')}<span><strong>美股 · 简版</strong>：行情 / K 线 / 同业标签 / 新闻舆情；盈利成长与中文研报暂缺，评分按可用维度折算。</span></div>
+        <div class="coverage-row">${ico('spark', 'sm')}<span><strong>加密货币 · 独立口径</strong>：行情 / K 线 / 市值排名 / 合约资金费率与持仓 / 恐慌贪婪指数 / 主链 TVL；无财报与机构研报，评分不与其他市场直接比较。</span></div>
         <div class="coverage-row">${ico('shield', 'sm')}<span><strong>可解释性</strong>：每个维度展示得分、权重、数据覆盖与理由；数据不足时直接标注「不可用」。</span></div>
       </div>
     </section>
@@ -248,9 +280,11 @@ function renderHome() {
   document.title = '研值 StockLens · 股票研报与研判';
   syncTopbar('home');
   loadHotQuotes();
+  loadCryptoHotQuotes();
   loadWatchQuotes();
   loadHomeBoards();
   loadEtfBoard();
+  loadCryptoBoard();
 }
 
 /* ---------------- 首页双榜单（FR-9） ---------------- */
@@ -277,7 +311,13 @@ function boardRowHTML(stock, index, metric) {
 }
 
 function boardEmptyHTML(kind) {
-  const text = kind === 'inflow' ? '资金流向数据暂不可用，稍后刷新重试' : kind === 'etf' ? '行业 ETF 榜单暂不可用，稍后刷新重试' : '热门榜单暂不可用，稍后刷新重试';
+  const text = kind === 'inflow'
+    ? '资金流向数据暂不可用，稍后刷新重试'
+    : kind === 'etf'
+    ? '行业 ETF 榜单暂不可用，稍后刷新重试'
+    : kind === 'crypto'
+    ? '加密榜单暂不可用，稍后刷新重试'
+    : '热门榜单暂不可用，稍后刷新重试';
   return `<div class="board-empty">${ico('info', 'sm')}<span>${text}</span></div>`;
 }
 
@@ -337,30 +377,99 @@ async function loadEtfBoard() {
   }
 }
 
-/* FR-6.2：自选股行情速览，批量接口一次拉取 */
+/* 加密热门榜：按市值排名（CoinLore，已排除稳定币），点击直达 #/coin/{SYMBOL} */
+function cryptoRowHTML(stock, index) {
+  const chgCls = pctClass(stock.changePct);
+  return `
+    <button type="button" class="board-row" ${stockDataset(stock)}>
+      <span class="br-rank ${index < 3 ? 'top' : ''}">${index + 1}</span>
+      <span class="br-name">
+        <b>${esc(stock.name)}</b>
+        <small>${esc(stock.code)} · 加密</small>
+      </span>
+      <span class="br-quote">
+        <b>${fmtCryptoPrice(stock.price)}</b>
+        <small class="${chgCls}">${fmtPct(stock.changePct)}</small>
+      </span>
+      <span class="br-metric">${esc(fmtUsdCompact(stock.marketCap))}</span>
+    </button>`;
+}
+
+async function loadCryptoBoard() {
+  const body = $('#cryptoBoardBody');
+  if (!body) return;
+  try {
+    const rows = await getCryptoBoard(CRYPTO_BOARD_SIZE);
+    if (!body.isConnected) return;
+    if (!rows.length) {
+      body.innerHTML = boardEmptyHTML('crypto');
+      return;
+    }
+    body.innerHTML = rows.map((s, i) => cryptoRowHTML(s, i)).join('');
+  } catch (e) {
+    if (body.isConnected) body.innerHTML = boardEmptyHTML('crypto');
+  }
+}
+
+async function loadCryptoHotQuotes() {
+  await Promise.all(
+    CRYPTO_HOT.map(async (symbol) => {
+      try {
+        const q = await getCryptoQuote(normalizeCoinStock({ symbol }));
+        $$(`[data-cchg="${symbol}"]`).forEach((el) => {
+          el.textContent = fmtPct(q.changePct);
+          el.classList.remove('up', 'down', 'flat');
+          el.classList.add(pctClass(q.changePct));
+        });
+      } catch (e) {
+        /* 单个币种失败不影响其他热词 */
+      }
+    })
+  );
+}
+
+/* FR-6.2：自选股行情速览，批量接口一次拉取；加密自选单独走 Binance */
 async function loadWatchQuotes() {
   const list = watchlistGet();
   if (!list.length) return;
-  const keys = list.map((s) => s.quoteKey).filter(Boolean);
-  if (!keys.length) return;
-  try {
-    const map = await getQuoteBatch(keys);
-    list.forEach((s) => {
-      const q = map.get(s.quoteKey);
-      if (!q) return;
+  const stocks = list.filter((s) => s.market !== 'CRYPTO');
+  const coins = list.filter((s) => s.market === 'CRYPTO');
+  if (stocks.length) {
+    const keys = stocks.map((s) => s.quoteKey).filter(Boolean);
+    try {
+      const map = await getQuoteBatch(keys);
+      stocks.forEach((s) => {
+        const q = map.get(s.quoteKey);
+        if (!q) return;
+        $$(`[data-wq="${s.quoteKey}"]`).forEach((el) => {
+          const cls = pctClass(q.changePct);
+          el.innerHTML = `<b class="${cls}">${fmtPrice(q.price, q.price < 10 ? 3 : 2)}</b><span class="${cls}">${fmtPct(
+            q.changePct
+          )}</span>`;
+        });
+      });
+    } catch (e) {
+      /* FR-6.5：失败显示占位，不阻塞其他标的 */
+      keys.forEach((key) => {
+        $$(`[data-wq="${key}"]`).forEach((el) => {
+          el.textContent = '—';
+        });
+      });
+    }
+  }
+  coins.forEach(async (s) => {
+    try {
+      const q = await getCryptoQuote(s);
       $$(`[data-wq="${s.quoteKey}"]`).forEach((el) => {
         const cls = pctClass(q.changePct);
-        el.innerHTML = `<b class="${cls}">${fmtPrice(q.price, q.price < 10 ? 3 : 2)}</b><span class="${cls}">${fmtPct(
-          q.changePct
-        )}</span>`;
+        el.innerHTML = `<b class="${cls}">${fmtCryptoPrice(q.price)}</b><span class="${cls}">${fmtPct(q.changePct)}</span>`;
       });
-    });
-  } catch (e) {
-    /* FR-6.5：失败显示占位，不阻塞其他标的 */
-    $$('[data-wq]').forEach((el) => {
-      el.textContent = '—';
-    });
-  }
+    } catch (e) {
+      $$(`[data-wq="${s.quoteKey}"]`).forEach((el) => {
+        el.textContent = '—';
+      });
+    }
+  });
 }
 
 /* 热门股行情：复用批量接口一次拉取（与自选股一致），并回填内存缓存保持 getQuote 口径一致 */
@@ -386,7 +495,7 @@ async function loadHotQuotes() {
 
 function suggestionHTML(items) {
   if (!items.length) {
-    return `<div class="sug-empty">没有匹配结果。试试股票代码，如 <span class="mono">600519</span> / <span class="mono">00700</span> / <span class="mono">NVDA</span></div>`;
+    return `<div class="sug-empty">没有匹配结果。试试股票代码或币种，如 <span class="mono">600519</span> / <span class="mono">00700</span> / <span class="mono">NVDA</span> / <span class="mono">BTC</span></div>`;
   }
   return (
     items
@@ -400,7 +509,7 @@ function suggestionHTML(items) {
     </button>`
       )
       .join('') +
-    `<div class="sug-hint"><span>↑ ↓ 选择 · Enter 打开</span><span>行情来自腾讯财经</span></div>`
+    `<div class="sug-hint"><span>↑ ↓ 选择 · Enter 打开</span><span>行情来自腾讯财经 / Binance</span></div>`
   );
 }
 

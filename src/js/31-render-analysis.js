@@ -238,7 +238,7 @@ function renderFatal(stock, message) {
     <div class="empty-state" style="margin-top:34px">
       <div class="empty-icon">${ico('alert', 'lg')}</div>
       <h3>无法完成分析</h3>
-      <p>${esc(message)}<br>请确认股票代码或网络连接后重试。</p>
+      <p>${esc(message)}<br>请确认标的代码或网络连接后重试。</p>
       <div class="empty-links" style="margin-top:16px">
         <a href="#" data-action="home">返回首页</a>
         <a href="#" data-action="refresh">重新获取</a>
@@ -387,6 +387,7 @@ function renderChartSection(kline) {
   /* FR-3.6：蜡烛渲染条件不满足时降级为原有 sparkline */
   const anchors = targetAnchors();
   const chartKey = `${(state.stock && state.stock.market) || 'X'}_${(state.stock && state.stock.code) || 'x'}_${period}`;
+  const isCoin = !!(state.stock && (state.stock.kind === 'coin' || state.stock.market === 'CRYPTO'));
   const candles = renderCandlestick(pts, {
     key: chartKey,
     period,
@@ -411,10 +412,10 @@ function renderChartSection(kline) {
     : '';
   return `<article class="card chart-card">
     <div>
-      <div class="chart-head"><strong>股价 K 线</strong>${chartPeriodTabs()}${chartZoomControls(pts.length)}
+      <div class="chart-head"><strong>${isCoin ? '价格 K 线' : '股价 K 线'}</strong>${chartPeriodTabs()}${chartZoomControls(pts.length)}
         <span class="kline-legend" aria-hidden="true"><i class="ma20"></i>MA20<i class="ma60"></i>MA60</span>
         <span class="kline-meta" data-role="kline-range">${esc(fmtDate(first.date))} — ${esc(fmtDate(last.date))} · ${pts.length} 根</span>
-        <span class="kline-meta">${period === 'day' ? '前复权 · ' : ''}${periodLabel}</span></div>
+        <span class="kline-meta">${period === 'day' && !isCoin ? '前复权 · ' : ''}${periodLabel}${isCoin ? ' · UTC' : ''}</span></div>
       ${chartSubControls(pts.length)}
       ${anchors ? '<span class="kline-note">目标价为研报发布口径，前复权 K 线在最新交易日与实际价格基本一致</span>' : ''}
       ${chartBody}
@@ -783,14 +784,16 @@ function renderFinancialSection(f, market) {
 }
 
 /* ---------------- news ---------------- */
-function renderNewsSection(news, market) {
+function renderNewsSection(news, market, opts = {}) {
   const body = $('#newsBody');
   if (!body) return;
   if (!news || !news.length) {
     body.innerHTML = emptyState({
       icon: 'news',
       title: '暂未获取到相关新闻',
-      desc: '新闻接口未返回可展示的结果，新闻舆情维度将标记为不可用。行情、研报与财务不受影响。',
+      desc:
+        opts.emptyDesc ||
+        '新闻接口未返回可展示的结果，新闻舆情维度将标记为不可用。行情、研报与财务不受影响。',
     });
     updateStatus('news', 'empty', '舆情 0 条');
     return;

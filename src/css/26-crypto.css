@@ -1,0 +1,60 @@
+/* ============================================================
+   加密资产模块样式 — 首页加密榜 + 加密专属研判页
+   复用 base/analysis 变量与布局，仅补充加密区块。
+   ============================================================ */
+
+/* 首页加密榜：单卡占满一行 */
+.home-boards.crypto-board{margin-top:26px}
+.crypto-board .boards-grid{grid-template-columns:1fr}
+.board-ico.crypto{color:var(--gold);background:rgba(231,180,92,.1);border-color:rgba(231,180,92,.24)}
+.crypto-board .board-card-head h3{color:var(--gold)}
+.crypto-board .boards-head p{max-width:860px}
+.crypto-hot-row .hot-chip .hot-chg{font-variant-numeric:tabular-nums}
+
+/* 徽标语义色 */
+.badge.violet{color:var(--violet);border-color:rgba(179,157,246,.34);background:rgba(179,157,246,.09)}
+
+/* 研判页合规提示 */
+.crypto-risk{
+  display:flex;align-items:flex-start;gap:9px;margin-top:12px;padding:11px 14px;
+  border:1px solid rgba(231,180,92,.22);border-radius:12px;
+  background:rgba(231,180,92,.055);font-size:11.5px;line-height:1.65;color:var(--muted)
+}
+.crypto-risk .ico{color:var(--gold);flex:none;margin-top:1px}
+html[data-theme="light"] .crypto-risk{background:rgba(169,118,35,.05)}
+
+/* 合约指标卡 */
+.crypto-stat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.crypto-stat{
+  display:flex;flex-direction:column;gap:4px;padding:15px 16px;
+  border:1px solid var(--line);border-radius:14px;background:var(--panel)
+}
+.crypto-stat label{font-size:11px;color:var(--muted)}
+.crypto-stat strong{font-family:var(--mono);font-size:21px;line-height:1.25;color:var(--text);font-variant-numeric:tabular-nums}
+.crypto-stat strong.up{color:var(--up)}
+.crypto-stat strong.down{color:var(--down)}
+.crypto-stat small{font-size:10px;color:var(--faint)}
+
+/* 情绪与链上双卡 */
+.crypto-eco-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.crypto-eco-card{padding:18px 19px}
+.crypto-fng-main{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:6px 0 4px}
+.crypto-fng-main strong{font-family:var(--mono);font-size:40px;line-height:1.05;font-variant-numeric:tabular-nums}
+.crypto-fng-main strong.up{color:var(--up)}
+.crypto-fng-main strong.down{color:var(--down)}
+.crypto-fng-main>span{font-size:12px;color:var(--faint)}
+.crypto-fng-main b{font-size:13px;font-weight:600;color:var(--gold);margin-left:auto;white-space:nowrap}
+.crypto-spark{margin:10px 0 2px}
+.crypto-spark svg{display:block;width:100%;height:112px}
+.crypto-eco-card .empty-state{padding:22px 8px}
+.crypto-foot{margin-top:22px}
+
+@media (max-width: 760px){
+  .crypto-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .crypto-eco-grid{grid-template-columns:1fr}
+}
+@media (max-width: 520px){
+  .crypto-stat-grid{grid-template-columns:1fr}
+  .crypto-stat strong{font-size:19px}
+  .crypto-risk{font-size:11px;padding:10px 12px}
+}

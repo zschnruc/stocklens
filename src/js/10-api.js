@@ -185,7 +185,15 @@ function searchStocks(query) {
   const memo = searchMemo.get(q);
   if (memo && Date.now() - memo.t < 5 * 60 * 1000) return Promise.resolve(memo.d);
   if (memo) searchMemo.delete(q); /* 过期条目随手清除，避免 Map 只增不减 */
-  const run = () => smartbox(q).then(parseSearchRaw);
+  /* 股票联想与加密候选并行；任一路失败都不影响另一路 */
+  const run = async () => {
+    const cryptoPromise = typeof searchCrypto === 'function' ? searchCrypto(q) : Promise.resolve([]);
+    const [stockRes, cryptoRes] = await Promise.allSettled([smartbox(q), cryptoPromise]);
+    const crypto = cryptoRes.status === 'fulfilled' ? cryptoRes.value || [] : [];
+    const stocks = stockRes.status === 'fulfilled' ? parseSearchRaw(stockRes.value) : [];
+    const seen = new Set(crypto.map((s) => s.market + ':' + s.code));
+    return crypto.concat(stocks.filter((s) => !seen.has(s.market + ':' + s.code))).slice(0, 10);
+  };
   const p = searchChain.then(run, run);
   searchChain = p.catch(() => {});
   return p.then((d) => {
@@ -225,6 +233,9 @@ function parseSymbolInput(input) {
     const quoteRaw = raw.replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '');
     return { market: 'US', code: quoteRaw, name: quoteRaw, quoteKey: 'us' + quoteRaw, rawCode: raw, klineCode: 'us' + raw };
   }
+  /* 加密货币别名优先于「字母即美股」的兜底：BTC / btc / 比特币 / 以太坊 */
+  const coin = typeof cryptoResolveQuery === 'function' ? cryptoResolveQuery(q) : null;
+  if (coin) return coin;
   if (/^[A-Za-z][A-Za-z0-9.\-]{0,11}$/.test(q)) {
     const raw = q.toUpperCase();
     const quoteRaw = raw.replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '');
@@ -431,6 +442,8 @@ function klineMetrics(points) {
 
 async function getKline(stock, quote, period = 'day') {
   const p = normalizeKlinePeriod(period);
+  /* 加密资产走 Binance 数据镜像，与 A/HK/US 的东财/腾讯链路完全隔离 */
+  if (stock.market === 'CRYPTO' || stock.kind === 'coin') return getCryptoKline(stock, p);
   let key = stock.klineCode || stock.quoteKey;
   if (stock.market === 'US') {
     if (quote && quote.rawCode) key = 'us' + quote.rawCode;
