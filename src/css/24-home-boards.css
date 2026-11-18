@@ -8,7 +8,21 @@
 .boards-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
 
 .board-card{padding:18px 14px 12px;min-width:0}
-.board-card-head{display:flex;align-items:center;gap:12px;padding:2px 8px 14px;border-bottom:1px solid var(--line)}
+.board-card-head{display:flex;align-items:center;gap:12px;padding:2px 8px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap;row-gap:8px}
+.board-head-main{flex:1 1 auto;min-width:0}
+.board-update{margin-left:auto;display:flex;align-items:center;gap:7px;flex:0 0 auto}
+.board-time{font-size:10px;color:var(--faint);font-family:var(--mono);white-space:nowrap;letter-spacing:.01em}
+.board-time.error{color:var(--down)}
+.board-refresh{
+  width:27px;height:27px;padding:0;border-radius:8px;flex:0 0 auto;display:grid;place-items:center;
+  border:1px solid var(--line);background:var(--panel-2);color:var(--muted);cursor:pointer;
+  transition:color .16s,border-color .16s,background .16s
+}
+.board-refresh:hover{color:var(--gold);border-color:rgba(231,180,92,.32);background:rgba(231,180,92,.08)}
+.board-refresh:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+.board-refresh:disabled{opacity:.6;cursor:default}
+.board-refresh .ico,.board-refresh .ico svg{width:14px;height:14px}
+.board-refresh.loading .ico svg{animation:spin .8s linear infinite}
 .board-ico{
   width:38px;height:38px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;
   color:var(--gold);background:rgba(231,180,92,.1);border:1px solid rgba(231,180,92,.22)
@@ -17,7 +31,7 @@
 .board-ico .ico{width:21px;height:21px}
 .board-ico .ico svg{width:21px;height:21px}
 .board-card-head h3{font-size:15px;font-weight:600;margin:0;letter-spacing:.01em}
-.board-card-head span:not(.board-ico){display:block;font-size:10.5px;color:var(--faint);margin-top:2px}
+.board-head-main span{display:block;font-size:10.5px;color:var(--faint);margin-top:2px}
 
 .board-list{padding-top:6px}
 .board-row{
@@ -52,9 +66,11 @@
   .board-row{grid-template-columns:22px 1fr auto;gap:8px}
   .br-metric{grid-column:3;min-width:0}
   .br-quote{display:none}
+  .board-update{width:100%;margin-left:0;justify-content:space-between;padding-top:1px}
 }
 
 @media print{
   .board-row{break-inside:avoid}
   .board-card{box-shadow:none}
+  .board-refresh{display:none}
 }

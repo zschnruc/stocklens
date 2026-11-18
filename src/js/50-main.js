@@ -1400,6 +1400,11 @@ function handleClick(e) {
       goHome();
       return;
     }
+    if (action === 'board-refresh') {
+      e.preventDefault();
+      refreshHomeBoard(actionEl.dataset.board);
+      return;
+    }
     if (action === 'search-focus') {
       e.preventDefault();
       focusSearch();

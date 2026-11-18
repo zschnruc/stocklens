@@ -71,6 +71,17 @@ function fmtDate(s, withTime = false) {
   const base = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
   return withTime ? `${base} ${p(d.getHours())}:${p(d.getMinutes())}` : base;
 }
+/* 毫秒时间戳 → 本地 HH:MM:SS（withDate 时附带 YYYY-MM-DD），用于首页榜单的最后更新时间 */
+function fmtClock(ts, withDate = false) {
+  const ms = Number(ts);
+  if (!Number.isFinite(ms)) return '—';
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return '—';
+  const p = (n) => String(n).padStart(2, '0');
+  const time = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  if (!withDate) return time;
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${time}`;
+}
 function formatQuoteTime(s) {
   if (!s) return '—';
   const str = String(s);
@@ -275,14 +286,16 @@ const store = {
     } catch (e) {}
   },
 };
-async function cached(key, ttl, loader) {
+async function cached(key, ttl, loader, force = false) {
   const now = Date.now();
-  const mem = memCache.get(key);
-  if (mem && now - mem.t < ttl) return mem.d;
-  const disk = readLocal('sl:c:' + key);
-  if (disk && now - disk.t < ttl) {
-    memCache.set(key, disk);
-    return disk.d;
+  if (!force) {
+    const mem = memCache.get(key);
+    if (mem && now - mem.t < ttl) return mem.d;
+    const disk = readLocal('sl:c:' + key);
+    if (disk && now - disk.t < ttl) {
+      memCache.set(key, disk);
+      return disk.d;
+    }
   }
   if (inflight.has(key)) return inflight.get(key);
   const p = loader()

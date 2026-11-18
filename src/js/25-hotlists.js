@@ -23,7 +23,7 @@ function normalizeHotlistRow(r) {
 }
 
 /* 通用榜单拉取：fid 决定排序字段，fields 决定返回列 */
-function fetchRankBoard(kind, fid, fields, size = HOTLIST_SIZE) {
+function fetchRankBoard(kind, fid, fields, size = HOTLIST_SIZE, force = false) {
   const n = clamp(Math.round(Number(size) || HOTLIST_SIZE), 5, 30);
   return cached(`hotlist:${kind}:${n}`, HOTLIST_TTL, async () => {
     const params = new URLSearchParams({
@@ -44,15 +44,15 @@ function fetchRankBoard(kind, fid, fields, size = HOTLIST_SIZE) {
       .map(normalizeHotlistRow)
       .filter((s) => s && Number.isFinite(s.price))
       .slice(0, n);
-  });
+  }, force);
 }
 
-/* 当下最热门：按成交额排序 */
-function getHotBoard(size = HOTLIST_SIZE) {
-  return fetchRankBoard('hot', 'f6', 'f12,f14,f2,f3,f6', size);
+/* 当下最热门：按成交额排序（force 用于首页手动刷新，绕过 TTL 缓存） */
+function getHotBoard(size = HOTLIST_SIZE, force = false) {
+  return fetchRankBoard('hot', 'f6', 'f12,f14,f2,f3,f6', size, force);
 }
 
 /* 主力资金净流入最多：按 f62（今日主力净流入额）排序 */
-function getInflowBoard(size = HOTLIST_SIZE) {
-  return fetchRankBoard('inflow', 'f62', 'f12,f14,f2,f3,f62,f184', size);
+function getInflowBoard(size = HOTLIST_SIZE, force = false) {
+  return fetchRankBoard('inflow', 'f62', 'f12,f14,f2,f3,f62,f184', size, force);
 }

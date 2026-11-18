@@ -58,7 +58,7 @@ function normalizeEtfRow(r) {
 /* 东财 ETF 榜单（b:MK0021 为场内基金板块），按成交额排序。
    f12代码 f13市场 f14名称 f2现价 f3涨跌 f6成交额 f20规模(元)
    scope 用于区分首页热门榜与高分榜候选池，避免不同 size 共用缓存键。 */
-function getEtfBoard(size = ETF_BOARD_SIZE, scope = 'board') {
+function getEtfBoard(size = ETF_BOARD_SIZE, scope = 'board', force = false) {
   const n = clamp(Math.round(Number(size) || ETF_BOARD_SIZE), 5, 100);
   return cached(`etf-${scope}:${n}`, ETF_BOARD_TTL, async () => {
     const params = new URLSearchParams({
@@ -79,7 +79,7 @@ function getEtfBoard(size = ETF_BOARD_SIZE, scope = 'board') {
       .map(normalizeEtfRow)
       .filter((s) => s && Number.isFinite(s.price))
       .slice(0, n);
-  });
+  }, force);
 }
 
 /* 从 ETF 名称推断行业主题词（供行业研报映射，纯函数） */

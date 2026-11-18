@@ -379,6 +379,19 @@ function auditCandlestick(html, expectBars) {
   check('加密榜默认取前 10', CRYPTO_BOARD_SIZE === 10);
   check('小额币价保留 8 位精度', fmtCryptoPrice(0.00000379) === '0.00000379' && fmtCryptoPrice(0.0123) === '0.0123');
 
+  console.log('首页榜单更新时间与手动刷新（v2.1，离线纯函数）');
+  const fixedTs = new Date(2026, 10, 18, 9, 5, 7).getTime();
+  check('更新时间格式化为本地 HH:MM:SS', fmtClock(fixedTs) === '09:05:07');
+  check('更新时间可附带完整日期', fmtClock(fixedTs, true) === '2026-11-18 09:05:07');
+  check('非法时间戳安全降级', fmtClock(NaN) === '—' && fmtClock(undefined) === '—');
+  const forceKey = 'test:force:' + uid();
+  let cacheCalls = 0;
+  await cached(forceKey, 60 * 1000, async () => ++cacheCalls);
+  await cached(forceKey, 60 * 1000, async () => ++cacheCalls);
+  check('榜单缓存命中时不重复请求', cacheCalls === 1);
+  await cached(forceKey, 60 * 1000, async () => ++cacheCalls, true);
+  check('手动刷新 force 绕过 TTL 缓存', cacheCalls === 2);
+
   console.log('K 线数据源映射（离线纯函数）');
   check('东财 secid：沪市个股 1. 前缀', emSecid({ market: 'A', code: '600519' }) === '1.600519');
   check('东财 secid：深市个股 0. 前缀', emSecid({ market: 'A', code: '000001' }) === '0.000001');

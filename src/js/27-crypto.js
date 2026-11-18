@@ -312,7 +312,7 @@ function normalizeCoinloreRow(r) {
   };
 }
 
-function getCryptoTop100() {
+function getCryptoTop100(force = false) {
   return cached('crypto:coinlore:top100', CRYPTO_TTL.meta, async () => {
     const data = await fetchJSON(`${CRYPTO_API.coinlore}/tickers/?start=0&limit=100`, { timeout: 12000 });
     const rows = data && Array.isArray(data.data) ? data.data : [];
@@ -320,7 +320,7 @@ function getCryptoTop100() {
       .map(normalizeCoinloreRow)
       .filter(Boolean)
       .sort((a, b) => (a.rank || 999) - (b.rank || 999));
-  });
+  }, force);
 }
 
 function getCryptoMeta(symbol) {
@@ -347,9 +347,14 @@ function cryptoBoardRows(rows, size = 10) {
     }));
 }
 
-function getCryptoBoard(size = 10) {
-  const n = clamp(Math.round(Number(size) || 10), 5, 30);
-  return cached(`crypto:board:${n}`, CRYPTO_TTL.board, async () => cryptoBoardRows(await getCryptoTop100(), n));
+function getCryptoBoard(size = CRYPTO_BOARD_SIZE, force = false) {
+  const n = clamp(Math.round(Number(size) || CRYPTO_BOARD_SIZE), 5, 30);
+  return cached(
+    `crypto:board:${n}`,
+    CRYPTO_TTL.board,
+    async () => cryptoBoardRows(await getCryptoTop100(force), n),
+    force
+  );
 }
 
 /* ---------------- 合约 / 情绪 / 链上 ---------------- */
