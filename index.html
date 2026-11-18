@@ -1283,7 +1283,21 @@ html[data-theme="light"] .home-cta-row .btn.etf-cta{background:#58d3c3;color:#08
 .boards-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
 
 .board-card{padding:18px 14px 12px;min-width:0}
-.board-card-head{display:flex;align-items:center;gap:12px;padding:2px 8px 14px;border-bottom:1px solid var(--line)}
+.board-card-head{display:flex;align-items:center;gap:12px;padding:2px 8px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap;row-gap:8px}
+.board-head-main{flex:1 1 auto;min-width:0}
+.board-update{margin-left:auto;display:flex;align-items:center;gap:7px;flex:0 0 auto}
+.board-time{font-size:10px;color:var(--faint);font-family:var(--mono);white-space:nowrap;letter-spacing:.01em}
+.board-time.error{color:var(--down)}
+.board-refresh{
+  width:27px;height:27px;padding:0;border-radius:8px;flex:0 0 auto;display:grid;place-items:center;
+  border:1px solid var(--line);background:var(--panel-2);color:var(--muted);cursor:pointer;
+  transition:color .16s,border-color .16s,background .16s
+}
+.board-refresh:hover{color:var(--gold);border-color:rgba(231,180,92,.32);background:rgba(231,180,92,.08)}
+.board-refresh:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+.board-refresh:disabled{opacity:.6;cursor:default}
+.board-refresh .ico,.board-refresh .ico svg{width:14px;height:14px}
+.board-refresh.loading .ico svg{animation:spin .8s linear infinite}
 .board-ico{
   width:38px;height:38px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;
   color:var(--gold);background:rgba(231,180,92,.1);border:1px solid rgba(231,180,92,.22)
@@ -1292,7 +1306,7 @@ html[data-theme="light"] .home-cta-row .btn.etf-cta{background:#58d3c3;color:#08
 .board-ico .ico{width:21px;height:21px}
 .board-ico .ico svg{width:21px;height:21px}
 .board-card-head h3{font-size:15px;font-weight:600;margin:0;letter-spacing:.01em}
-.board-card-head span:not(.board-ico){display:block;font-size:10.5px;color:var(--faint);margin-top:2px}
+.board-head-main span{display:block;font-size:10.5px;color:var(--faint);margin-top:2px}
 
 .board-list{padding-top:6px}
 .board-row{
@@ -1327,11 +1341,13 @@ html[data-theme="light"] .home-cta-row .btn.etf-cta{background:#58d3c3;color:#08
   .board-row{grid-template-columns:22px 1fr auto;gap:8px}
   .br-metric{grid-column:3;min-width:0}
   .br-quote{display:none}
+  .board-update{width:100%;margin-left:0;justify-content:space-between;padding-top:1px}
 }
 
 @media print{
   .board-row{break-inside:avoid}
   .board-card{box-shadow:none}
+  .board-refresh{display:none}
 }
 
 
@@ -1499,7 +1515,7 @@ html[data-theme="light"] .crypto-risk{background:rgba(169,118,35,.05)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v2.0.0 · 构建于 2026/11/18 11:12:05</p>
+      <p>研值 StockLens v2.1.0 · 构建于 2026/11/18 11:24:23</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -1585,6 +1601,17 @@ function fmtDate(s, withTime = false) {
   const p = (n) => String(n).padStart(2, '0');
   const base = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
   return withTime ? `${base} ${p(d.getHours())}:${p(d.getMinutes())}` : base;
+}
+/* 毫秒时间戳 → 本地 HH:MM:SS（withDate 时附带 YYYY-MM-DD），用于首页榜单的最后更新时间 */
+function fmtClock(ts, withDate = false) {
+  const ms = Number(ts);
+  if (!Number.isFinite(ms)) return '—';
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return '—';
+  const p = (n) => String(n).padStart(2, '0');
+  const time = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  if (!withDate) return time;
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${time}`;
 }
 function formatQuoteTime(s) {
   if (!s) return '—';
@@ -1790,14 +1817,16 @@ const store = {
     } catch (e) {}
   },
 };
-async function cached(key, ttl, loader) {
+async function cached(key, ttl, loader, force = false) {
   const now = Date.now();
-  const mem = memCache.get(key);
-  if (mem && now - mem.t < ttl) return mem.d;
-  const disk = readLocal('sl:c:' + key);
-  if (disk && now - disk.t < ttl) {
-    memCache.set(key, disk);
-    return disk.d;
+  if (!force) {
+    const mem = memCache.get(key);
+    if (mem && now - mem.t < ttl) return mem.d;
+    const disk = readLocal('sl:c:' + key);
+    if (disk && now - disk.t < ttl) {
+      memCache.set(key, disk);
+      return disk.d;
+    }
   }
   if (inflight.has(key)) return inflight.get(key);
   const p = loader()
@@ -5304,7 +5333,7 @@ function normalizeHotlistRow(r) {
 }
 
 /* 通用榜单拉取：fid 决定排序字段，fields 决定返回列 */
-function fetchRankBoard(kind, fid, fields, size = HOTLIST_SIZE) {
+function fetchRankBoard(kind, fid, fields, size = HOTLIST_SIZE, force = false) {
   const n = clamp(Math.round(Number(size) || HOTLIST_SIZE), 5, 30);
   return cached(`hotlist:${kind}:${n}`, HOTLIST_TTL, async () => {
     const params = new URLSearchParams({
@@ -5325,17 +5354,17 @@ function fetchRankBoard(kind, fid, fields, size = HOTLIST_SIZE) {
       .map(normalizeHotlistRow)
       .filter((s) => s && Number.isFinite(s.price))
       .slice(0, n);
-  });
+  }, force);
 }
 
-/* 当下最热门：按成交额排序 */
-function getHotBoard(size = HOTLIST_SIZE) {
-  return fetchRankBoard('hot', 'f6', 'f12,f14,f2,f3,f6', size);
+/* 当下最热门：按成交额排序（force 用于首页手动刷新，绕过 TTL 缓存） */
+function getHotBoard(size = HOTLIST_SIZE, force = false) {
+  return fetchRankBoard('hot', 'f6', 'f12,f14,f2,f3,f6', size, force);
 }
 
 /* 主力资金净流入最多：按 f62（今日主力净流入额）排序 */
-function getInflowBoard(size = HOTLIST_SIZE) {
-  return fetchRankBoard('inflow', 'f62', 'f12,f14,f2,f3,f62,f184', size);
+function getInflowBoard(size = HOTLIST_SIZE, force = false) {
+  return fetchRankBoard('inflow', 'f62', 'f12,f14,f2,f3,f62,f184', size, force);
 }
 
 
@@ -5400,7 +5429,7 @@ function normalizeEtfRow(r) {
 /* 东财 ETF 榜单（b:MK0021 为场内基金板块），按成交额排序。
    f12代码 f13市场 f14名称 f2现价 f3涨跌 f6成交额 f20规模(元)
    scope 用于区分首页热门榜与高分榜候选池，避免不同 size 共用缓存键。 */
-function getEtfBoard(size = ETF_BOARD_SIZE, scope = 'board') {
+function getEtfBoard(size = ETF_BOARD_SIZE, scope = 'board', force = false) {
   const n = clamp(Math.round(Number(size) || ETF_BOARD_SIZE), 5, 100);
   return cached(`etf-${scope}:${n}`, ETF_BOARD_TTL, async () => {
     const params = new URLSearchParams({
@@ -5421,7 +5450,7 @@ function getEtfBoard(size = ETF_BOARD_SIZE, scope = 'board') {
       .map(normalizeEtfRow)
       .filter((s) => s && Number.isFinite(s.price))
       .slice(0, n);
-  });
+  }, force);
 }
 
 /* 从 ETF 名称推断行业主题词（供行业研报映射，纯函数） */
@@ -6038,7 +6067,7 @@ function normalizeCoinloreRow(r) {
   };
 }
 
-function getCryptoTop100() {
+function getCryptoTop100(force = false) {
   return cached('crypto:coinlore:top100', CRYPTO_TTL.meta, async () => {
     const data = await fetchJSON(`${CRYPTO_API.coinlore}/tickers/?start=0&limit=100`, { timeout: 12000 });
     const rows = data && Array.isArray(data.data) ? data.data : [];
@@ -6046,7 +6075,7 @@ function getCryptoTop100() {
       .map(normalizeCoinloreRow)
       .filter(Boolean)
       .sort((a, b) => (a.rank || 999) - (b.rank || 999));
-  });
+  }, force);
 }
 
 function getCryptoMeta(symbol) {
@@ -6073,9 +6102,14 @@ function cryptoBoardRows(rows, size = 10) {
     }));
 }
 
-function getCryptoBoard(size = 10) {
-  const n = clamp(Math.round(Number(size) || 10), 5, 30);
-  return cached(`crypto:board:${n}`, CRYPTO_TTL.board, async () => cryptoBoardRows(await getCryptoTop100(), n));
+function getCryptoBoard(size = CRYPTO_BOARD_SIZE, force = false) {
+  const n = clamp(Math.round(Number(size) || CRYPTO_BOARD_SIZE), 5, 30);
+  return cached(
+    `crypto:board:${n}`,
+    CRYPTO_TTL.board,
+    async () => cryptoBoardRows(await getCryptoTop100(force), n),
+    force
+  );
 }
 
 /* ---------------- 合约 / 情绪 / 链上 ---------------- */
@@ -6663,9 +6697,13 @@ function homeHTML() {
         <article class="card board-card" id="hotBoardCard">
           <div class="board-card-head">
             <span class="board-ico">${ico('pulse', 'lg')}</span>
-            <div>
+            <div class="board-head-main">
               <h3>成交热门 TOP 10</h3>
               <span>沪深 A 股 · 按当日成交额</span>
+            </div>
+            <div class="board-update">
+              <span class="board-time" id="hotBoardTime">更新中…</span>
+              <button type="button" class="board-refresh" data-action="board-refresh" data-board="hot" aria-label="手动刷新成交热门榜" title="手动刷新">${ico('refresh', 'sm')}</button>
             </div>
           </div>
           <div class="board-list" id="hotBoardBody">${loadingCard('正在获取热门榜…', 4)}</div>
@@ -6673,9 +6711,13 @@ function homeHTML() {
         <article class="card board-card" id="inflowBoardCard">
           <div class="board-card-head">
             <span class="board-ico inflow">${ico('trendUp', 'lg')}</span>
-            <div>
+            <div class="board-head-main">
               <h3>主力净流入 TOP 10</h3>
               <span>沪深 A 股 · 按当日主力资金净额</span>
+            </div>
+            <div class="board-update">
+              <span class="board-time" id="inflowBoardTime">更新中…</span>
+              <button type="button" class="board-refresh" data-action="board-refresh" data-board="inflow" aria-label="手动刷新主力净流入榜" title="手动刷新">${ico('refresh', 'sm')}</button>
             </div>
           </div>
           <div class="board-list" id="inflowBoardBody">${loadingCard('正在获取资金流向…', 4)}</div>
@@ -6693,9 +6735,13 @@ function homeHTML() {
         <article class="card board-card" id="etfBoardCard">
           <div class="board-card-head">
             <span class="board-ico etf">${ico('layers', 'lg')}</span>
-            <div>
+            <div class="board-head-main">
               <h3>行业 ETF 热门榜</h3>
               <span>沪深场内基金 · 按当日成交额 · 含规模</span>
+            </div>
+            <div class="board-update">
+              <span class="board-time" id="etfBoardTime">更新中…</span>
+              <button type="button" class="board-refresh" data-action="board-refresh" data-board="etf" aria-label="手动刷新行业 ETF 榜" title="手动刷新">${ico('refresh', 'sm')}</button>
             </div>
           </div>
           <div class="board-list" id="etfBoardBody">${loadingCard('正在获取行业 ETF 榜…', 4)}</div>
@@ -6713,9 +6759,13 @@ function homeHTML() {
         <article class="card board-card" id="cryptoBoardCard">
           <div class="board-card-head">
             <span class="board-ico crypto">${ico('spark', 'lg')}</span>
-            <div>
+            <div class="board-head-main">
               <h3>加密市值 TOP 10</h3>
               <span>Binance 行情 · CoinLore 市值排名 · USD 计价</span>
+            </div>
+            <div class="board-update">
+              <span class="board-time" id="cryptoBoardTime">更新中…</span>
+              <button type="button" class="board-refresh" data-action="board-refresh" data-board="crypto" aria-label="手动刷新加密热门榜" title="手动刷新">${ico('refresh', 'sm')}</button>
             </div>
           </div>
           <div class="board-list" id="cryptoBoardBody">${loadingCard('正在获取加密榜单…', 4)}</div>
@@ -6798,24 +6848,84 @@ function boardEmptyHTML(kind) {
   return `<div class="board-empty">${ico('info', 'sm')}<span>${text}</span></div>`;
 }
 
-function renderHomeBoard(kind, rows, error) {
-  const body = $(kind === 'inflow' ? '#inflowBoardBody' : '#hotBoardBody');
-  if (!body) return; /* 用户已离开首页 */
-  if (error || !Array.isArray(rows) || !rows.length) {
-    body.innerHTML = boardEmptyHTML(kind);
-    return;
+/* 榜单 UI 元信息：body/time 容器与可读名称（FR-15） */
+const BOARD_UI = {
+  hot: { body: '#hotBoardBody', time: '#hotBoardTime', label: '成交热门榜' },
+  inflow: { body: '#inflowBoardBody', time: '#inflowBoardTime', label: '主力净流入榜' },
+  etf: { body: '#etfBoardBody', time: '#etfBoardTime', label: '行业 ETF 榜' },
+  crypto: { body: '#cryptoBoardBody', time: '#cryptoBoardTime', label: '加密热门榜' },
+};
+const BOARD_LOADING = { hot: false, inflow: false, etf: false, crypto: false };
+const BOARD_LAST_OK = {}; /* kind → 最近一次成功更新的毫秒时间戳（用于失败时提示） */
+
+/* 更新时间与刷新按钮的加载/成功/失败态 */
+function setBoardStatus(kind, status, at) {
+  const meta = BOARD_UI[kind];
+  if (!meta) return;
+  const timeEl = $(meta.time);
+  if (timeEl) {
+    timeEl.classList.toggle('error', status === 'error');
+    if (status === 'loading') {
+      timeEl.textContent = '更新中…';
+      timeEl.removeAttribute('title');
+    } else if (status === 'error') {
+      const last = BOARD_LAST_OK[kind];
+      timeEl.textContent = last ? `更新失败 · 上次 ${fmtClock(last)}` : '更新失败';
+      if (last) timeEl.title = '上次成功更新 ' + fmtClock(last, true);
+      else timeEl.removeAttribute('title');
+    } else {
+      const ts = Number.isFinite(Number(at)) ? Number(at) : Date.now();
+      BOARD_LAST_OK[kind] = ts;
+      timeEl.textContent = '最后更新 ' + fmtClock(ts);
+      timeEl.title = '最后成功更新 ' + fmtClock(ts, true);
+    }
   }
-  body.innerHTML = rows.map((s, i) => boardRowHTML(s, i, kind)).join('');
+  const btn = document.querySelector(`.board-refresh[data-board="${kind}"]`);
+  if (btn) {
+    const loading = status === 'loading';
+    btn.disabled = loading;
+    btn.classList.toggle('loading', loading);
+    btn.setAttribute('aria-busy', loading ? 'true' : 'false');
+  }
 }
 
-async function loadHomeBoards() {
-  const hot = getHotBoard()
-    .then((rows) => renderHomeBoard('hot', rows))
-    .catch(() => renderHomeBoard('hot', null, true));
-  const inflow = getInflowBoard()
-    .then((rows) => renderHomeBoard('inflow', rows))
-    .catch(() => renderHomeBoard('inflow', null, true));
-  await Promise.all([hot, inflow]);
+async function loadRankBoard(kind, force = false) {
+  const body = $(BOARD_UI[kind].body);
+  if (!body) return; /* 用户已离开首页 */
+  setBoardStatus(kind, 'loading');
+  try {
+    const rows =
+      kind === 'inflow'
+        ? await getInflowBoard(HOTLIST_SIZE, force)
+        : await getHotBoard(HOTLIST_SIZE, force);
+    if (!body.isConnected) return;
+    if (!rows.length) throw new Error('empty');
+    body.innerHTML = rows.map((s, i) => boardRowHTML(s, i, kind)).join('');
+    body.dataset.loaded = '1';
+    setBoardStatus(kind, 'ok', Date.now());
+  } catch (e) {
+    if (!body.isConnected) return;
+    /* 手动刷新失败时保留上一次成功列表，只标记时间失败 */
+    if (!(force && body.dataset.loaded === '1')) body.innerHTML = boardEmptyHTML(kind);
+    setBoardStatus(kind, 'error');
+  }
+}
+
+function loadHomeBoards(force = false) {
+  return Promise.all([loadRankBoard('hot', force), loadRankBoard('inflow', force)]);
+}
+
+/* 手动刷新单张榜单：绕过该榜单缓存，不影响其他榜单 */
+async function refreshHomeBoard(kind) {
+  if (!BOARD_UI[kind] || BOARD_LOADING[kind]) return;
+  BOARD_LOADING[kind] = true;
+  try {
+    if (kind === 'hot' || kind === 'inflow') await loadRankBoard(kind, true);
+    else if (kind === 'etf') await loadEtfBoard(true);
+    else if (kind === 'crypto') await loadCryptoBoard(true);
+  } finally {
+    BOARD_LOADING[kind] = false;
+  }
 }
 
 /* 行业 ETF 榜单：单行沿用 boardRowHTML，指标列为规模（复用 kind='etf' 路由直达） */
@@ -6838,19 +6948,21 @@ function etfRowHTML(stock, index) {
     </button>`;
 }
 
-async function loadEtfBoard() {
-  const body = $('#etfBoardBody');
+async function loadEtfBoard(force = false) {
+  const body = $(BOARD_UI.etf.body);
   if (!body) return;
+  setBoardStatus('etf', 'loading');
   try {
-    const rows = await getEtfBoard(ETF_BOARD_SIZE);
+    const rows = await getEtfBoard(ETF_BOARD_SIZE, 'board', force);
     if (!body.isConnected) return; /* 已离开首页 */
-    if (!rows.length) {
-      body.innerHTML = boardEmptyHTML('etf');
-      return;
-    }
+    if (!rows.length) throw new Error('empty');
     body.innerHTML = rows.map((s, i) => etfRowHTML(s, i)).join('');
+    body.dataset.loaded = '1';
+    setBoardStatus('etf', 'ok', Date.now());
   } catch (e) {
-    if (body.isConnected) body.innerHTML = boardEmptyHTML('etf');
+    if (!body.isConnected) return;
+    if (!(force && body.dataset.loaded === '1')) body.innerHTML = boardEmptyHTML('etf');
+    setBoardStatus('etf', 'error');
   }
 }
 
@@ -6872,19 +6984,21 @@ function cryptoRowHTML(stock, index) {
     </button>`;
 }
 
-async function loadCryptoBoard() {
-  const body = $('#cryptoBoardBody');
+async function loadCryptoBoard(force = false) {
+  const body = $(BOARD_UI.crypto.body);
   if (!body) return;
+  setBoardStatus('crypto', 'loading');
   try {
-    const rows = await getCryptoBoard(CRYPTO_BOARD_SIZE);
+    const rows = await getCryptoBoard(CRYPTO_BOARD_SIZE, force);
     if (!body.isConnected) return;
-    if (!rows.length) {
-      body.innerHTML = boardEmptyHTML('crypto');
-      return;
-    }
+    if (!rows.length) throw new Error('empty');
     body.innerHTML = rows.map((s, i) => cryptoRowHTML(s, i)).join('');
+    body.dataset.loaded = '1';
+    setBoardStatus('crypto', 'ok', Date.now());
   } catch (e) {
-    if (body.isConnected) body.innerHTML = boardEmptyHTML('crypto');
+    if (!body.isConnected) return;
+    if (!(force && body.dataset.loaded === '1')) body.innerHTML = boardEmptyHTML('crypto');
+    setBoardStatus('crypto', 'error');
   }
 }
 
@@ -10292,6 +10406,11 @@ function handleClick(e) {
     if (action === 'home') {
       e.preventDefault();
       goHome();
+      return;
+    }
+    if (action === 'board-refresh') {
+      e.preventDefault();
+      refreshHomeBoard(actionEl.dataset.board);
       return;
     }
     if (action === 'search-focus') {
