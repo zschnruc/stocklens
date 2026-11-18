@@ -323,6 +323,16 @@ function chartPeriodTabs() {
     .join('')}</div>`;
 }
 
+/* 缩放工具条（FR-13.2）：数据不足 CANDLE_MIN_BARS 时隐藏 */
+function chartZoomControls(rowsCount) {
+  if (rowsCount <= CANDLE_MIN_BARS) return '';
+  return `<span class="kline-zoom" role="group" aria-label="K 线缩放">
+    <button class="kline-tab" type="button" data-action="kline-zoom" data-dir="out" title="缩小（滚轮向下 / 双指捏合）">−</button>
+    <button class="kline-tab" type="button" data-action="kline-reset" title="复位到默认视图（也可双击图表）">复位</button>
+    <button class="kline-tab" type="button" data-action="kline-zoom" data-dir="in" title="放大（滚轮向上 / 双指张开）">＋</button>
+  </span>`;
+}
+
 /* 副图档位 + BOLL 开关（FR-4.1 / FR-4.5 / FR-4.7） */
 function chartSubControls(rowsCount) {
   const cur = state.subChart || 'volume';
@@ -376,7 +386,10 @@ function renderChartSection(kline) {
   const last = pts[pts.length - 1];
   /* FR-3.6：蜡烛渲染条件不满足时降级为原有 sparkline */
   const anchors = targetAnchors();
+  const chartKey = `${(state.stock && state.stock.market) || 'X'}_${(state.stock && state.stock.code) || 'x'}_${period}`;
   const candles = renderCandlestick(pts, {
+    key: chartKey,
+    period,
     window: period === 'day' ? 240 : period === 'week' ? 260 : 140,
     sub: state.subChart || 'volume',
     boll: !!state.bollOn,
@@ -398,9 +411,10 @@ function renderChartSection(kline) {
     : '';
   return `<article class="card chart-card">
     <div>
-      <div class="chart-head"><strong>股价 K 线</strong>${chartPeriodTabs()}
+      <div class="chart-head"><strong>股价 K 线</strong>${chartPeriodTabs()}${chartZoomControls(pts.length)}
         <span class="kline-legend" aria-hidden="true"><i class="ma20"></i>MA20<i class="ma60"></i>MA60</span>
-        <span>${esc(fmtDate(first.date))} — ${esc(fmtDate(last.date))} · ${period === 'day' ? '前复权 · ' : ''}${pts.length} 根${periodLabel}</span></div>
+        <span class="kline-meta" data-role="kline-range">${esc(fmtDate(first.date))} — ${esc(fmtDate(last.date))} · ${pts.length} 根</span>
+        <span class="kline-meta">${period === 'day' ? '前复权 · ' : ''}${periodLabel}</span></div>
       ${chartSubControls(pts.length)}
       ${anchors ? '<span class="kline-note">目标价为研报发布口径，前复权 K 线在最新交易日与实际价格基本一致</span>' : ''}
       ${chartBody}

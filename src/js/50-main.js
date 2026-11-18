@@ -1278,6 +1278,16 @@ function handleClick(e) {
       if (k) updateChart(k);
       return;
     }
+    if (action === 'kline-zoom') {
+      e.preventDefault();
+      candleZoomBy(actionEl.dataset.dir);
+      return;
+    }
+    if (action === 'kline-reset') {
+      e.preventDefault();
+      candleResetCurrent();
+      return;
+    }
     if (action === 'watch-toggle') {
       e.preventDefault();
       if (state.stock) {

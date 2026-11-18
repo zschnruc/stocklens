@@ -383,6 +383,46 @@ function auditCandlestick(html, expectBars) {
   check('评分返回可用维度数与总维度数', usScore.availableCount === 3 && usScore.dimCount === 4 && usScore.coverage === 70);
   check('非 A 股评分附带跨市场不可直接比较提示', /请勿与 A 股评分直接比较高低/.test(usScore.desc));
 
+  console.log('K 线视图窗口（v1.9，离线纯函数）');
+  const vz = candleClampView({ count: 500, endOffset: -3 }, 240, 120);
+  check('视图窗口 count 夹取到数据长度', vz.count === 240 && vz.endOffset === 0);
+  const vz2 = candleClampView({ count: 5, endOffset: 999 }, 240, 120);
+  check('视图窗口 count 下限 20 且 endOffset 不越界', vz2.count === 20 && vz2.endOffset === 220);
+  const zoomed = candleZoomView({ count: 100, endOffset: 0 }, 300, 0.5, 0.25);
+  check('缩放后根数减半', zoomed.count === 50);
+  const anchorBefore = 300 - 0 - 100 + 0.25 * 99;
+  const anchorAfter = 300 - zoomed.endOffset - zoomed.count + 0.25 * (zoomed.count - 1);
+  check('缩放锚点保持光标所在根位置', Math.abs(anchorAfter - anchorBefore) <= 1);
+  check('向右拖拽超界夹到最新一根', candlePanView({ count: 60, endOffset: 0 }, 200, -999).endOffset === 0);
+  check('向左拖拽超界夹到最早一根', candlePanView({ count: 60, endOffset: 0 }, 200, 999).endOffset === 140);
+  check('平移按整根位移且不改变根数', candlePanView({ count: 60, endOffset: 10 }, 200, 5).endOffset === 15);
+  const viewRows = Array.from({ length: 120 }, (_, i) => ({
+    date: `2026-02-${String((i % 28) + 1).padStart(2, '0')}`,
+    open: 10,
+    close: 10.1,
+    high: 10.2,
+    low: 9.9,
+    volume: 100 + i,
+  }));
+  CANDLE_VIEW.set('unit_view', { count: 40, endOffset: 0 });
+  const zoomHtml = renderCandlestick(viewRows, { key: 'unit_view', window: 240, width: 500 });
+  check('显式 key 复用已保存的视图窗口（40 根）', auditCandlestick(zoomHtml, 40).bars === 40);
+  CANDLE_VIEW.delete('unit_view');
+  const defHtml = renderCandlestick(viewRows, { key: 'unit_default', window: 240, width: 500 });
+  check('默认视图显示最近全部可用数据', auditCandlestick(defHtml, 120).bars === 120);
+  check('无 key 的渲染使用独立视图（30 根）', auditCandlestick(renderCandlestick(viewRows, { window: 30, width: 500 }), 30).bars === 30);
+  check('响应式宽度写入 viewBox', /viewBox="0 0 500 \d+/.test(defHtml));
+  check('图表包含缩放/平移提示与最新价标签', /candle-hint/.test(defHtml) && /candle-last-tag/.test(defHtml));
+
+  const fakeHost = { clientWidth: 800, querySelector: () => null, closest: () => null };
+  const rendered = renderCandlestick(viewRows, { key: 'redraw_key', window: 240 });
+  const fakeId = (rendered.match(/data-candle-id="([^"]+)"/) || [])[1];
+  const fakeSvg = { dataset: { candleId: fakeId }, style: {}, innerHTML: '', setAttribute() {}, closest: () => fakeHost };
+  redrawCandle(fakeSvg, { count: 30, endOffset: 0 });
+  const redrawn = CANDLE_STORE.get(fakeSvg.dataset.candleId);
+  check('就地重绘保留 SVG 节点并更新可见根数', !!redrawn && redrawn.geom.n === 30 && /candle-hover-layer/.test(fakeSvg.innerHTML));
+  check('就地重绘按容器宽度重算 viewBox', redrawn.width === 800 && fakeSvg.innerHTML.includes('x2="742"'));
+
   console.log(failures ? `\n${failures} 项失败` : '\n全部通过');
   process.exit(failures ? 1 : 0);
 })();
