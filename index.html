@@ -1381,6 +1381,69 @@ html[data-theme="light"] .etf-report-item:hover{background:rgba(24,32,45,.025)}
   .etf-report-item,.etf-industry-head{break-inside:avoid}
 }
 
+
+/* ===== css/26-crypto.css ===== */
+/* ============================================================
+   加密资产模块样式 — 首页加密榜 + 加密专属研判页
+   复用 base/analysis 变量与布局，仅补充加密区块。
+   ============================================================ */
+
+/* 首页加密榜：单卡占满一行 */
+.home-boards.crypto-board{margin-top:26px}
+.crypto-board .boards-grid{grid-template-columns:1fr}
+.board-ico.crypto{color:var(--gold);background:rgba(231,180,92,.1);border-color:rgba(231,180,92,.24)}
+.crypto-board .board-card-head h3{color:var(--gold)}
+.crypto-board .boards-head p{max-width:860px}
+.crypto-hot-row .hot-chip .hot-chg{font-variant-numeric:tabular-nums}
+
+/* 徽标语义色 */
+.badge.violet{color:var(--violet);border-color:rgba(179,157,246,.34);background:rgba(179,157,246,.09)}
+
+/* 研判页合规提示 */
+.crypto-risk{
+  display:flex;align-items:flex-start;gap:9px;margin-top:12px;padding:11px 14px;
+  border:1px solid rgba(231,180,92,.22);border-radius:12px;
+  background:rgba(231,180,92,.055);font-size:11.5px;line-height:1.65;color:var(--muted)
+}
+.crypto-risk .ico{color:var(--gold);flex:none;margin-top:1px}
+html[data-theme="light"] .crypto-risk{background:rgba(169,118,35,.05)}
+
+/* 合约指标卡 */
+.crypto-stat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.crypto-stat{
+  display:flex;flex-direction:column;gap:4px;padding:15px 16px;
+  border:1px solid var(--line);border-radius:14px;background:var(--panel)
+}
+.crypto-stat label{font-size:11px;color:var(--muted)}
+.crypto-stat strong{font-family:var(--mono);font-size:21px;line-height:1.25;color:var(--text);font-variant-numeric:tabular-nums}
+.crypto-stat strong.up{color:var(--up)}
+.crypto-stat strong.down{color:var(--down)}
+.crypto-stat small{font-size:10px;color:var(--faint)}
+
+/* 情绪与链上双卡 */
+.crypto-eco-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.crypto-eco-card{padding:18px 19px}
+.crypto-fng-main{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:6px 0 4px}
+.crypto-fng-main strong{font-family:var(--mono);font-size:40px;line-height:1.05;font-variant-numeric:tabular-nums}
+.crypto-fng-main strong.up{color:var(--up)}
+.crypto-fng-main strong.down{color:var(--down)}
+.crypto-fng-main>span{font-size:12px;color:var(--faint)}
+.crypto-fng-main b{font-size:13px;font-weight:600;color:var(--gold);margin-left:auto;white-space:nowrap}
+.crypto-spark{margin:10px 0 2px}
+.crypto-spark svg{display:block;width:100%;height:112px}
+.crypto-eco-card .empty-state{padding:22px 8px}
+.crypto-foot{margin-top:22px}
+
+@media (max-width: 760px){
+  .crypto-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .crypto-eco-grid{grid-template-columns:1fr}
+}
+@media (max-width: 520px){
+  .crypto-stat-grid{grid-template-columns:1fr}
+  .crypto-stat strong{font-size:19px}
+  .crypto-risk{font-size:11px;padding:10px 12px}
+}
+
 </style>
 </head>
 <body>
@@ -1436,7 +1499,7 @@ html[data-theme="light"] .etf-report-item:hover{background:rgba(24,32,45,.025)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v1.9.0 · 构建于 2026/11/18 08:48:27</p>
+      <p>研值 StockLens v2.0.0 · 构建于 2026/11/18 11:09:33</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -1614,15 +1677,16 @@ function marketFromKey(key) {
   return 'A';
 }
 function marketLabel(m) {
-  return m === 'US' ? '美股' : m === 'HK' ? '港股' : 'A股';
+  return m === 'US' ? '美股' : m === 'HK' ? '港股' : m === 'CRYPTO' ? '加密' : 'A股';
 }
 function marketBadgeClass(m) {
-  return m === 'US' ? 'blue' : m === 'HK' ? 'teal' : 'gold';
+  return m === 'US' ? 'blue' : m === 'HK' ? 'teal' : m === 'CRYPTO' ? 'violet' : 'gold';
 }
 function currencyOf(market) {
-  return market === 'US' ? 'USD' : market === 'HK' ? 'HKD' : 'CNY';
+  return market === 'US' || market === 'CRYPTO' ? 'USD' : market === 'HK' ? 'HKD' : 'CNY';
 }
 function exchangeLabel(stock, quote) {
+  if (stock.market === 'CRYPTO') return '7×24 加密市场';
   if (stock.market === 'HK') return '香港交易所';
   if (stock.market === 'US') {
     const raw = (quote && quote.rawCode) || stock.rawCode || '';
@@ -2030,7 +2094,15 @@ function searchStocks(query) {
   const memo = searchMemo.get(q);
   if (memo && Date.now() - memo.t < 5 * 60 * 1000) return Promise.resolve(memo.d);
   if (memo) searchMemo.delete(q); /* 过期条目随手清除，避免 Map 只增不减 */
-  const run = () => smartbox(q).then(parseSearchRaw);
+  /* 股票联想与加密候选并行；任一路失败都不影响另一路 */
+  const run = async () => {
+    const cryptoPromise = typeof searchCrypto === 'function' ? searchCrypto(q) : Promise.resolve([]);
+    const [stockRes, cryptoRes] = await Promise.allSettled([smartbox(q), cryptoPromise]);
+    const crypto = cryptoRes.status === 'fulfilled' ? cryptoRes.value || [] : [];
+    const stocks = stockRes.status === 'fulfilled' ? parseSearchRaw(stockRes.value) : [];
+    const seen = new Set(crypto.map((s) => s.market + ':' + s.code));
+    return crypto.concat(stocks.filter((s) => !seen.has(s.market + ':' + s.code))).slice(0, 10);
+  };
   const p = searchChain.then(run, run);
   searchChain = p.catch(() => {});
   return p.then((d) => {
@@ -2070,6 +2142,9 @@ function parseSymbolInput(input) {
     const quoteRaw = raw.replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '');
     return { market: 'US', code: quoteRaw, name: quoteRaw, quoteKey: 'us' + quoteRaw, rawCode: raw, klineCode: 'us' + raw };
   }
+  /* 加密货币别名优先于「字母即美股」的兜底：BTC / btc / 比特币 / 以太坊 */
+  const coin = typeof cryptoResolveQuery === 'function' ? cryptoResolveQuery(q) : null;
+  if (coin) return coin;
   if (/^[A-Za-z][A-Za-z0-9.\-]{0,11}$/.test(q)) {
     const raw = q.toUpperCase();
     const quoteRaw = raw.replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '');
@@ -2276,6 +2351,8 @@ function klineMetrics(points) {
 
 async function getKline(stock, quote, period = 'day') {
   const p = normalizeKlinePeriod(period);
+  /* 加密资产走 Binance 数据镜像，与 A/HK/US 的东财/腾讯链路完全隔离 */
+  if (stock.market === 'CRYPTO' || stock.kind === 'coin') return getCryptoKline(stock, p);
   let key = stock.klineCode || stock.quoteKey;
   if (stock.market === 'US') {
     if (quote && quote.rawCode) key = 'us' + quote.rawCode;
@@ -5646,6 +5723,757 @@ async function runEtfScreener({ size = ETF_SCREENER_DEFAULT_SIZE, onProgress, sh
 }
 
 
+/* ===== js/27-crypto.js ===== */
+/* ============================================================
+   加密资产数据层 + 五维评分
+   行情/K 线：Binance 数据镜像（无需 Key，CORS *）
+   市值/排名：CoinLore 前 100 名
+   合约数据：Gate U 本位合约公开接口
+   情绪/生态：alternative.me 恐慌贪婪指数 + DefiLlama 主链 TVL
+   评分与股票/ETF 完全隔离：趋势 / 流动 / 波动 / 合约 / 情绪。
+   缺失维度降级不臆造，并按权重覆盖率施加惩罚。
+   ============================================================ */
+'use strict';
+
+const CRYPTO_API = {
+  binance: 'https://data-api.binance.vision/api/v3',
+  coinlore: 'https://api.coinlore.net/api',
+  gate: 'https://api.gateio.ws/api/v4',
+  fng: 'https://api.alternative.me/fng/',
+  llama: 'https://api.llama.fi',
+};
+
+const CRYPTO_TTL = {
+  quote: 60 * 1000,
+  kline: 10 * 60 * 1000,
+  meta: 5 * 60 * 1000,
+  board: 90 * 1000,
+  derivatives: 2 * 60 * 1000,
+  fng: 10 * 60 * 1000,
+  tvl: 30 * 60 * 1000,
+};
+
+/* 稳定币不参与评分与首页榜单：价格锚定法币，动量/波动维度会得出畸形分数 */
+const CRYPTO_STABLES = new Set([
+  'USDT', 'USDC', 'DAI', 'FDUSD', 'TUSD', 'USDE', 'PYUSD', 'BUSD', 'USDD', 'USDS',
+  'USD1', 'EURC', 'EURT', 'GUSD', 'FRAX', 'LUSD', 'USDP', 'USTC', 'RLUSD', 'USDX',
+  'USDB', 'SUSD', 'MIM', 'ALUSD', 'CRVUSD', 'GHO',
+]);
+
+/* 常见币种中文名（用于搜索、标题与榜单；未收录的币种回退英文名） */
+const CRYPTO_NAMES = {
+  BTC: '比特币', ETH: '以太坊', XRP: '瑞波币', BNB: '币安币', SOL: 'Solana',
+  TRX: '波场', DOGE: '狗狗币', ADA: '艾达币', BCH: '比特币现金', LINK: 'Chainlink',
+  HYPE: 'Hyperliquid', XLM: '恒星币', LTC: '莱特币', AVAX: '雪崩', SUI: 'Sui',
+  TON: 'Toncoin', SHIB: '柴犬币', DOT: '波卡', UNI: 'Uniswap', NEAR: 'NEAR',
+  APT: 'Aptos', ICP: 'Internet Computer', ETC: '以太经典', PEPE: 'Pepe', ARB: 'Arbitrum',
+  OP: 'Optimism', ATOM: 'Cosmos', FIL: 'Filecoin', INJ: 'Injective', TIA: 'Celestia',
+  SEI: 'Sei', STX: 'Stacks', IMX: 'Immutable', RENDER: 'Render', GRT: 'The Graph',
+  AAVE: 'Aave', MKR: 'Maker', LDO: 'Lido', CRV: 'Curve', JUP: 'Jupiter',
+  WIF: 'dogwifhat', BONK: 'Bonk', FLOKI: 'Floki', TAO: 'Bittensor', KAS: 'Kaspa',
+  ALGO: 'Algorand', VET: 'VeChain', HBAR: 'Hedera', XMR: '门罗币', EOS: 'EOS',
+  XTZ: 'Tezos', THETA: 'Theta', SAND: 'The Sandbox', MANA: 'Decentraland', AXS: 'Axie Infinity',
+  GALA: 'Gala', ENS: 'ENS', ONDO: 'Ondo', WLD: 'Worldcoin', JTO: 'Jito',
+};
+
+/* 币种 → DefiLlama 主链名（仅 L1 / 有独立生态的资产；无映射则情绪维度只用 F&G） */
+const CRYPTO_CHAINS = {
+  ETH: 'Ethereum', BNB: 'BSC', SOL: 'Solana', AVAX: 'Avalanche', TRX: 'Tron',
+  TON: 'TON', SUI: 'Sui', APT: 'Aptos', NEAR: 'Near', ADA: 'Cardano', DOT: 'Polkadot',
+  ATOM: 'Cosmos', ICP: 'ICP', ALGO: 'Algorand', VET: 'VeChain', HBAR: 'Hedera',
+  XRP: 'Ripple', LTC: 'Litecoin', BCH: 'Bitcoin', BTC: 'Bitcoin', ETC: 'EthereumClassic',
+  ARB: 'Arbitrum', OP: 'Optimism', SEI: 'Sei', STX: 'Stacks', KAS: 'Kaspa', XLM: 'Stellar',
+};
+
+const CRYPTO_HOT = ['BTC', 'ETH', 'SOL', 'BNB'];
+const CRYPTO_BOARD_SIZE = 10;
+
+const CRYPTO_DIM_META = [
+  { key: 'trend', name: '趋势与动量', short: '趋势', weight: 25, icon: 'trendUp' },
+  { key: 'liquidity', name: '流动性与规模', short: '流动', weight: 20, icon: 'layers' },
+  { key: 'volatility', name: '波动与回撤', short: '波动', weight: 20, icon: 'activity' },
+  { key: 'derivatives', name: '合约与杠杆', short: '合约', weight: 20, icon: 'pulse' },
+  { key: 'sentiment', name: '情绪与生态', short: '情绪', weight: 15, icon: 'spark' },
+];
+
+/* ---------------- 币种对象与搜索别名 ---------------- */
+
+function normalizeCoinStock(input) {
+  const src = input || {};
+  const symbol = String(src.symbol || src.code || src.rawCode || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 15);
+  const name = src.name || CRYPTO_NAMES[symbol] || symbol;
+  return {
+    market: 'CRYPTO',
+    kind: 'coin',
+    code: symbol,
+    rawCode: symbol,
+    name,
+    quoteKey: 'crypto:' + symbol,
+    klineCode: 'crypto:' + symbol,
+  };
+}
+
+const CRYPTO_ALIAS = new Map();
+Object.keys(CRYPTO_NAMES).forEach((sym) => {
+  CRYPTO_ALIAS.set(sym.toLowerCase(), sym);
+  CRYPTO_ALIAS.set(String(CRYPTO_NAMES[sym]).toLowerCase(), sym);
+});
+/* 额外口语别名（不覆盖上面已登记的正式名） */
+[
+  ['大饼', 'BTC'], ['饼子', 'BTC'], ['以太', 'ETH'], ['二饼', 'ETH'],
+  ['狗币', 'DOGE'], ['瑞波', 'XRP'], ['辣条', 'LTC'], ['柚子', 'EOS'],
+  ['波卡', 'DOT'], ['雪崩', 'AVAX'], ['艾达', 'ADA'], ['柴犬', 'SHIB'],
+].forEach(([alias, sym]) => {
+  if (!CRYPTO_ALIAS.has(alias.toLowerCase())) CRYPTO_ALIAS.set(alias.toLowerCase(), sym);
+});
+
+/* 同步解析：代码 / 中文名 / 常见别名 → coin stock；无命中返回 null。
+   仅用于输入框即时解析，完整候选由 searchCrypto 异步补全。 */
+function cryptoResolveQuery(query) {
+  const raw = String(query || '').trim();
+  if (!raw) return null;
+  const upper = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (upper && !/^\d+$/.test(upper)) {
+    const hit = CRYPTO_ALIAS.get(upper.toLowerCase());
+    if (hit) return normalizeCoinStock({ symbol: hit });
+  }
+  const byName = CRYPTO_ALIAS.get(raw.toLowerCase());
+  return byName ? normalizeCoinStock({ symbol: byName }) : null;
+}
+
+/* 异步搜索：代码/中英文名前缀匹配 CoinLore 前 100（含缓存，不额外请求） */
+async function searchCrypto(query) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return [];
+  const direct = cryptoResolveQuery(q);
+  const out = [];
+  const seen = new Set();
+  const push = (item) => {
+    if (!item || seen.has(item.code)) return;
+    seen.add(item.code);
+    out.push(item);
+  };
+  push(direct);
+  try {
+    const rows = await getCryptoTop100();
+    rows.forEach((r) => {
+      if (out.length >= 6) return;
+      if (CRYPTO_STABLES.has(r.symbol)) return;
+      const en = String(r.name || '').toLowerCase();
+      const zh = String(CRYPTO_NAMES[r.symbol] || '').toLowerCase();
+      if (
+        r.symbol.toLowerCase() === q ||
+        r.symbol.toLowerCase().startsWith(q) ||
+        zh.startsWith(q) ||
+        en.startsWith(q)
+      ) {
+        push(normalizeCoinStock({ symbol: r.symbol, name: CRYPTO_NAMES[r.symbol] || r.name }));
+      }
+    });
+  } catch (e) {
+    /* 榜单不可用时仅返回同步别名命中 */
+  }
+  return out.slice(0, 6);
+}
+
+/* ---------------- 行情 / K 线 ---------------- */
+
+function cryptoDateFromMs(ms) {
+  const d = new Date(Number(ms));
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
+}
+function cryptoDateFromSec(sec) {
+  return cryptoDateFromMs(Number(sec) * 1000);
+}
+function cryptoTimeText(ms) {
+  const d = new Date(Number(ms));
+  if (Number.isNaN(d.getTime())) return '—';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} UTC`;
+}
+
+function parseCryptoKlines(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((row) => ({
+      date: cryptoDateFromMs(row[0]),
+      open: num(row[1]),
+      high: num(row[2]),
+      low: num(row[3]),
+      close: num(row[4]),
+      volume: num(row[5], 0),
+      amount: num(row[7], 0),
+    }))
+    .filter((r) => r.date && Number.isFinite(r.close) && Number.isFinite(r.open));
+}
+
+/* 加密口径指标：额外补 7/30/90 日收益、90 日回撤、ATR(14)、30 日年化波动（365 天） */
+function cryptoKlineMetrics(points) {
+  const base = klineMetrics(points);
+  const closes = points.map((p) => num(p.close)).filter((n) => Number.isFinite(n) && n > 0);
+  const last = closes[closes.length - 1];
+  const ret = (n) => (closes.length > n ? (last / closes[closes.length - 1 - n] - 1) * 100 : null);
+  const mdd = (days) => {
+    const arr = closes.slice(-days);
+    if (!arr.length) return null;
+    let peak = arr[0];
+    let worst = 0;
+    arr.forEach((c) => {
+      peak = Math.max(peak, c);
+      worst = Math.min(worst, (c / peak - 1) * 100);
+    });
+    return Math.abs(worst);
+  };
+  const trs = [];
+  for (let i = 1; i < points.length; i++) {
+    const p = points[i];
+    const prev = points[i - 1];
+    const tr = Math.max(p.high - p.low, Math.abs(p.high - prev.close), Math.abs(p.low - prev.close));
+    if (Number.isFinite(tr)) trs.push(tr);
+  }
+  const atr = trs.length >= 14 ? trs.slice(-14).reduce((a, b) => a + b, 0) / 14 : null;
+  let vol30 = null;
+  const daily = [];
+  for (let i = Math.max(1, closes.length - 30); i < closes.length; i++) daily.push(closes[i] / closes[i - 1] - 1);
+  if (daily.length >= 10) {
+    const mean = daily.reduce((a, b) => a + b, 0) / daily.length;
+    const variance = daily.reduce((a, b) => a + (b - mean) ** 2, 0) / daily.length;
+    vol30 = Math.sqrt(variance) * Math.sqrt(365) * 100;
+  }
+  return {
+    ...base,
+    r7: ret(7),
+    r30: ret(30),
+    r90: ret(90),
+    maxDrawdown90: mdd(90),
+    atr14: atr,
+    atrPct: Number.isFinite(atr) && last ? (atr / last) * 100 : null,
+    vol30,
+    /* 加密 7×24 交易，年化按 365 天折算，图表「年化波动」与评分口径保持一致 */
+    volatility: Number.isFinite(vol30) ? vol30 : base.volatility,
+  };
+}
+
+function getCryptoQuote(stock) {
+  const symbol = String((stock && (stock.code || stock.rawCode)) || '').toUpperCase();
+  return cached(`crypto:quote:${symbol}`, CRYPTO_TTL.quote, async () => {
+    const data = await fetchJSON(`${CRYPTO_API.binance}/ticker/24hr?symbol=${symbol}USDT`, { timeout: 12000 });
+    const price = num(data && data.lastPrice);
+    if (!Number.isFinite(price)) throw new Error('加密行情数据为空');
+    return {
+      market: 'CRYPTO',
+      code: symbol,
+      name: CRYPTO_NAMES[symbol] || (stock && stock.name) || symbol,
+      rawCode: symbol,
+      price,
+      change: num(data.priceChange),
+      changePct: num(data.priceChangePercent),
+      prevClose: num(data.openPrice),
+      open: num(data.openPrice),
+      high: num(data.highPrice),
+      low: num(data.lowPrice),
+      volume: num(data.volume, 0),
+      amount: num(data.quoteVolume, 0),
+      weightedAvg: num(data.weightedAvgPrice),
+      trades: num(data.count),
+      timeMs: num(data.closeTime),
+      time: cryptoTimeText(data.closeTime),
+      currency: 'USD',
+      source: 'Binance',
+    };
+  });
+}
+
+const CRYPTO_INTERVAL = { day: '1d', week: '1w', month: '1M' };
+const CRYPTO_KLINE_LIMIT = { day: 320, week: 260, month: 140 };
+
+function getCryptoKline(stock, period = 'day') {
+  const p = normalizeKlinePeriod(period);
+  const symbol = String((stock && (stock.code || stock.rawCode)) || '').toUpperCase();
+  return cached(`crypto:kline:${p}:${symbol}`, CRYPTO_TTL.kline, async () => {
+    const url = `${CRYPTO_API.binance}/klines?symbol=${symbol}USDT&interval=${CRYPTO_INTERVAL[p]}&limit=${CRYPTO_KLINE_LIMIT[p]}`;
+    const rows = await fetchJSON(url, { timeout: 15000 });
+    const points = parseCryptoKlines(rows);
+    if (points.length < 5) throw new Error('加密 K 线数据不足');
+    return {
+      key: 'crypto:' + symbol,
+      period: p,
+      points,
+      metrics: p === 'day' ? cryptoKlineMetrics(points) : null,
+      source: 'Binance',
+    };
+  });
+}
+
+function getCryptoBtcKline() {
+  return getCryptoKline(normalizeCoinStock({ symbol: 'BTC' }), 'day');
+}
+
+/* ---------------- 市值 / 排名 ---------------- */
+
+function normalizeCoinloreRow(r) {
+  if (!r) return null;
+  const symbol = String(r.symbol || '').trim().toUpperCase();
+  if (!symbol) return null;
+  return {
+    id: r.id,
+    symbol,
+    name: String(r.name || symbol),
+    rank: num(r.rank),
+    price: num(r.price_usd),
+    change1h: num(r.percent_change_1h),
+    change24h: num(r.percent_change_24h),
+    change7d: num(r.percent_change_7d),
+    marketCap: num(r.market_cap_usd),
+    volume24: num(r.volume24),
+    circulating: num(r.csupply),
+    totalSupply: num(r.tsupply),
+    maxSupply: num(r.msupply),
+  };
+}
+
+function getCryptoTop100() {
+  return cached('crypto:coinlore:top100', CRYPTO_TTL.meta, async () => {
+    const data = await fetchJSON(`${CRYPTO_API.coinlore}/tickers/?start=0&limit=100`, { timeout: 12000 });
+    const rows = data && Array.isArray(data.data) ? data.data : [];
+    return rows
+      .map(normalizeCoinloreRow)
+      .filter(Boolean)
+      .sort((a, b) => (a.rank || 999) - (b.rank || 999));
+  });
+}
+
+function getCryptoMeta(symbol) {
+  const s = String(symbol || '').toUpperCase();
+  return getCryptoTop100()
+    .then((rows) => rows.find((r) => r.symbol === s) || null)
+    .catch(() => null);
+}
+
+/* 纯函数：CoinLore 榜单 → 首页加密热门（排除稳定币、按市值排名） */
+function cryptoBoardRows(rows, size = 10) {
+  return (Array.isArray(rows) ? rows : [])
+    .filter((r) => r && r.symbol && !CRYPTO_STABLES.has(r.symbol) && Number.isFinite(r.price))
+    .sort((a, b) => (a.rank || 999) - (b.rank || 999))
+    .slice(0, size)
+    .map((r) => ({
+      ...normalizeCoinStock({ symbol: r.symbol, name: CRYPTO_NAMES[r.symbol] || r.name }),
+      price: r.price,
+      changePct: r.change24h,
+      change7d: r.change7d,
+      marketCap: r.marketCap,
+      amount: r.volume24,
+      rank: r.rank,
+    }));
+}
+
+function getCryptoBoard(size = 10) {
+  const n = clamp(Math.round(Number(size) || 10), 5, 30);
+  return cached(`crypto:board:${n}`, CRYPTO_TTL.board, async () => cryptoBoardRows(await getCryptoTop100(), n));
+}
+
+/* ---------------- 合约 / 情绪 / 链上 ---------------- */
+
+function getCryptoDerivatives(symbol) {
+  const s = String(symbol || '').toUpperCase();
+  return cached(`crypto:derivatives:${s}`, CRYPTO_TTL.derivatives, async () => {
+    try {
+      const rows = await fetchJSON(`${CRYPTO_API.gate}/futures/usdt/tickers?contract=${s}_USDT`, { timeout: 12000 });
+      const r = Array.isArray(rows) ? rows[0] : null;
+      if (!r) return null;
+      const mark = num(r.mark_price);
+      const index = num(r.index_price);
+      const mult = num(r.quanto_multiplier);
+      const size = num(r.total_size);
+      return {
+        contract: r.contract || `${s}_USDT`,
+        funding: num(r.funding_rate),
+        fundingIndicative: num(r.funding_rate_indicative),
+        mark,
+        index,
+        basisPct: mark && index ? ((mark - index) / index) * 100 : null,
+        oiUsd: Number.isFinite(size) && Number.isFinite(mult) && Number.isFinite(mark) ? size * mult * mark : null,
+        oiContracts: size,
+        volume24: num(r.volume_24h_quote) ?? num(r.volume_24h_settle) ?? num(r.volume_24h),
+        source: 'Gate',
+      };
+    } catch (e) {
+      return null;
+    }
+  });
+}
+
+function getCryptoFearGreed() {
+  return cached('crypto:fng:30', CRYPTO_TTL.fng, async () => {
+    const data = await fetchJSON(`${CRYPTO_API.fng}?limit=30`, { timeout: 12000 });
+    const rows = (data && data.data) || [];
+    const history = rows
+      .map((r) => ({
+        date: cryptoDateFromSec(num(r.timestamp)),
+        close: num(r.value),
+        cls: r.value_classification || '',
+      }))
+      .filter((r) => r.date && Number.isFinite(r.close))
+      .reverse();
+    if (!history.length) return null;
+    const last = history[history.length - 1];
+    return { current: last.close, classification: last.cls, history, source: 'alternative.me' };
+  });
+}
+
+function getCryptoChainTvl(symbol) {
+  const s = String(symbol || '').toUpperCase();
+  const chain = CRYPTO_CHAINS[s];
+  if (!chain) return Promise.resolve(null);
+  return cached(`crypto:tvl:${chain}`, CRYPTO_TTL.tvl, async () => {
+    const rows = await fetchJSON(`${CRYPTO_API.llama}/v2/historicalChainTvl/${encodeURIComponent(chain)}`, { timeout: 15000 });
+    if (!Array.isArray(rows) || rows.length < 2) return null;
+    const points = rows
+      .map((r) => ({ date: cryptoDateFromSec(num(r.date)), close: num(r.tvl) }))
+      .filter((p) => p.date && Number.isFinite(p.close));
+    if (points.length < 2) return null;
+    const last = points[points.length - 1];
+    const prev = points[Math.max(0, points.length - 31)];
+    return {
+      chain,
+      current: last.close,
+      change30d: prev && prev.close > 0 ? (last.close / prev.close - 1) * 100 : null,
+      series: points.slice(-45),
+      source: 'DefiLlama',
+    };
+  });
+}
+
+/* ---------------- 五维评分（纯函数，可离线单测） ---------------- */
+
+/* 波动率健康度：加密资产 40%–80% 年化波动较健康；
+   过低说明流动性/关注度不足，过高说明风险失控。 */
+function cryptoVolScore(vol) {
+  if (!Number.isFinite(vol)) return null;
+  if (vol < 15) return 30;
+  if (vol < 25) return 45;
+  if (vol < 40) return 48 + ((vol - 25) / 15) * 32;
+  if (vol <= 80) return 88 - ((vol - 40) / 40) * 4;
+  if (vol <= 120) return 84 - ((vol - 80) / 40) * 30;
+  return clamp(54 - ((vol - 120) / 80) * 34, 12, 54);
+}
+
+/* 换手率：1%–15% 为健康活跃区；>50% 多为投机换手，扣分但不归零。 */
+function cryptoTurnoverScore(turnover) {
+  if (!Number.isFinite(turnover)) return null;
+  if (turnover > 80) return 38;
+  if (turnover > 50) return 48;
+  if (turnover > 30) return 58;
+  if (turnover > 15) return 72;
+  if (turnover > 8) return 88;
+  if (turnover > 3) return 92;
+  if (turnover > 1) return 84;
+  if (turnover > 0.3) return 68;
+  return 52;
+}
+
+/* 资金费率：极端正值=多头拥挤；负值=空头拥挤，按逆向情绪小幅加分。 */
+function cryptoFundingScore(funding) {
+  if (!Number.isFinite(funding)) return null;
+  if (funding > 0.0008) return 20;
+  if (funding > 0.0004) return 34;
+  if (funding > 0.00015) return 48;
+  if (funding >= -0.00005) return 60;
+  if (funding >= -0.0003) return 70;
+  if (funding >= -0.0008) return 82;
+  return 62;
+}
+
+function cryptoBasisScore(basisPct) {
+  const abs = Number.isFinite(basisPct) ? Math.abs(basisPct) : null;
+  if (abs === null) return null;
+  if (abs > 2) return 30;
+  if (abs > 1) return 45;
+  if (abs > 0.5) return 60;
+  if (abs > 0.2) return 76;
+  return 88;
+}
+
+function scoreCryptoTrend(kline, btcKline) {
+  const m = kline && kline.metrics;
+  if (!m || !Number.isFinite(m.r30)) {
+    return { available: false, note: '日 K 数据不足，趋势动量不计入', reasons: [] };
+  }
+  const r30s = band(m.r30, [[60, 98], [35, 92], [15, 82], [5, 72], [-5, 60], [-15, 46], [-30, 28]], 14);
+  const r90s = Number.isFinite(m.r90)
+    ? band(m.r90, [[150, 98], [80, 92], [30, 82], [0, 68], [-25, 50], [-50, 30]], 14)
+    : null;
+  let align = null;
+  if (Number.isFinite(m.ma20) && Number.isFinite(m.ma60)) {
+    if (m.last > m.ma20 && m.ma20 > m.ma60) align = 92;
+    else if (m.last < m.ma20 && m.ma20 < m.ma60) align = 24;
+    else align = 55;
+  }
+  const bm = btcKline && btcKline.metrics;
+  const excess =
+    bm && Number.isFinite(bm.r60) && Number.isFinite(m.r60) ? m.r60 - bm.r60 : null;
+  const excessS = excess === null
+    ? null
+    : band(excess, [[60, 96], [30, 88], [10, 76], [0, 60], [-15, 44], [-35, 26]], 14);
+  let sum = 0;
+  let w = 0;
+  if (r30s !== null) { sum += r30s * 0.35; w += 0.35; }
+  if (r90s !== null) { sum += r90s * 0.25; w += 0.25; }
+  if (align !== null) { sum += align * 0.2; w += 0.2; }
+  if (excessS !== null) { sum += excessS * 0.2; w += 0.2; }
+  const score = w > 0 ? Math.round(sum / w) : 50;
+  const reasons = [
+    `30 日收益 ${fmtPct(m.r30)}，90 日收益 ${fmtPct(m.r90)}，收益分分别为 ${r30s} / ${r90s ?? '—'}。`,
+    Number.isFinite(m.ma20) && Number.isFinite(m.ma60)
+      ? `现价 ${fmtPrice(m.last, m.last < 1 ? 4 : 2)}，MA20 ${fmtPrice(m.ma20, m.ma20 < 1 ? 4 : 2)}、MA60 ${fmtPrice(m.ma60, m.ma60 < 1 ? 4 : 2)}，均线形态「${m.trend}」。`
+      : '均线数据不足，均线排列子项按中性处理。',
+    excess === null
+      ? 'BTC 基准数据不可用，相对强弱子项未计入。'
+      : `相对 BTC 的 60 日超额收益 ${fmtPct(excess)}，超额分 ${excessS}。`,
+    '子项权重：30 日收益 35% / 90 日收益 25% / 均线排列 20% / 相对 BTC 超额 20%。',
+  ];
+  return {
+    available: true,
+    score: clamp(score, 0, 100),
+    note: `30日 ${fmtPct(m.r30)} · 90日 ${fmtPct(m.r90)}${excess !== null ? ` · 超额 ${fmtPct(excess)}` : ''}`,
+    reasons,
+  };
+}
+
+function scoreCryptoLiquidity(quote, meta) {
+  const volume = num(quote && (quote.amount ?? quote.quoteVolume));
+  if (!Number.isFinite(volume)) {
+    return { available: false, note: '24h 成交额数据缺失', reasons: [] };
+  }
+  const cap = num(meta && meta.marketCap);
+  const rank = num(meta && meta.rank);
+  const turnover = Number.isFinite(cap) && cap > 0 ? (volume / cap) * 100 : null;
+  const volS = band(volume, [
+    [5e9, 98], [1e9, 92], [3e8, 84], [1e8, 76], [3e7, 64], [1e7, 52], [3e6, 38], [5e5, 24],
+  ], 12);
+  const turnS = cryptoTurnoverScore(turnover);
+  const rankS = Number.isFinite(rank)
+    ? rank <= 10 ? 95 : rank <= 30 ? 84 : rank <= 50 ? 74 : rank <= 100 ? 62 : 50
+    : null;
+  let sum = 0;
+  let w = 0;
+  if (volS !== null) { sum += volS * 0.5; w += 0.5; }
+  if (turnS !== null) { sum += turnS * 0.3; w += 0.3; }
+  if (rankS !== null) { sum += rankS * 0.2; w += 0.2; }
+  const reasons = [`24h 成交额约 ${fmtUsdCompact(volume)}，成交额分 ${volS}。`];
+  if (turnover !== null) {
+    reasons.push(`换手率（24h 成交额 ÷ 市值）约 ${turnover.toFixed(2)}%，换手分 ${turnS}；1%–15% 为健康活跃区，>50% 多为投机换手。`);
+  } else {
+    reasons.push('市值数据缺失，换手率子项未计入。');
+  }
+  if (rankS !== null) reasons.push(`CoinLore 市值排名第 ${rank}，排名分 ${rankS}。`);
+  else reasons.push('市值排名数据缺失，排名子项未计入。');
+  reasons.push('子项权重：成交额 50% / 换手率 30% / 市值排名 20%。');
+  return {
+    available: true,
+    score: Math.round(w > 0 ? sum / w : 50),
+    note: `24h ${fmtUsdCompact(volume)}${turnover !== null ? ` · 换手 ${turnover.toFixed(2)}%` : ''}${Number.isFinite(rank) ? ` · #${rank}` : ''}`,
+    reasons,
+  };
+}
+
+function scoreCryptoVolatility(kline) {
+  const m = kline && kline.metrics;
+  if (!m || !Number.isFinite(m.vol30)) {
+    return { available: false, note: '波动率数据不足', reasons: [] };
+  }
+  const volS = cryptoVolScore(m.vol30);
+  const mddS = Number.isFinite(m.maxDrawdown90)
+    ? band(m.maxDrawdown90, [[10, 96], [20, 88], [35, 76], [50, 58], [65, 40], [80, 24]], 12)
+    : null;
+  const atrS = Number.isFinite(m.atrPct)
+    ? band(m.atrPct, [[12, 50], [9, 66], [6, 88], [4, 92], [2.5, 82], [1.5, 66]], 40)
+    : null;
+  let sum = 0;
+  let w = 0;
+  if (volS !== null) { sum += volS * 0.45; w += 0.45; }
+  if (mddS !== null) { sum += mddS * 0.35; w += 0.35; }
+  if (atrS !== null) { sum += atrS * 0.2; w += 0.2; }
+  return {
+    available: true,
+    score: Math.round(w > 0 ? sum / w : 50),
+    note: `30日波动 ${volS !== null ? m.vol30.toFixed(1) + '%' : '—'} · 90日回撤 ${Number.isFinite(m.maxDrawdown90) ? m.maxDrawdown90.toFixed(1) + '%' : '—'}`,
+    reasons: [
+      `30 日年化波动率约 ${m.vol30.toFixed(1)}%，波动分 ${volS}；40%–80% 为相对健康区间。`,
+      Number.isFinite(m.maxDrawdown90)
+        ? `90 日最大回撤约 ${m.maxDrawdown90.toFixed(1)}%，回撤分 ${mddS}；回撤越深说明此前的下行风险越大。`
+        : '90 日回撤数据不足，回撤子项未计入。',
+      Number.isFinite(m.atrPct)
+        ? `ATR(14)/价格 约 ${m.atrPct.toFixed(2)}%，ATR 分 ${atrS}；2%–6% 属于加密常态波动。`
+        : 'ATR 数据不足，ATR 子项未计入。',
+      '子项权重：波动率 45% / 最大回撤 35% / ATR 20%。波动低不等于风险低，极端行情下历史波动会失效。',
+    ],
+  };
+}
+
+function scoreCryptoDerivatives(derivatives, meta) {
+  const d = derivatives;
+  if (!d || !Number.isFinite(d.funding)) {
+    return { available: false, note: '暂无 U 本位合约数据', reasons: [] };
+  }
+  const fundS = cryptoFundingScore(d.funding);
+  const cap = num(meta && meta.marketCap);
+  const ratio = Number.isFinite(d.oiUsd) && Number.isFinite(cap) && cap > 0 ? (d.oiUsd / cap) * 100 : null;
+  const oiS = Number.isFinite(ratio)
+    ? band(ratio, [[25, 30], [15, 42], [8, 56], [4, 72], [1.5, 84], [0.5, 70]], 55)
+    : null;
+  const basisS = cryptoBasisScore(d.basisPct);
+  let sum = 0;
+  let w = 0;
+  if (fundS !== null) { sum += fundS * 0.45; w += 0.45; }
+  if (oiS !== null) { sum += oiS * 0.3; w += 0.3; }
+  if (basisS !== null) { sum += basisS * 0.25; w += 0.25; }
+  const reasons = [
+    `当前 8h 资金费率 ${(d.funding * 100).toFixed(4)}%，费率分 ${fundS}；极端正费率代表多头拥挤，负费率代表空头拥挤（逆向情绪小幅加分）。`,
+  ];
+  if (Number.isFinite(ratio)) {
+    reasons.push(`持仓量约 ${fmtUsdCompact(d.oiUsd)}，占市值 ${ratio.toFixed(2)}%，杠杆分 ${oiS}；1%–5% 相对健康，>15% 需警惕高杠杆清算风险。`);
+  } else {
+    reasons.push('市值或持仓量数据缺失，持仓量占市值子项未计入。');
+  }
+  if (Number.isFinite(d.basisPct)) {
+    reasons.push(`标记价 ${fmtPrice(d.mark, 2)} / 指数价 ${fmtPrice(d.index, 2)}，基差 ${d.basisPct.toFixed(3)}%，基差分 ${basisS}。`);
+  } else {
+    reasons.push('基差数据缺失，基差子项未计入。');
+  }
+  reasons.push('子项权重：资金费率 45% / 持仓量÷市值 30% / 期现基差 25%。合约数据来自 Gate，仅覆盖有 U 本位合约的币种。');
+  return {
+    available: true,
+    score: Math.round(w > 0 ? sum / w : 50),
+    note: `费率 ${(d.funding * 100).toFixed(4)}%${Number.isFinite(ratio) ? ` · OI/市值 ${ratio.toFixed(1)}%` : ''}`,
+    reasons,
+  };
+}
+
+function scoreCryptoSentiment(fng, chainTvl) {
+  const value = num(fng && fng.current);
+  if (!Number.isFinite(value)) {
+    return { available: false, note: '恐慌贪婪指数不可用', reasons: [] };
+  }
+  const fngS = clamp(100 - value, 0, 100);
+  const tvlS = chainTvl && Number.isFinite(chainTvl.change30d)
+    ? band(chainTvl.change30d, [[60, 94], [30, 88], [10, 78], [0, 64], [-15, 52], [-35, 36]], 22)
+    : null;
+  let sum = fngS * 0.6;
+  let w = 0.6;
+  if (tvlS !== null) {
+    sum += tvlS * 0.4;
+    w += 0.4;
+  }
+  const reasons = [
+    `恐慌贪婪指数 ${Math.round(value)}（${fng.classification || '—'}），按逆向口径换算 ${Math.round(fngS)} 分；极度恐慌偏加分、极度贪婪偏扣分。`,
+  ];
+  if (tvlS !== null) {
+    reasons.push(
+      `主链 ${chainTvl.chain} TVL 约 ${fmtUsdCompact(chainTvl.current)}，30 日变化 ${fmtPct(chainTvl.change30d)}，生态分 ${tvlS}。`
+    );
+  } else {
+    reasons.push('该币种没有可用的主链 TVL 映射，生态子项未计入，仅使用恐慌贪婪指数。');
+  }
+  reasons.push('子项权重：恐慌贪婪指数 60% / 主链 TVL 30 日变化 40%。情绪指标是逆向参考，不代表价格即将反转。');
+  return {
+    available: true,
+    score: Math.round(sum / w),
+    note: `F&G ${Math.round(value)} · ${fng.classification || '—'}${tvlS !== null ? ` · TVL ${fmtPct(chainTvl.change30d)}` : ''}`,
+    reasons,
+  };
+}
+
+function cryptoVerdict(score) {
+  if (score >= 80) return { label: '强势', cls: 'strong', tone: 'gold', desc: '多维共振，趋势与流动性优势较突出' };
+  if (score >= 65) return { label: '偏强', cls: 'bull', tone: 'teal', desc: '多数维度偏向积极，仍需关注波动与杠杆' };
+  if (score >= 50) return { label: '中性', cls: 'neutral', tone: 'blue', desc: '多空与风险因素相对均衡' };
+  if (score >= 35) return { label: '偏弱', cls: 'bear', tone: 'orange', desc: '部分维度存在压力，波动或流动性偏弱' };
+  return { label: '弱势', cls: 'weak', tone: 'red', desc: '风险因素占主导，数据覆盖或流动性不足' };
+}
+
+/* 主入口：加密五维综合评分。覆盖惩罚 0.7 + 0.3 × 覆盖率 */
+function computeCryptoScore({ quote, kline, btcKline, meta, derivatives, fng, chainTvl } = {}) {
+  const results = {
+    trend: scoreCryptoTrend(kline, btcKline),
+    liquidity: scoreCryptoLiquidity(quote, meta),
+    volatility: scoreCryptoVolatility(kline),
+    derivatives: scoreCryptoDerivatives(derivatives, meta),
+    sentiment: scoreCryptoSentiment(fng, chainTvl),
+  };
+  const dims = CRYPTO_DIM_META.map((m) => {
+    const r = results[m.key];
+    return {
+      ...m,
+      available: !!r.available && Number.isFinite(r.score),
+      score: r.available && Number.isFinite(r.score) ? clamp(Math.round(r.score), 0, 100) : null,
+      note: r.note || '数据不可用',
+      reasons: r.reasons || [],
+    };
+  });
+  const available = dims.filter((d) => d.available);
+  const weightSum = available.reduce((a, d) => a + d.weight, 0);
+  const coverage = Math.round(weightSum);
+  let total = null;
+  if (weightSum > 0) {
+    const weighted = available.reduce((a, d) => a + d.score * d.weight, 0) / weightSum;
+    const factor = 0.7 + 0.3 * (coverage / 100);
+    total = clamp(Math.round(weighted * factor), 0, 100);
+  }
+  const verdict = cryptoVerdict(total === null ? 0 : total);
+  const sorted = available.slice().sort((a, b) => b.score - a.score);
+  let desc = total === null ? '有效数据不足，暂不给出综合分。' : verdict.desc + '。';
+  if (sorted.length >= 2) {
+    desc += `最强项为${sorted[0].name}（${sorted[0].score}），最弱项为${sorted[sorted.length - 1].name}（${sorted[sorted.length - 1].score}）。`;
+  }
+  if (coverage < 100) desc += `当前权重覆盖 ${coverage}%，缺失维度已计入覆盖惩罚。`;
+  return {
+    total,
+    verdict,
+    dims,
+    coverage,
+    availableCount: available.length,
+    dimCount: dims.length,
+    desc,
+    missing: dims.filter((d) => !d.available).map((d) => d.short),
+    createdAt: new Date(),
+    kind: 'coin',
+  };
+}
+
+/* ---------------- 展示格式 ---------------- */
+
+function fmtUsdCompact(n) {
+  if (!Number.isFinite(n)) return '—';
+  const abs = Math.abs(n);
+  if (abs >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
+  if (abs >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (abs >= 1e3) return `$${(n / 1e3).toFixed(2)}K`;
+  return `$${n.toFixed(2)}`;
+}
+
+function fmtCryptoPrice(n) {
+  if (!Number.isFinite(n)) return '—';
+  if (n >= 1) return fmtPrice(n, 2);
+  if (n >= 0.01) return n.toFixed(4);
+  if (n >= 0.0001) return n.toFixed(6);
+  return n.toFixed(8);
+}
+
+function fmtCryptoSupply(n, symbol = '') {
+  if (!Number.isFinite(n)) return '—';
+  const unit = n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : fmtInt(n);
+  return unit + (symbol ? ` ${symbol}` : '');
+}
+
+
 /* ===== js/30-render-home.js ===== */
 /* ============================================================
    Home / landing renderer
@@ -5720,6 +6548,13 @@ function stockButton(stock, cls, extra = '') {
   )}">—</span></button>`;
 }
 
+function cryptoChipHTML(symbol) {
+  const coin = normalizeCoinStock({ symbol });
+  return `<button type="button" class="hot-chip crypto-chip" ${stockDataset(coin)}>${esc(coin.name)}<span class="hot-chg" data-cchg="${esc(
+    symbol
+  )}">—</span></button>`;
+}
+
 function recentStocks() {
   const list = store.get('recent', []);
   if (!Array.isArray(list)) return [];
@@ -5774,13 +6609,13 @@ function homeHTML() {
     <div class="hero">
       <span class="eyebrow"><i class="dot"></i>公开数据 · 实时行情 · 可解释评分</span>
       <h1>读懂研报，<br><span>把判断交给证据。</span></h1>
-      <p class="lede">输入 A 股、港股或美股，聚合近半年个股与行业研报、同行龙头、财务与舆情，用四维打分形成一张可追溯的研究底稿。</p>
+      <p class="lede">输入 A 股、港股、美股或加密货币，聚合研报、同行、财务、行情与舆情，用可解释的评分形成一张可追溯的研究底稿。</p>
 
       <div class="search-shell">
         <form class="search-box" id="searchForm" autocomplete="off">
           ${ico('search')}
-          <input id="stockSearch" type="text" placeholder="输入股票名称、代码或拼音，如 贵州茅台 / 600519 / 00700 / NVDA"
-            aria-label="搜索股票" spellcheck="false">
+          <input id="stockSearch" type="text" placeholder="输入股票名称、代码或币种，如 贵州茅台 / 600519 / NVDA / BTC"
+            aria-label="搜索股票或加密货币" spellcheck="false">
           <button class="search-submit" type="submit" aria-label="开始分析">
             <span>开始分析</span>${ico('arrow')}
           </button>
@@ -5791,6 +6626,10 @@ function homeHTML() {
       <div class="hot-row" id="hotRow">
         <span class="hot-label">热门</span>
         ${HOT_STOCKS.map((s) => stockButton(s, 'hot-chip')).join('')}
+      </div>
+      <div class="hot-row crypto-hot-row" id="cryptoHotRow">
+        <span class="hot-label">加密</span>
+        ${CRYPTO_HOT.map((sym) => cryptoChipHTML(sym)).join('')}
       </div>
       ${
         recent.length
@@ -5808,7 +6647,7 @@ function homeHTML() {
       </div>
 
       <div class="hero-stats">
-        <div class="hero-stat"><strong>3 地市场</strong><span>A 股 · 港股 · 美股</span></div>
+        <div class="hero-stat"><strong>4 类市场</strong><span>A 股 · 港股 · 美股 · 加密</span></div>
         <div class="hero-stat"><strong>4 个维度</strong><span>研报 · 盈利 · 技术 · 舆情</span></div>
         <div class="hero-stat"><strong>20 篇</strong><span>近半年最新个股研报</span></div>
       </div>
@@ -5864,6 +6703,26 @@ function homeHTML() {
       </div>
     </section>
 
+    <section class="home-boards crypto-board" aria-labelledby="cryptoBoardTitle">
+      <div class="boards-head">
+        <div class="section-kicker">加密资产</div>
+        <h2 id="cryptoBoardTitle">加密热门 TOP 10</h2>
+        <p>按市值排名的加密资产（已排除稳定币）。点击进入独立研判页：趋势 / 流动 / 波动 / 合约 / 情绪五维评分。7×24 连续交易、无涨跌幅限制，仅作公开数据研究。</p>
+      </div>
+      <div class="boards-grid">
+        <article class="card board-card" id="cryptoBoardCard">
+          <div class="board-card-head">
+            <span class="board-ico crypto">${ico('spark', 'lg')}</span>
+            <div>
+              <h3>加密市值 TOP 10</h3>
+              <span>Binance 行情 · CoinLore 市值排名 · USD 计价</span>
+            </div>
+          </div>
+          <div class="board-list" id="cryptoBoardBody">${loadingCard('正在获取加密榜单…', 4)}</div>
+        </article>
+      </div>
+    </section>
+
     <section class="features" aria-labelledby="featureTitle">
       <div class="features-head">
         <div>
@@ -5886,6 +6745,7 @@ function homeHTML() {
         <div class="coverage-row">${ico('check', 'sm')}<span><strong>A 股 · 全功能</strong>：行情 / K 线 / 个股与行业研报 / 财务成长 / 同业双榜 / 新闻舆情。</span></div>
         <div class="coverage-row warn">${ico('info', 'sm')}<span><strong>港股 · 简版</strong>：行情 / K 线 / 财务指标 / 同业标签 / 新闻舆情；研报区显示暂无免费中文源。</span></div>
         <div class="coverage-row warn">${ico('info', 'sm')}<span><strong>美股 · 简版</strong>：行情 / K 线 / 同业标签 / 新闻舆情；盈利成长与中文研报暂缺，评分按可用维度折算。</span></div>
+        <div class="coverage-row">${ico('spark', 'sm')}<span><strong>加密货币 · 独立口径</strong>：行情 / K 线 / 市值排名 / 合约资金费率与持仓 / 恐慌贪婪指数 / 主链 TVL；无财报与机构研报，评分不与其他市场直接比较。</span></div>
         <div class="coverage-row">${ico('shield', 'sm')}<span><strong>可解释性</strong>：每个维度展示得分、权重、数据覆盖与理由；数据不足时直接标注「不可用」。</span></div>
       </div>
     </section>
@@ -5897,9 +6757,11 @@ function renderHome() {
   document.title = '研值 StockLens · 股票研报与研判';
   syncTopbar('home');
   loadHotQuotes();
+  loadCryptoHotQuotes();
   loadWatchQuotes();
   loadHomeBoards();
   loadEtfBoard();
+  loadCryptoBoard();
 }
 
 /* ---------------- 首页双榜单（FR-9） ---------------- */
@@ -5926,7 +6788,13 @@ function boardRowHTML(stock, index, metric) {
 }
 
 function boardEmptyHTML(kind) {
-  const text = kind === 'inflow' ? '资金流向数据暂不可用，稍后刷新重试' : kind === 'etf' ? '行业 ETF 榜单暂不可用，稍后刷新重试' : '热门榜单暂不可用，稍后刷新重试';
+  const text = kind === 'inflow'
+    ? '资金流向数据暂不可用，稍后刷新重试'
+    : kind === 'etf'
+    ? '行业 ETF 榜单暂不可用，稍后刷新重试'
+    : kind === 'crypto'
+    ? '加密榜单暂不可用，稍后刷新重试'
+    : '热门榜单暂不可用，稍后刷新重试';
   return `<div class="board-empty">${ico('info', 'sm')}<span>${text}</span></div>`;
 }
 
@@ -5986,30 +6854,99 @@ async function loadEtfBoard() {
   }
 }
 
-/* FR-6.2：自选股行情速览，批量接口一次拉取 */
+/* 加密热门榜：按市值排名（CoinLore，已排除稳定币），点击直达 #/coin/{SYMBOL} */
+function cryptoRowHTML(stock, index) {
+  const chgCls = pctClass(stock.changePct);
+  return `
+    <button type="button" class="board-row" ${stockDataset(stock)}>
+      <span class="br-rank ${index < 3 ? 'top' : ''}">${index + 1}</span>
+      <span class="br-name">
+        <b>${esc(stock.name)}</b>
+        <small>${esc(stock.code)} · 加密</small>
+      </span>
+      <span class="br-quote">
+        <b>${fmtCryptoPrice(stock.price)}</b>
+        <small class="${chgCls}">${fmtPct(stock.changePct)}</small>
+      </span>
+      <span class="br-metric">${esc(fmtUsdCompact(stock.marketCap))}</span>
+    </button>`;
+}
+
+async function loadCryptoBoard() {
+  const body = $('#cryptoBoardBody');
+  if (!body) return;
+  try {
+    const rows = await getCryptoBoard(CRYPTO_BOARD_SIZE);
+    if (!body.isConnected) return;
+    if (!rows.length) {
+      body.innerHTML = boardEmptyHTML('crypto');
+      return;
+    }
+    body.innerHTML = rows.map((s, i) => cryptoRowHTML(s, i)).join('');
+  } catch (e) {
+    if (body.isConnected) body.innerHTML = boardEmptyHTML('crypto');
+  }
+}
+
+async function loadCryptoHotQuotes() {
+  await Promise.all(
+    CRYPTO_HOT.map(async (symbol) => {
+      try {
+        const q = await getCryptoQuote(normalizeCoinStock({ symbol }));
+        $$(`[data-cchg="${symbol}"]`).forEach((el) => {
+          el.textContent = fmtPct(q.changePct);
+          el.classList.remove('up', 'down', 'flat');
+          el.classList.add(pctClass(q.changePct));
+        });
+      } catch (e) {
+        /* 单个币种失败不影响其他热词 */
+      }
+    })
+  );
+}
+
+/* FR-6.2：自选股行情速览，批量接口一次拉取；加密自选单独走 Binance */
 async function loadWatchQuotes() {
   const list = watchlistGet();
   if (!list.length) return;
-  const keys = list.map((s) => s.quoteKey).filter(Boolean);
-  if (!keys.length) return;
-  try {
-    const map = await getQuoteBatch(keys);
-    list.forEach((s) => {
-      const q = map.get(s.quoteKey);
-      if (!q) return;
+  const stocks = list.filter((s) => s.market !== 'CRYPTO');
+  const coins = list.filter((s) => s.market === 'CRYPTO');
+  if (stocks.length) {
+    const keys = stocks.map((s) => s.quoteKey).filter(Boolean);
+    try {
+      const map = await getQuoteBatch(keys);
+      stocks.forEach((s) => {
+        const q = map.get(s.quoteKey);
+        if (!q) return;
+        $$(`[data-wq="${s.quoteKey}"]`).forEach((el) => {
+          const cls = pctClass(q.changePct);
+          el.innerHTML = `<b class="${cls}">${fmtPrice(q.price, q.price < 10 ? 3 : 2)}</b><span class="${cls}">${fmtPct(
+            q.changePct
+          )}</span>`;
+        });
+      });
+    } catch (e) {
+      /* FR-6.5：失败显示占位，不阻塞其他标的 */
+      keys.forEach((key) => {
+        $$(`[data-wq="${key}"]`).forEach((el) => {
+          el.textContent = '—';
+        });
+      });
+    }
+  }
+  coins.forEach(async (s) => {
+    try {
+      const q = await getCryptoQuote(s);
       $$(`[data-wq="${s.quoteKey}"]`).forEach((el) => {
         const cls = pctClass(q.changePct);
-        el.innerHTML = `<b class="${cls}">${fmtPrice(q.price, q.price < 10 ? 3 : 2)}</b><span class="${cls}">${fmtPct(
-          q.changePct
-        )}</span>`;
+        el.innerHTML = `<b class="${cls}">${fmtCryptoPrice(q.price)}</b><span class="${cls}">${fmtPct(q.changePct)}</span>`;
       });
-    });
-  } catch (e) {
-    /* FR-6.5：失败显示占位，不阻塞其他标的 */
-    $$('[data-wq]').forEach((el) => {
-      el.textContent = '—';
-    });
-  }
+    } catch (e) {
+      $$(`[data-wq="${s.quoteKey}"]`).forEach((el) => {
+        el.textContent = '—';
+      });
+    }
+  });
 }
 
 /* 热门股行情：复用批量接口一次拉取（与自选股一致），并回填内存缓存保持 getQuote 口径一致 */
@@ -6035,7 +6972,7 @@ async function loadHotQuotes() {
 
 function suggestionHTML(items) {
   if (!items.length) {
-    return `<div class="sug-empty">没有匹配结果。试试股票代码，如 <span class="mono">600519</span> / <span class="mono">00700</span> / <span class="mono">NVDA</span></div>`;
+    return `<div class="sug-empty">没有匹配结果。试试股票代码或币种，如 <span class="mono">600519</span> / <span class="mono">00700</span> / <span class="mono">NVDA</span> / <span class="mono">BTC</span></div>`;
   }
   return (
     items
@@ -6049,7 +6986,7 @@ function suggestionHTML(items) {
     </button>`
       )
       .join('') +
-    `<div class="sug-hint"><span>↑ ↓ 选择 · Enter 打开</span><span>行情来自腾讯财经</span></div>`
+    `<div class="sug-hint"><span>↑ ↓ 选择 · Enter 打开</span><span>行情来自腾讯财经 / Binance</span></div>`
   );
 }
 
@@ -6310,7 +7247,7 @@ function renderFatal(stock, message) {
     <div class="empty-state" style="margin-top:34px">
       <div class="empty-icon">${ico('alert', 'lg')}</div>
       <h3>无法完成分析</h3>
-      <p>${esc(message)}<br>请确认股票代码或网络连接后重试。</p>
+      <p>${esc(message)}<br>请确认标的代码或网络连接后重试。</p>
       <div class="empty-links" style="margin-top:16px">
         <a href="#" data-action="home">返回首页</a>
         <a href="#" data-action="refresh">重新获取</a>
@@ -6459,6 +7396,7 @@ function renderChartSection(kline) {
   /* FR-3.6：蜡烛渲染条件不满足时降级为原有 sparkline */
   const anchors = targetAnchors();
   const chartKey = `${(state.stock && state.stock.market) || 'X'}_${(state.stock && state.stock.code) || 'x'}_${period}`;
+  const isCoin = !!(state.stock && (state.stock.kind === 'coin' || state.stock.market === 'CRYPTO'));
   const candles = renderCandlestick(pts, {
     key: chartKey,
     period,
@@ -6483,10 +7421,10 @@ function renderChartSection(kline) {
     : '';
   return `<article class="card chart-card">
     <div>
-      <div class="chart-head"><strong>股价 K 线</strong>${chartPeriodTabs()}${chartZoomControls(pts.length)}
+      <div class="chart-head"><strong>${isCoin ? '价格 K 线' : '股价 K 线'}</strong>${chartPeriodTabs()}${chartZoomControls(pts.length)}
         <span class="kline-legend" aria-hidden="true"><i class="ma20"></i>MA20<i class="ma60"></i>MA60</span>
         <span class="kline-meta" data-role="kline-range">${esc(fmtDate(first.date))} — ${esc(fmtDate(last.date))} · ${pts.length} 根</span>
-        <span class="kline-meta">${period === 'day' ? '前复权 · ' : ''}${periodLabel}</span></div>
+        <span class="kline-meta">${period === 'day' && !isCoin ? '前复权 · ' : ''}${periodLabel}${isCoin ? ' · UTC' : ''}</span></div>
       ${chartSubControls(pts.length)}
       ${anchors ? '<span class="kline-note">目标价为研报发布口径，前复权 K 线在最新交易日与实际价格基本一致</span>' : ''}
       ${chartBody}
@@ -6855,14 +7793,16 @@ function renderFinancialSection(f, market) {
 }
 
 /* ---------------- news ---------------- */
-function renderNewsSection(news, market) {
+function renderNewsSection(news, market, opts = {}) {
   const body = $('#newsBody');
   if (!body) return;
   if (!news || !news.length) {
     body.innerHTML = emptyState({
       icon: 'news',
       title: '暂未获取到相关新闻',
-      desc: '新闻接口未返回可展示的结果，新闻舆情维度将标记为不可用。行情、研报与财务不受影响。',
+      desc:
+        opts.emptyDesc ||
+        '新闻接口未返回可展示的结果，新闻舆情维度将标记为不可用。行情、研报与财务不受影响。',
     });
     updateStatus('news', 'empty', '舆情 0 条');
     return;
@@ -7686,6 +8626,259 @@ function updateEtfScreenerThreshold(value) {
 }
 
 
+/* ===== js/36-render-crypto.js ===== */
+/* ============================================================
+   加密资产 renderers — 独立研判页
+   综合分 + 五维雷达 + K 线（复用 v1.9）+ 技术研判 + 合约 + 链上 + 舆情
+   ============================================================ */
+'use strict';
+
+const CRYPTO_SECTION_NAV = [
+  ['overview', '综合研判'],
+  ['technical', '技术研判'],
+  ['derivatives', '合约与杠杆'],
+  ['onchain', '情绪与链上'],
+  ['news', '新闻舆情'],
+];
+
+function cryptoShell(stock) {
+  return `<div class="analysis-wrap" id="analysisWrap">
+    ${crumbHTML(stock)}
+    <div id="stockMeta">${cryptoHeaderSkeleton(stock)}</div>
+    <div class="crypto-risk no-print">${ico('alert', 'sm')}<span>加密资产 7×24 连续交易、无涨跌幅限制，合约杠杆可能损失全部本金；本页仅聚合公开数据用于研究，不构成投资建议。</span></div>
+    <nav class="section-nav" aria-label="页面章节">
+      ${CRYPTO_SECTION_NAV.map(([id, label]) => `<a href="#${id}" data-scroll="${id}">${label}</a>`).join('')}
+      <span class="nav-live"><i></i>数据实时拉取</span>
+    </nav>
+
+    <div id="overviewArea">
+      <div class="overview-grid" id="cryptoOverviewGrid">
+        <aside class="card score-card">${loadingCard('正在汇总加密五维评分…', 4)}</aside>
+        <article class="card factor-card">${loadingCard('正在建立因子雷达…', 5)}</article>
+      </div>
+      <div id="chartSlot" style="margin-top:16px">${loadingCard('正在绘制价格 K 线…', 2)}</div>
+    </div>
+
+    <section class="section-block" id="technical">
+      ${sectionHead('02', '技术研判', '趋势、动量、随机、波动与量价五维度分析，基于日线本地计算')}
+      <div id="technicalSlot">${loadingCard('正在计算多维技术信号…', 4)}</div>
+    </section>
+
+    <section class="section-block" id="derivatives">
+      ${sectionHead('03', '合约与杠杆', '资金费率、持仓量与期现基差；仅覆盖有 U 本位合约的币种')}
+      <div id="cryptoDerivativesBody">${loadingCard('正在获取合约数据…', 3)}</div>
+    </section>
+
+    <section class="section-block" id="onchain">
+      ${sectionHead('04', '情绪与链上', '恐慌贪婪指数与主链 TVL 变化，作为情绪与生态的粗略代理')}
+      <div id="cryptoOnchainBody">${loadingCard('正在获取情绪与链上数据…', 3)}</div>
+    </section>
+
+    <section class="section-block" id="news">
+      ${sectionHead('05', '新闻舆情', '公开中文资讯与关键词情绪，仅代表文本倾向，不代表价格方向')}
+      <div id="newsBody">${loadingCard('正在检索相关新闻…', 4)}</div>
+    </section>
+
+    <p class="analysis-foot crypto-foot">加密行情与 K 线来自 Binance 公开数据镜像，市值与排名来自 CoinLore，合约数据来自 Gate，情绪与链上数据来自 alternative.me 与 DefiLlama。所有数据可能存在延迟、限流或字段缺失，缺失维度直接标注「不可用」并按覆盖率折算。境内虚拟货币相关业务活动属于非法金融活动，本页不提供交易入口，评分不构成任何投资建议。</p>
+  </div>`;
+}
+
+function cryptoHeaderSkeleton(stock) {
+  return `<header class="stock-head">
+    <div class="stock-title">
+      <div class="stock-tags"><span class="badge violet">加密</span><span class="badge">USD 计价</span></div>
+      <h1>${esc(stock.name || stock.code)} <span class="code">${esc(stock.code)}</span></h1>
+      <div class="stock-sub"><span class="spinner" style="width:13px;height:13px;border-width:1.5px"></span>正在获取加密行情…</div>
+    </div>
+    <div class="stock-price"><div class="skeleton" style="width:160px;height:38px;margin-left:auto"></div></div>
+  </header>
+  <div class="metric-strip">
+    ${Array.from({ length: 6 }, () => '<div class="metric"><div class="skeleton" style="height:10px;width:52px"></div><div class="skeleton" style="height:16px;width:78px;margin-top:6px"></div></div>').join('')}
+  </div>`;
+}
+
+function renderCryptoSkeleton(stock) {
+  setViewHTML(cryptoShell(stock));
+  document.title = `${stock.name || stock.code} · 加密研判 · 研值 StockLens`;
+  syncTopbar('analysis');
+}
+
+function cryptoHeader(stock, quote, meta) {
+  const rank = num(meta && meta.rank);
+  const cap = num(meta && meta.marketCap);
+  const circulating = num(meta && meta.circulating);
+  const maxSupply = num(meta && meta.maxSupply);
+  const chain = CRYPTO_CHAINS[stock.code];
+  const supplyText = Number.isFinite(circulating)
+    ? `${fmtCryptoSupply(circulating)}${Number.isFinite(maxSupply) && maxSupply > 0 ? ` / ${fmtCryptoSupply(maxSupply)}` : ''}`
+    : '—';
+  return `<header class="stock-head">
+    <div class="stock-title">
+      <div class="stock-tags">
+        <span class="badge violet">加密</span>
+        ${chain ? `<span class="badge teal">${esc(chain)}</span>` : ''}
+        <span class="badge">7×24 · USD</span>
+      </div>
+      <h1>${esc(quote.name || stock.name)} <span class="code">${esc(stock.code)}</span></h1>
+      <div class="stock-sub">
+        <span>Binance 现货 · USD 计价</span>
+        <span class="mini-sep"></span>
+        <span>${esc(quote.time || '—')}</span>
+        <span class="mini-sep"></span>
+        <span class="source-note" style="margin:0">行情来自 Binance 公开数据镜像</span>
+      </div>
+      <div class="data-status" id="dataStatus">
+        ${statusPill('derivatives', 'loading', '合约 加载中')}
+        ${statusPill('onchain', 'loading', '链上 加载中')}
+        ${statusPill('news', 'loading', '舆情 加载中')}
+      </div>
+    </div>
+    <div class="stock-price">
+      <div class="price-row">
+        <span class="price-main ${pctClass(quote.changePct)}">${fmtCryptoPrice(quote.price)}</span>
+        <span class="price-change ${pctClass(quote.changePct)}">${fmtSigned(quote.change, quote.price < 0.01 ? 8 : quote.price < 1 ? 6 : 2)} · ${fmtPct(quote.changePct)}</span>
+      </div>
+      <div class="price-time">24h 高 ${fmtCryptoPrice(quote.high)} · 低 ${fmtCryptoPrice(quote.low)}</div>
+      <div class="stock-actions no-print">
+        <button class="btn sm watch-btn ${watchlistHas(stock) ? 'on' : ''}" type="button" data-action="watch-toggle" aria-pressed="${watchlistHas(stock)}">${ico('star', 'sm')}${watchlistHas(stock) ? '已自选' : '加自选'}</button>
+        <button class="btn sm" type="button" data-action="copy-link">${ico('share', 'sm')}分享</button>
+        <button class="btn sm" type="button" data-action="refresh">${ico('refresh', 'sm')}刷新</button>
+      </div>
+    </div>
+  </header>
+  <div class="metric-strip">
+    ${metricCell('市值排名', Number.isFinite(rank) ? `#${rank}` : '—')}
+    ${metricCell('总市值', fmtUsdCompact(cap))}
+    ${metricCell('24h 成交额', fmtUsdCompact(quote.amount))}
+    ${metricCell('流通量 / 上限', supplyText)}
+    ${metricCell('24h 最高', fmtCryptoPrice(quote.high))}
+    ${metricCell('24h 最低', fmtCryptoPrice(quote.low))}
+  </div>`;
+}
+
+function renderCryptoHeader(stock, quote, meta) {
+  const box = $('#stockMeta');
+  if (!box) return;
+  box.innerHTML = cryptoHeader(stock, quote, meta);
+  hydrateIcons(box);
+}
+
+/* 因子卡：复用雷达与 dimRow，文案改为加密五维口径 */
+function renderCryptoFactorCard(score) {
+  const explain = score.dims
+    .map(
+      (d) => `<div class="explain-item ${d.available ? '' : 'unavailable'}">
+        <h4>${esc(d.name)} <span>权重 ${d.weight}% · ${d.available ? d.score + ' 分' : '不可用'}</span></h4>
+        ${
+          d.available
+            ? `<ul>${d.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>`
+            : `<p>${esc(d.note)}，该维度不计入综合分。</p>`
+        }
+      </div>`
+    )
+    .join('');
+  const weightLine = CRYPTO_DIM_META.map((d) => `${d.short} ${d.weight}%`).join(' / ');
+  return `<article class="card factor-card">
+    <div class="card-kicker">${ico('target')}加密五维 · 权重与依据</div>
+    <div class="factor-grid">
+      <div class="radar-wrap">${renderRadar(score.dims)}</div>
+      <div class="dims">${score.dims.map(dimRow).join('')}</div>
+    </div>
+    <details class="score-explain" open>
+      <summary>评分依据 <span>可用 ${score.availableCount}/${score.dimCount} 维 · 权重覆盖 ${score.coverage}% · ${score.missing.length ? `缺失 ${esc(score.missing.join('、'))}` : '五维齐全'}</span></summary>
+      <div class="explain-grid">${explain}</div>
+      <p class="inline-note">综合分 = 可用维度加权平均（${weightLine}）× (0.7 + 0.3 × 覆盖率)，缺失维度从权重中剔除并施加覆盖惩罚。加密资产没有财报与机构研报，评分只反映公开行情、衍生品与链上数据，不代表未来涨跌。</p>
+    </details>
+  </article>`;
+}
+
+/* 只更新评分区，不动 K 线容器，避免数据分路到达时图表闪烁 */
+function renderCryptoOverview(score) {
+  const grid = $('#cryptoOverviewGrid');
+  if (!grid) return;
+  grid.innerHTML = `${renderScoreCard(score, score.createdAt)}${renderCryptoFactorCard(score)}`;
+  hydrateIcons(grid);
+}
+
+/* ---------------- 合约面板 ---------------- */
+
+function renderCryptoDerivatives(stock, derivatives, meta) {
+  const body = $('#cryptoDerivativesBody');
+  if (!body) return;
+  if (!derivatives || !Number.isFinite(derivatives.funding)) {
+    updateStatus('derivatives', 'empty', '合约 无数据');
+    body.innerHTML = emptyState({
+      icon: 'pulse',
+      title: '暂无 U 本位合约数据',
+      desc: '该币种在 Gate 没有可用的 USDT 永续合约，合约与杠杆维度不计入综合分，其他维度不受影响。',
+    });
+    return;
+  }
+  const d = derivatives;
+  const cap = num(meta && meta.marketCap);
+  const oiRatio = Number.isFinite(d.oiUsd) && Number.isFinite(cap) && cap > 0 ? (d.oiUsd / cap) * 100 : null;
+  const annual = Number.isFinite(d.funding) ? d.funding * 3 * 365 * 100 : null;
+  const fundCls = d.funding > 0.0004 ? 'down' : d.funding < -0.0004 ? 'up' : 'flat';
+  updateStatus('derivatives', 'ok', '合约 已获取');
+  body.innerHTML = `<div class="crypto-stat-grid">
+    <div class="crypto-stat"><label>资金费率（8h）</label><strong class="${fundCls}">${Number.isFinite(d.funding) ? (d.funding * 100).toFixed(4) + '%' : '—'}</strong><small>年化约 ${Number.isFinite(annual) ? annual.toFixed(2) + '%' : '—'}</small></div>
+    <div class="crypto-stat"><label>标记价格</label><strong>${fmtCryptoPrice(d.mark)}</strong><small>指数价 ${fmtCryptoPrice(d.index)}</small></div>
+    <div class="crypto-stat"><label>期现基差</label><strong class="${Math.abs(d.basisPct || 0) > 1 ? 'down' : 'flat'}">${Number.isFinite(d.basisPct) ? d.basisPct.toFixed(3) + '%' : '—'}</strong><small>|标记价−指数价| / 指数价</small></div>
+    <div class="crypto-stat"><label>持仓量（USD）</label><strong>${fmtUsdCompact(d.oiUsd)}</strong><small>占市值 ${oiRatio !== null ? oiRatio.toFixed(2) + '%' : '—'}</small></div>
+    <div class="crypto-stat"><label>24h 合约成交额</label><strong>${fmtUsdCompact(d.volume24)}</strong><small>${esc(d.contract || '')}</small></div>
+    <div class="crypto-stat"><label>杠杆风险</label><strong class="${oiRatio !== null && oiRatio > 15 ? 'down' : 'flat'}">${oiRatio !== null ? (oiRatio > 15 ? '偏高' : oiRatio > 5 ? '中等' : '温和') : '—'}</strong><small>持仓量 / 市值 &gt;15% 视为高杠杆</small></div>
+  </div>
+  <p class="inline-note">资金费率为正表示多头向空头付费，极端正值往往意味着多头拥挤；为负则相反。持仓量高、基差大时，价格对强制平仓更敏感。合约数据来自 Gate 公开接口，仅作风险参考。</p>`;
+  hydrateIcons(body);
+}
+
+/* ---------------- 情绪与链上面板 ---------------- */
+
+function fngLabel(raw) {
+  const s = String(raw || '');
+  if (/Extreme Fear/i.test(s)) return '极度恐慌';
+  if (/Fear/i.test(s)) return '恐慌';
+  if (/Extreme Greed/i.test(s)) return '极度贪婪';
+  if (/Greed/i.test(s)) return '贪婪';
+  if (/Neutral/i.test(s)) return '中性';
+  return s || '—';
+}
+
+function renderCryptoOnchain(stock, fng, tvl) {
+  const body = $('#cryptoOnchainBody');
+  if (!body) return;
+  const fngCard = fng && Number.isFinite(fng.current)
+    ? `<article class="card crypto-eco-card" id="cryptoFngCard">
+        <div class="card-kicker">${ico('activity')}恐慌贪婪指数 · 逆向参考</div>
+        <div class="crypto-fng-main"><strong class="${fng.current <= 25 ? 'up' : fng.current >= 75 ? 'down' : 'flat'}">${Math.round(fng.current)}</strong><span>/ 100</span><b>${esc(fngLabel(fng.classification))}</b></div>
+        <div class="crypto-spark">${renderSparkline(fng.history)}</div>
+        <p class="inline-note">0–25 极度恐慌、25–45 恐慌、45–55 中性、55–75 贪婪、75–100 极度贪婪。评分采用逆向口径：恐慌偏加分、贪婪偏扣分，但情绪指标不代表价格即将反转。</p>
+      </article>`
+    : `<article class="card crypto-eco-card">
+        <div class="card-kicker">${ico('activity')}恐慌贪婪指数</div>
+        ${emptyState({ icon: 'activity', title: '情绪数据暂不可用', desc: 'alternative.me 接口未返回数据，情绪与生态维度将按不可用处理。' })}
+      </article>`;
+  const tvlCard = tvl
+    ? `<article class="card crypto-eco-card" id="cryptoTvlCard">
+        <div class="card-kicker">${ico('layers')}主链 TVL · ${esc(tvl.chain)}</div>
+        <div class="crypto-fng-main"><strong>${fmtUsdCompact(tvl.current)}</strong><b class="${pctClass(tvl.change30d)}">30日 ${fmtPct(tvl.change30d)}</b></div>
+        <div class="crypto-spark">${renderSparkline(tvl.series)}</div>
+        <p class="inline-note">TVL 为该主链 DeFi 协议锁仓总价值（DefiLlama 口径），反映生态资金规模，不等于该币种市值或价格支撑。</p>
+      </article>`
+    : `<article class="card crypto-eco-card">
+        <div class="card-kicker">${ico('layers')}主链 TVL</div>
+        ${emptyState({
+          icon: 'database',
+          title: '该币种无主链 TVL 映射',
+          desc: '只有具备独立主链生态的资产（如 ETH/BNB/SOL/AVAX/TRX）才有可用的 TVL 数据；其余币种的情绪维度只使用恐慌贪婪指数。',
+        })}
+      </article>`;
+  updateStatus('onchain', fng ? 'ok' : 'empty', fng ? '链上 已获取' : '链上 无数据');
+  body.innerHTML = `<div class="crypto-eco-grid">${fngCard}${tvlCard}</div>`;
+  hydrateIcons(body);
+}
+
+
 /* ===== js/50-main.js ===== */
 /* ============================================================
    App shell — routing, search, orchestration, interactions
@@ -7739,6 +8932,7 @@ const state = {
   },
   search: { items: [], active: -1, query: '', seq: 0 },
   etf: null,
+  crypto: null,
 };
 
 /* ---------------- stock objects ---------------- */
@@ -7750,10 +8944,18 @@ function normalizeStock(input) {
   let quoteKey = s.quoteKey || '';
   let klineCode = s.klineCode || '';
   let name = s.name || code;
-  /* 标的类型：'etf' 走 ETF 专属研判，其余为个股。搜索/榜单/输入已带 kind，这里保留 */
-  let kind = s.kind === 'etf' ? 'etf' : 'stock';
+  /* 标的类型：'etf' 走 ETF 专属研判，'coin' 走加密研判，其余为个股。搜索/榜单/输入已带 kind，这里保留 */
+  let kind = s.kind === 'etf' ? 'etf' : s.kind === 'coin' ? 'coin' : 'stock';
 
-  if (market === 'A') {
+  if (market === 'CRYPTO') {
+    const symbol = (code || rawCode).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15);
+    code = symbol;
+    rawCode = symbol;
+    kind = 'coin';
+    if (!quoteKey) quoteKey = 'crypto:' + symbol;
+    if (!klineCode) klineCode = 'crypto:' + symbol;
+    name = s.name || (typeof CRYPTO_NAMES !== 'undefined' && CRYPTO_NAMES[symbol]) || symbol;
+  } else if (market === 'A') {
     code = code.replace(/\D/g, '').slice(0, 6);
     rawCode = code;
     if (isEtfCode(code)) kind = 'etf'; /* 以代码为准，避免数据集丢失 kind 时误判 */
@@ -7788,7 +8990,10 @@ function stockFromDataset(ds) {
 
 function hashForStock(stock) {
   const raw = stock.market === 'US' ? stock.rawCode || stock.code : stock.code;
-  /* ETF 使用独立路由，与个股研判分流 */
+  /* ETF / 加密使用独立路由，与个股研判分流 */
+  if (stock.kind === 'coin' || stock.market === 'CRYPTO') {
+    return `#/coin/${encodeURIComponent(stock.code)}`;
+  }
   if (stock.kind === 'etf' && stock.market === 'A') {
     return `#/etf/A/${encodeURIComponent(raw)}`;
   }
@@ -7808,6 +9013,15 @@ function lookupKnownStock(market, code) {
 
 function stockFromHash() {
   const hash = location.hash || '';
+  /* 加密独立路由优先识别 */
+  const coinHash = hash.match(/^#\/coin\/([A-Za-z0-9]{2,15})/i);
+  if (coinHash) {
+    const symbol = decodeURIComponent(coinHash[1]).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!symbol) return null;
+    const known = lookupKnownStock('CRYPTO', symbol);
+    if (known) return normalizeCoinStock(known);
+    return normalizeCoinStock({ symbol });
+  }
   /* ETF 独立路由优先识别 */
   const etfHash = hash.match(/^#\/etf\/A\/([^/?#]+)/i);
   if (etfHash) {
@@ -7922,7 +9136,7 @@ function routeFromHash() {
   }
   const stock = stockFromHash();
   if (!stock) {
-    if ((location.hash || '').startsWith('#/stock/') || (location.hash || '').startsWith('#/etf/')) {
+    if ((location.hash || '').startsWith('#/stock/') || (location.hash || '').startsWith('#/etf/') || (location.hash || '').startsWith('#/coin/')) {
       toast('链接中的代码无效，已返回首页', 'error');
       try {
         history.replaceState(null, '', location.pathname + location.search);
@@ -8136,8 +9350,12 @@ function syncEtfScreenerButtons(running) {
 
 /* ---------------- analysis orchestration ---------------- */
 async function analyzeStock(inputStock, opts = {}) {
-  /* ETF 标的统一分流到专属编排（覆盖搜索/榜单/路由/刷新所有入口） */
-  if (normalizeStock(inputStock).kind === 'etf') {
+  /* 加密/ETF 标的统一分流到专属编排（覆盖搜索/榜单/路由/刷新所有入口） */
+  const normalized = normalizeStock(inputStock);
+  if (normalized.kind === 'coin' || normalized.market === 'CRYPTO') {
+    return analyzeCoin(inputStock, opts);
+  }
+  if (normalized.kind === 'etf') {
     return analyzeEtf(inputStock, opts);
   }
   const token = ++state.token;
@@ -8435,6 +9653,147 @@ function maybeRefreshEtfScore(token) {
   state.etf.score = score;
   state.score = score;
   renderEtfOverview(score, state.core.kline);
+}
+
+/* ---------------- 加密研判编排（独立路由 #/coin） ---------------- */
+async function analyzeCoin(inputStock, opts = {}) {
+  const token = ++state.token;
+  const stock = normalizeCoinStock(inputStock);
+  state.route = 'analysis';
+  state.stock = stock;
+  state.quote = null;
+  state.core = {};
+  state.coreSettled = new Set();
+  state.technical = null;
+  state.score = null;
+  state.reports = null;
+  state.profile = null;
+  state.profileReady = false;
+  state.periodKlines = {};
+  state.klinePeriod = 'day';
+  state.crypto = { token, meta: null, derivatives: null, fng: null, tvl: null, btcKline: null, klineReady: false };
+  renderCryptoSkeleton(stock);
+  if (!opts.keepScroll) scrollTopSmooth();
+
+  try {
+    const quote = await getCryptoQuote(stock);
+    if (token !== state.token) return;
+    stock.name = quote.name || stock.name;
+    state.stock = stock;
+    state.quote = quote;
+    addRecent(stock);
+    renderCryptoHeader(stock, quote, null);
+    document.title = `${quote.name} ${stock.code} · 加密研判 · 研值 StockLens`;
+    bindCryptoData(token, stock, quote);
+  } catch (err) {
+    if (token !== state.token) return;
+    renderFatal(stock, '加密行情获取失败：' + quoteErrorText(err));
+    toast('加密行情获取失败：' + quoteErrorText(err), 'error');
+  }
+}
+
+function bindCryptoData(token, stock, quote) {
+  const symbol = stock.code;
+
+  getCryptoMeta(symbol)
+    .then((meta) => {
+      if (token !== state.token) return;
+      state.crypto.meta = meta;
+      renderCryptoHeader(stock, quote, meta);
+      /* 持仓量占市值依赖市值，市值晚到时要重绘合约面板 */
+      if (state.crypto.derivatives) renderCryptoDerivatives(stock, state.crypto.derivatives, meta);
+      maybeRefreshCryptoScore(token);
+    })
+    .catch(() => {
+      if (token !== state.token) return;
+      state.crypto.meta = null;
+      maybeRefreshCryptoScore(token);
+    });
+
+  getCryptoKline(stock, 'day')
+    .then((kline) => {
+      if (token !== state.token) return;
+      state.crypto.klineReady = true;
+      state.periodKlines.day = kline;
+      state.core.kline = kline;
+      state.coreSettled.add('kline');
+      updateChart(kline);
+      const technical = analyzeTechnical(kline && kline.points);
+      state.technical = technical;
+      updateTechnicalSection(technical);
+      maybeRefreshCryptoScore(token);
+    })
+    .catch(() => {
+      if (token !== state.token) return;
+      state.crypto.klineReady = true;
+      state.core.kline = null;
+      state.coreSettled.add('kline');
+      updateChart(null);
+      state.technical = null;
+      updateTechnicalSection(null);
+      maybeRefreshCryptoScore(token);
+    });
+
+  getCryptoDerivatives(symbol)
+    .then((derivatives) => {
+      if (token !== state.token) return;
+      state.crypto.derivatives = derivatives;
+      renderCryptoDerivatives(stock, derivatives, state.crypto.meta);
+      maybeRefreshCryptoScore(token);
+    })
+    .catch(() => {
+      if (token !== state.token) return;
+      state.crypto.derivatives = null;
+      renderCryptoDerivatives(stock, null, state.crypto.meta);
+      maybeRefreshCryptoScore(token);
+    });
+
+  Promise.all([
+    getCryptoFearGreed().catch(() => null),
+    getCryptoChainTvl(symbol).catch(() => null),
+    getCryptoBtcKline().catch(() => null),
+  ]).then(([fng, tvl, btcKline]) => {
+    if (token !== state.token) return;
+    state.crypto.fng = fng;
+    state.crypto.tvl = tvl;
+    state.crypto.btcKline = btcKline;
+    renderCryptoOnchain(stock, fng, tvl);
+    maybeRefreshCryptoScore(token);
+  });
+
+  getNews(stock)
+    .then((news) => {
+      if (token !== state.token) return;
+      state.core.news = news;
+      state.coreSettled.add('news');
+      renderNewsSection(news, 'CRYPTO', {
+        emptyDesc: '新闻接口未返回可展示的结果；加密情绪维度使用恐慌贪婪指数与主链数据，不受新闻缺失影响。',
+      });
+    })
+    .catch(() => {
+      if (token !== state.token) return;
+      state.coreSettled.add('news');
+      renderNewsSection([], 'CRYPTO', {
+        emptyDesc: '新闻接口暂不可用；加密情绪维度使用恐慌贪婪指数与主链数据，不受新闻缺失影响。',
+      });
+    });
+}
+
+function maybeRefreshCryptoScore(token) {
+  if (token !== state.token) return;
+  if (!state.quote || !state.stock || !state.crypto || !state.crypto.klineReady) return;
+  const c = state.crypto;
+  const score = computeCryptoScore({
+    quote: state.quote,
+    kline: state.core.kline,
+    btcKline: c.btcKline,
+    meta: c.meta,
+    derivatives: c.derivatives,
+    fng: c.fng,
+    chainTvl: c.tvl,
+  });
+  state.score = score;
+  renderCryptoOverview(score);
 }
 
 /* ---------------- 自选股清单（FR-6） ---------------- */
