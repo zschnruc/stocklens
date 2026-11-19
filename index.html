@@ -1515,7 +1515,7 @@ html[data-theme="light"] .crypto-risk{background:rgba(169,118,35,.05)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v2.1.0 · 构建于 2026/11/18 11:24:23</p>
+      <p>研值 StockLens v2.2.0 · 构建于 2026/11/18 11:33:36</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -5404,6 +5404,96 @@ const ETF_THEME_HINTS = [
   '恒生', '港股通', '海外', '纳斯达克', '标普', '中概', '央企', '国企', '红利', '价值', '成长',
 ];
 
+/* 首页 ETF 榜行业归并规则（v2.2）：具体主题优先，宽基/风格兜底。
+   同一 key 视为同一行业，榜单只保留当日成交额最大的一只。
+   顺序有意义：越靠前越具体（如「新能源车」先归汽车，「科创芯片」先归半导体）。 */
+const ETF_INDUSTRY_RULES = [
+  ['半导体', ['半导体', '芯片', '集成电路']],
+  ['医药生物', ['医药', '医疗', '创新药', '生物', '中药', '疫苗', 'CXO']],
+  ['证券', ['证券', '券商']],
+  ['银行', ['银行']],
+  ['保险', ['保险']],
+  ['金融', ['金融', '非银']],
+  ['白酒', ['白酒', '酿酒', '酒ETF']],
+  ['食品饮料', ['食品', '饮料', '乳业']],
+  ['消费', ['消费', '家电', '零售', '商贸']],
+  ['军工', ['军工', '国防', '航空', '航天']],
+  ['汽车', ['汽车', '新能源车', '智能车', '车']],
+  ['新能源', ['新能源', '光伏', '储能', '锂电', '电池', '风电', '氢能', '核电']],
+  ['科技', ['科技', '电子', '计算机', '软件', '通信', '5G', '人工智能', 'AI', '云计算', '信创', '数字经济', '机器人', '互联网', '算力']],
+  ['传媒', ['传媒', '游戏', '动漫', '影视', '文娱']],
+  ['教育', ['教育']],
+  ['旅游', ['旅游', '酒店', '免税']],
+  ['农业', ['农业', '养殖', '畜牧', '种业', '饲料']],
+  ['化工', ['化工', '化学']],
+  ['机械', ['机械', '装备']],
+  ['电力公用', ['电力', '公用', '水务', '燃气']],
+  ['基建', ['基建', '建筑']],
+  ['建材', ['建材', '水泥']],
+  ['地产', ['房地产', '地产']],
+  ['煤炭', ['煤炭', '煤']],
+  ['有色', ['有色', '工业金属', '铜', '铝', '稀土']],
+  ['黄金', ['黄金']],
+  ['钢铁', ['钢铁', '钢']],
+  ['石油', ['石油', '油气', '能源']],
+  ['红利', ['红利', '股息']],
+  ['央企国企', ['央企', '国企', '国资']],
+  ['价值', ['价值']],
+  ['成长', ['成长']],
+  ['宽基-沪深300', ['沪深300']],
+  ['宽基-中证500', ['中证500']],
+  ['宽基-中证1000', ['中证1000']],
+  ['宽基-中证2000', ['中证2000']],
+  ['宽基-A500', ['A500']],
+  ['宽基-上证50', ['上证50']],
+  ['宽基-上证180', ['上证180']],
+  ['宽基-上证指数', ['上证指数', '上证综指']],
+  ['宽基-深证100', ['深证100']],
+  ['宽基-创业板50', ['创业板50']],
+  ['宽基-创业板', ['创业板']],
+  ['宽基-科创50', ['科创50']],
+  ['宽基-科创100', ['科创100']],
+  ['宽基-双创', ['双创']],
+  ['港股宽基', ['恒生', '港股', 'H股', '香港']],
+  ['中概', ['中概']],
+  ['美股宽基', ['纳斯达克', '纳指', '标普', '道琼斯']],
+  ['宽基-中证', ['中证']],
+];
+
+/* 首页 ETF 榜候选池：先多取再按行业归并，避免去重后不足 10 只 */
+const ETF_INDUSTRY_POOL = 60;
+
+/* 纯函数：ETF 名称 → 行业归并 key；无法识别返回空串（按独立标的处理，不参与归并） */
+function etfIndustryKey(name) {
+  const src = String(name || '');
+  if (!src) return '';
+  for (const [key, words] of ETF_INDUSTRY_RULES) {
+    if (words.some((w) => src.includes(w))) return key;
+  }
+  return '';
+}
+
+/* 纯函数：同一行业只保留成交额最大的一只，结果按成交额降序截断到 size */
+function dedupeEtfByIndustry(rows, size = ETF_BOARD_SIZE) {
+  const n = Math.max(0, Math.round(Number(size) || 0));
+  const list = (Array.isArray(rows) ? rows : [])
+    .filter(Boolean)
+    .slice()
+    .sort((a, b) => (num(b.amount, 0) || 0) - (num(a.amount, 0) || 0));
+  const seen = new Set();
+  const out = [];
+  for (const s of list) {
+    if (out.length >= n) break;
+    const key = etfIndustryKey(s.name);
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    out.push(s);
+  }
+  return out;
+}
+
 /* ---------------- 数据层 ---------------- */
 
 /* 纯函数：ETF 榜单行 → 带行情的 etf stock 对象
@@ -5451,6 +5541,22 @@ function getEtfBoard(size = ETF_BOARD_SIZE, scope = 'board', force = false) {
       .filter((s) => s && Number.isFinite(s.price))
       .slice(0, n);
   }, force);
+}
+
+/* 首页 ETF 榜候选池（60 只，单次请求）：去重前的大池子，同时供研判页快照匹配 */
+function getEtfIndustryPool(force = false) {
+  return getEtfBoard(ETF_INDUSTRY_POOL, 'industry-pool', force);
+}
+
+/* 首页 ETF 热门榜：候选池按行业归并，同一行业只保留成交额最大的一只 */
+function getEtfIndustryBoard(size = ETF_BOARD_SIZE, force = false) {
+  const n = clamp(Math.round(Number(size) || ETF_BOARD_SIZE), 5, 30);
+  return cached(
+    `etf-industry-board:${n}`,
+    ETF_BOARD_TTL,
+    async () => dedupeEtfByIndustry(await getEtfIndustryPool(force), n),
+    force
+  );
 }
 
 /* 从 ETF 名称推断行业主题词（供行业研报映射，纯函数） */
@@ -6737,7 +6843,7 @@ function homeHTML() {
             <span class="board-ico etf">${ico('layers', 'lg')}</span>
             <div class="board-head-main">
               <h3>行业 ETF 热门榜</h3>
-              <span>沪深场内基金 · 按当日成交额 · 含规模</span>
+              <span>沪深场内基金 · 按成交额 · 同行业仅保留最大</span>
             </div>
             <div class="board-update">
               <span class="board-time" id="etfBoardTime">更新中…</span>
@@ -6953,7 +7059,7 @@ async function loadEtfBoard(force = false) {
   if (!body) return;
   setBoardStatus('etf', 'loading');
   try {
-    const rows = await getEtfBoard(ETF_BOARD_SIZE, 'board', force);
+    const rows = await getEtfIndustryBoard(ETF_BOARD_SIZE, force);
     if (!body.isConnected) return; /* 已离开首页 */
     if (!rows.length) throw new Error('empty');
     body.innerHTML = rows.map((s, i) => etfRowHTML(s, i)).join('');
@@ -9663,9 +9769,9 @@ function goEtf(input) {
   }
 }
 
-/* ETF 榜单/快照指标：从缓存榜单中按代码查找规模与成交额（零新增请求）；找不到时降级 */
+/* ETF 榜单/快照指标：从候选池中按代码查找规模与成交额（零新增请求）；找不到时降级 */
 function findEtfBoardMeta(code) {
-  return getEtfBoard(ETF_BOARD_SIZE)
+  return getEtfIndustryPool()
     .catch(() => [])
     .then((list) => (Array.isArray(list) ? list : []).find((s) => s && s.code === code) || null);
 }
