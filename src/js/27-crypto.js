@@ -162,6 +162,13 @@ function cryptoDateFromMs(ms) {
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
 }
+/* 分钟级 K 线需要时间：UTC 口径与日线保持一致 */
+function cryptoDateTimeFromMs(ms) {
+  const d = new Date(Number(ms));
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${cryptoDateFromMs(ms)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
 function cryptoDateFromSec(sec) {
   return cryptoDateFromMs(Number(sec) * 1000);
 }
@@ -172,11 +179,11 @@ function cryptoTimeText(ms) {
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} UTC`;
 }
 
-function parseCryptoKlines(rows) {
+function parseCryptoKlines(rows, withTime = false) {
   if (!Array.isArray(rows)) return [];
   return rows
     .map((row) => ({
-      date: cryptoDateFromMs(row[0]),
+      date: withTime ? cryptoDateTimeFromMs(row[0]) : cryptoDateFromMs(row[0]),
       open: num(row[1]),
       high: num(row[2]),
       low: num(row[3]),
@@ -264,8 +271,8 @@ function getCryptoQuote(stock) {
   });
 }
 
-const CRYPTO_INTERVAL = { day: '1d', week: '1w', month: '1M' };
-const CRYPTO_KLINE_LIMIT = { day: 320, week: 260, month: 140 };
+const CRYPTO_INTERVAL = { day: '1d', week: '1w', month: '1M', '60m': '1h', '15m': '15m', '5m': '5m' };
+const CRYPTO_KLINE_LIMIT = { day: 320, week: 260, month: 140, '60m': 240, '15m': 240, '5m': 240 };
 
 function getCryptoKline(stock, period = 'day') {
   const p = normalizeKlinePeriod(period);
@@ -273,7 +280,7 @@ function getCryptoKline(stock, period = 'day') {
   return cached(`crypto:kline:${p}:${symbol}`, CRYPTO_TTL.kline, async () => {
     const url = `${CRYPTO_API.binance}/klines?symbol=${symbol}USDT&interval=${CRYPTO_INTERVAL[p]}&limit=${CRYPTO_KLINE_LIMIT[p]}`;
     const rows = await fetchJSON(url, { timeout: 15000 });
-    const points = parseCryptoKlines(rows);
+    const points = parseCryptoKlines(rows, isIntradayPeriod(p));
     if (points.length < 5) throw new Error('加密 K 线数据不足');
     return {
       key: 'crypto:' + symbol,

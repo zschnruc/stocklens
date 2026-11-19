@@ -367,13 +367,30 @@ async function getQuoteBatch(keys) {
 }
 
 /* ---------------- Tencent K-line ---------------- */
-/* K 线周期：同一腾讯接口切换 period 参数（FR-3.2） */
-const KLINE_PERIODS = ['day', 'week', 'month'];
-const KLINE_COUNT = { day: 320, week: 260, month: 140 };
-/* 东财周期参数：101 日 / 102 周 / 103 月 */
-const EM_KLT = { day: 101, week: 102, month: 103 };
+/* K 线周期：同一腾讯接口切换 period 参数（FR-3.2）；v2.3 增加分钟级周期 */
+const KLINE_PERIODS = ['day', 'week', 'month', '60m', '15m', '5m'];
+const INTRADAY_PERIODS = ['60m', '15m', '5m'];
+const KLINE_PERIOD_LABELS = { day: '日K', week: '周K', month: '月K', '60m': '60分', '15m': '15分', '5m': '5分' };
+const KLINE_PERIOD_META = { day: '日K', week: '周K', month: '月K', '60m': '60 分钟', '15m': '15 分钟', '5m': '5 分钟' };
+const KLINE_WINDOW = { day: 240, week: 260, month: 140, '60m': 180, '15m': 180, '5m': 180 };
+const KLINE_COUNT = { day: 320, week: 260, month: 140, '60m': 240, '15m': 240, '5m': 240 };
+/* 东财周期参数：101 日 / 102 周 / 103 月 / 60、15、5 分钟 */
+const EM_KLT = { day: 101, week: 102, month: 103, '60m': 60, '15m': 15, '5m': 5 };
 /* 起始日期：早于所需根数即可，东财按 beg..end 返回区间，取尾部 KLINE_COUNT 根 */
 const EM_BEG = { day: '20230101', week: '20180101', month: '20100101' };
+/* 分钟线按回溯天数动态计算 beg（东财分钟线可用历史有限，取到由接口截断） */
+const EM_BEG_DAYS = { '60m': 200, '15m': 60, '5m': 20 };
+function isIntradayPeriod(period) {
+  return INTRADAY_PERIODS.includes(period);
+}
+function emBegDate(period) {
+  if (EM_BEG[period]) return EM_BEG[period];
+  const days = EM_BEG_DAYS[period] || 30;
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
+}
 
 function normalizeKlinePeriod(period) {
   return KLINE_PERIODS.includes(period) ? period : 'day';
@@ -453,24 +470,27 @@ async function getKline(stock, quote, period = 'day') {
   }
   if (!key) throw new Error('缺少 K 线代码');
   const isUS = stock.market === 'US';
+  const intraday = isIntradayPeriod(p);
   const count = KLINE_COUNT[p] || 320;
   const build = (points, source) => {
     if (points.length < 5) throw new Error('K 线数据不足');
-    /* 技术面指标仅在日线上有意义，周/月只返回原始点供图表使用 */
+    /* 技术面指标仅在日线上有意义，周/月/分钟只返回原始点供图表使用 */
     return { key, period: p, points, metrics: p === 'day' ? klineMetrics(points) : null, source };
   };
   return cached(`kline:${p}:${key}`, TTL.kline, async () => {
-    /* A股/港股主源：东财 push2his 前复权（腾讯 fqkline 已被 WAF 拦截返回 501）。
-       ETF 不做前复权（fqt=0），个股与港股用前复权（fqt=1）。 */
-    if (!isUS) {
+    /* A股/港股/ETF 主源：东财 push2his 前复权（腾讯 fqkline 已被 WAF 拦截返回 501）。
+       美股分钟线同样走东财（日/周/月仍用腾讯）；ETF 不做前复权（fqt=0），个股与港股用前复权（fqt=1）。 */
+    if (!isUS || intraday) {
       try {
+        const secid = isUS ? emUsSecid(stock, quote) : emSecid(stock);
+        if (!secid) throw new Error('缺少 K 线代码');
         const params = new URLSearchParams({
-          secid: emSecid(stock),
+          secid,
           fields1: 'f1,f2,f3,f4,f5,f6',
           fields2: 'f51,f52,f53,f54,f55,f56',
           klt: String(EM_KLT[p]),
           fqt: stock.kind === 'etf' || isEtfCode(stock.code) ? '0' : '1',
-          beg: EM_BEG[p],
+          beg: emBegDate(p),
           end: '20500101',
           lmt: String(count),
         });
@@ -481,9 +501,12 @@ async function getKline(stock, quote, period = 'day') {
           if (points.length >= 5) return build(points, '东方财富');
         }
       } catch (e) {
-        /* 东财不可用则回退腾讯 */
+        /* 东财不可用：分钟线无其他数据源，直接失败；日/周/月回退腾讯 */
+        if (intraday) throw new Error('分时 K 线数据暂不可用');
       }
     }
+    /* 分钟线仅东财提供，走腾讯会拿到错误周期，直接失败避免画错数据 */
+    if (intraday) throw new Error('分时 K 线数据暂不可用');
     /* 回退 / 美股：腾讯 fqkline（美股为 usfqkline）。注：腾讯 A股/港股 fqkline 当前被 WAF 拦截，
        仅在东财异常时才可能失败，保留兜底以便上游恢复后自动可用。 */
     const base = isUS ? API.usKline : API.kline;
@@ -649,6 +672,19 @@ function usSecucode(stock, quote) {
   if (/\.PS$/i.test(raw)) return raw.replace(/\.PS$/i, '.O');
   if (/\.[A-Z]{1,2}$/i.test(raw)) return raw;
   return raw + '.O';
+}
+
+/* 美股东财 secid（分钟线用）：105 纳斯达克 / 106 纽交所 / 107 美交所 */
+const EM_US_MARKET = { OQ: '105', PS: '105', N: '106', NYSE: '106', A: '107', AMEX: '107' };
+function emUsSecid(stock, quote) {
+  const raw = String((quote && quote.rawCode) || (stock && stock.rawCode) || (stock && stock.code) || '')
+    .replace(/^us/i, '')
+    .trim();
+  if (!raw) return '';
+  const m = raw.match(/^([^.]+)(?:\.([A-Z]+))?$/i);
+  const code = (m ? m[1] : raw).toUpperCase();
+  const suffix = (m && m[2] ? m[2] : '').toUpperCase();
+  return `${EM_US_MARKET[suffix] || '105'}.${code}`;
 }
 
 /* 东财美股财报为长表：每行一个科目，按 REPORT（如 2026/FY）分组后透视 */

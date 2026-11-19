@@ -990,7 +990,7 @@ function switchKlinePeriod(period) {
     .catch(() => {
       /* FR-3.6：周/月获取失败降级回日K */
       if (token !== state.token) return;
-      toast(`${p === 'week' ? '周' : '月'}K 数据获取失败，已切回日K`, 'error');
+      toast(`${KLINE_PERIOD_META[p] || 'K 线'}数据获取失败，已切回日K`, 'error');
       state.klinePeriod = 'day';
       if (dayK) updateChart(dayK);
       else updateChart(null);

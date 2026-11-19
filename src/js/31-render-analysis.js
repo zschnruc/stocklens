@@ -315,10 +315,10 @@ function renderScoreCard(score, createdAt) {
 
 function chartPeriodTabs() {
   const cur = state.klinePeriod || 'day';
-  return `<div class="kline-tabs" role="tablist" aria-label="K 线周期">${[['day', '日K'], ['week', '周K'], ['month', '月K']]
+  return `<div class="kline-tabs" role="tablist" aria-label="K 线周期">${KLINE_PERIODS
     .map(
-      ([p, label]) =>
-        `<button class="kline-tab ${cur === p ? 'active' : ''}" type="button" role="tab" aria-selected="${cur === p}" data-action="kline-period" data-period="${p}">${label}</button>`
+      (p) =>
+        `<button class="kline-tab ${cur === p ? 'active' : ''}" type="button" role="tab" aria-selected="${cur === p}" title="${KLINE_PERIOD_META[p] || p}" data-action="kline-period" data-period="${p}">${KLINE_PERIOD_LABELS[p] || p}</button>`
     )
     .join('')}</div>`;
 }
@@ -381,17 +381,20 @@ function renderChartSection(kline) {
   const m = dayK && dayK.metrics;
   const pts = kline.points;
   const period = kline.period || 'day';
-  const periodLabel = { day: '日K', week: '周K', month: '月K' }[period] || '日K';
+  const intraday = isIntradayPeriod(period);
+  const periodLabel = KLINE_PERIOD_META[period] || '日K';
   const first = pts[0];
   const last = pts[pts.length - 1];
   /* FR-3.6：蜡烛渲染条件不满足时降级为原有 sparkline */
   const anchors = targetAnchors();
   const chartKey = `${(state.stock && state.stock.market) || 'X'}_${(state.stock && state.stock.code) || 'x'}_${period}`;
   const isCoin = !!(state.stock && (state.stock.kind === 'coin' || state.stock.market === 'CRYPTO'));
+  const isEtf = !!(state.stock && (state.stock.kind === 'etf' || isEtfCode(state.stock.code || '')));
+  const adjusted = !isCoin && !isEtf;
   const candles = renderCandlestick(pts, {
     key: chartKey,
     period,
-    window: period === 'day' ? 240 : period === 'week' ? 260 : 140,
+    window: KLINE_WINDOW[period] || 240,
     sub: state.subChart || 'volume',
     boll: !!state.bollOn,
     targets: anchors,
@@ -414,8 +417,8 @@ function renderChartSection(kline) {
     <div>
       <div class="chart-head"><strong>${isCoin ? '价格 K 线' : '股价 K 线'}</strong>${chartPeriodTabs()}${chartZoomControls(pts.length)}
         <span class="kline-legend" aria-hidden="true"><i class="ma20"></i>MA20<i class="ma60"></i>MA60</span>
-        <span class="kline-meta" data-role="kline-range">${esc(fmtDate(first.date))} — ${esc(fmtDate(last.date))} · ${pts.length} 根</span>
-        <span class="kline-meta">${period === 'day' && !isCoin ? '前复权 · ' : ''}${periodLabel}${isCoin ? ' · UTC' : ''}</span></div>
+        <span class="kline-meta" data-role="kline-range">${esc(fmtDate(first.date, intraday))} — ${esc(fmtDate(last.date, intraday))} · ${pts.length} 根</span>
+        <span class="kline-meta">${adjusted ? '前复权 · ' : ''}${periodLabel}${isCoin ? ' · UTC' : ''}</span></div>
       ${chartSubControls(pts.length)}
       ${anchors ? '<span class="kline-note">目标价为研报发布口径，前复权 K 线在最新交易日与实际价格基本一致</span>' : ''}
       ${chartBody}

@@ -211,6 +211,11 @@ function candlePriceDigits(lo, hi) {
 }
 
 function candleDateLabel(date, period) {
+  if (isIntradayPeriod(period)) {
+    const raw = String(date || '');
+    const m = raw.match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+    return m ? `${m[2]}-${m[3]} ${m[4]}:${m[5]}` : raw;
+  }
   const s = fmtDate(date);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   return period === 'month' ? s.slice(2, 7) : s.slice(5);
@@ -514,12 +519,13 @@ function buildCandle(rows, opts = {}) {
     sub: subOk ? sub : 'volume',
     subSeries,
     boll,
-    range: { first: pts[0].date, last: pts[n - 1].date, count: n },
+    range: { first: pts[0].date, last: pts[n - 1].date, count: n, period: opts.period || '' },
   });
 
   const subKey = subOk ? sub : 'volume';
   const subLabel = (KLINE_SUBS.find((s) => s.key === subKey) || {}).label || '量';
-  const aria = `K 线图：${n} 根蜡烛，${fmtDate(pts[0].date)} 至 ${fmtDate(pts[n - 1].date)}，副图 ${subLabel}${
+  const intraday = isIntradayPeriod(opts.period);
+  const aria = `K 线图：${n} 根蜡烛，${fmtDate(pts[0].date, intraday)} 至 ${fmtDate(pts[n - 1].date, intraday)}，副图 ${subLabel}${
     boll ? '，叠加布林带' : ''
   }`;
 
@@ -528,7 +534,7 @@ function buildCandle(rows, opts = {}) {
     width: g.width,
     height: g.height,
     aria,
-    range: { first: pts[0].date, last: pts[n - 1].date, count: n },
+    range: { first: pts[0].date, last: pts[n - 1].date, count: n, period: opts.period || '' },
     zoomable: rows.length > CANDLE_MIN_BARS,
     inner: `${ticks}<line class="candle-axis" x1="${axisX}" y1="${g.mainTop}" x2="${axisX}" y2="${g.axisBottom}"/>${bollSvg}<path class="candle-ma ma60" d="${ma60Path}"></path><path class="candle-ma ma20" d="${ma20Path}"></path>${candles}${anchorsSvg}${subSep}${subSvg}${latestSvg}${dateIdx}<line class="candle-cross-v" data-role="v" x1="0" y1="${g.mainTop}" x2="0" y2="${g.axisBottom}" style="display:none"></line><line class="candle-cross-h" data-role="h" x1="${g.padL}" y1="0" x2="${axisX}" y2="0" style="display:none"></line><g class="candle-yp" data-role="yp" style="display:none"><rect x="${axisX + 1}" y="-7" width="${
       g.padR - 4
@@ -590,7 +596,8 @@ function updateCandleRangeLabel(host, built) {
   const card = host && host.closest('.chart-card');
   const el = card && card.querySelector('[data-role="kline-range"]');
   if (!el || !built.range) return;
-  el.textContent = `${fmtDate(built.range.first)} — ${fmtDate(built.range.last)} · ${built.range.count} 根`;
+  const intraday = isIntradayPeriod(built.range.period);
+  el.textContent = `${fmtDate(built.range.first, intraday)} — ${fmtDate(built.range.last, intraday)} · ${built.range.count} 根`;
 }
 
 /* 工具条 / 双击共用的按钮入口（FR-13.2） */

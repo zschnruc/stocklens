@@ -494,6 +494,30 @@ function auditCandlestick(html, expectBars) {
   check('评分返回可用维度数与总维度数', usScore.availableCount === 3 && usScore.dimCount === 4 && usScore.coverage === 70);
   check('非 A 股评分附带跨市场不可直接比较提示', /请勿与 A 股评分直接比较高低/.test(usScore.desc));
 
+  console.log('K 线分钟级周期（v2.3，离线纯函数）');
+  check('周期归一化支持分钟线', normalizeKlinePeriod('5m') === '5m' && normalizeKlinePeriod('15m') === '15m' && normalizeKlinePeriod('60m') === '60m');
+  check('非法周期回退日线', normalizeKlinePeriod('30m') === 'day');
+  check('isIntradayPeriod 识别分钟线', isIntradayPeriod('5m') && isIntradayPeriod('60m') && !isIntradayPeriod('day'));
+  check('东财分钟参数与默认窗口', EM_KLT['60m'] === 60 && EM_KLT['5m'] === 5 && KLINE_COUNT['5m'] === 240 && KLINE_WINDOW['15m'] === 180);
+  check('分钟线 beg 为 8 位日期', /^\d{8}$/.test(emBegDate('5m')) && /^\d{8}$/.test(emBegDate('day')));
+  check('美股东财 secid 映射市场号', emUsSecid({ rawCode: 'AAPL.OQ' }) === '105.AAPL' && emUsSecid({ rawCode: 'BABA.N' }) === '106.BABA' && emUsSecid({ code: 'NVDA' }) === '105.NVDA');
+  check('分钟刻度显示月日与时间', candleDateLabel('2026-11-19 09:35', '5m') === '11-19 09:35' && candleDateLabel('2026-11-19', 'day') === '11-19');
+  check('区间时间格式化为完整日期时间', fmtDate('2026-11-19 09:35', true) === '2026-11-19 09:35');
+  const cryptoMin = parseCryptoKlines([[Date.UTC(2026, 10, 19, 9, 35), '1', '1.1', '0.9', '1.05', '10']], true);
+  check('加密分钟线日期带 UTC 时间', cryptoMin[0] && cryptoMin[0].date === '2026-11-19 09:35');
+  const cryptoDay = parseCryptoKlines([[Date.UTC(2026, 10, 19, 9, 35), '1', '1.1', '0.9', '1.05', '10']]);
+  check('加密日线日期保持纯日期', cryptoDay[0] && cryptoDay[0].date === '2026-11-19');
+  const intraRows = Array.from({ length: 30 }, (_, i) => ({
+    date: `2026-11-19 ${String(9 + Math.floor(i / 12)).padStart(2, '0')}:${String((i % 12) * 5).padStart(2, '0')}`,
+    open: 10,
+    close: 10.1,
+    high: 10.2,
+    low: 9.9,
+    volume: 100 + i,
+  }));
+  const intraHtml = renderCandlestick(intraRows, { period: '5m', width: 660, window: 30 });
+  check('分钟线渲染带时间刻度与完整区间', intraHtml.includes('11-19 09:00') && /K 线图：[^"]*2026-11-19 09:00/.test(intraHtml));
+
   console.log('K 线视图窗口（v1.9，离线纯函数）');
   const vz = candleClampView({ count: 500, endOffset: -3 }, 240, 120);
   check('视图窗口 count 夹取到数据长度', vz.count === 240 && vz.endOffset === 0);
