@@ -375,15 +375,13 @@ function computeEtfScore({ quote, kline, technical, fundamentals, boardMeta } = 
   });
   const available = dims.filter((d) => d.available);
   const weightSum = available.reduce((a, d) => a + d.weight, 0);
-  const coverage = Math.round(weightSum); // 权重合计即 100，coverage 直接等于 weightSum
+  const cov = coverageMeta(Math.round(weightSum)); // 权重合计即 100，覆盖度直接等于 weightSum
+  const coverage = cov.coverage;
   let total = null;
   if (weightSum > 0) {
-    total = Math.round(available.reduce((a, d) => a + d.score * d.weight, 0) / weightSum);
-    /* 低覆盖惩罚：缺失维度越多，越压低总分，避免「两维缺失仍满分」 */
-    if (coverage < 100) {
-      const factor = 0.6 + 0.4 * (coverage / 100);
-      total = Math.round(total * factor);
-    }
+    const weighted = available.reduce((a, d) => a + d.score * d.weight, 0) / weightSum;
+    /* FR-18.4：与个股 / 加密共用同一覆盖度折算 */
+    total = Math.round(weighted * cov.factor);
   }
   const verdict = verdictFor(total === null ? 0 : total);
   const sorted = available.slice().sort((a, b) => b.score - a.score);
@@ -393,13 +391,14 @@ function computeEtfScore({ quote, kline, technical, fundamentals, boardMeta } = 
     }）。`;
   }
   if (coverage < 100) {
-    desc += `当前数据覆盖 ${coverage}%，缺失维度已计入覆盖惩罚。`;
+    desc += `当前数据覆盖 ${coverage}%，缺失维度已按覆盖度折算。`;
   }
   return {
     total,
     verdict,
     dims,
     coverage,
+    comparable: cov.comparable,
     desc,
     missing: dims.filter((d) => !d.available).map((d) => d.short),
     createdAt: new Date(),

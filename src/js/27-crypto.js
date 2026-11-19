@@ -575,8 +575,9 @@ function scoreCryptoVolatility(kline) {
     return { available: false, note: '波动率数据不足', reasons: [] };
   }
   const volS = cryptoVolScore(m.vol30);
+  /* FR-18.2：band 按阈值降序匹配，回撤越深得分越低；<10% 视为极浅回撤给 98 分 */
   const mddS = Number.isFinite(m.maxDrawdown90)
-    ? band(m.maxDrawdown90, [[10, 96], [20, 88], [35, 76], [50, 58], [65, 40], [80, 24]], 12)
+    ? band(m.maxDrawdown90, [[80, 24], [65, 40], [50, 58], [35, 76], [20, 88], [10, 96]], 98)
     : null;
   const atrS = Number.isFinite(m.atrPct)
     ? band(m.atrPct, [[12, 50], [9, 66], [6, 88], [4, 92], [2.5, 82], [1.5, 66]], 40)
@@ -705,12 +706,13 @@ function computeCryptoScore({ quote, kline, btcKline, meta, derivatives, fng, ch
   });
   const available = dims.filter((d) => d.available);
   const weightSum = available.reduce((a, d) => a + d.weight, 0);
-  const coverage = Math.round(weightSum);
+  const cov = coverageMeta(weightSum);
+  const coverage = cov.coverage;
   let total = null;
   if (weightSum > 0) {
     const weighted = available.reduce((a, d) => a + d.score * d.weight, 0) / weightSum;
-    const factor = 0.7 + 0.3 * (coverage / 100);
-    total = clamp(Math.round(weighted * factor), 0, 100);
+    /* FR-18.4：与个股 / ETF 共用同一覆盖度折算 */
+    total = clamp(Math.round(weighted * cov.factor), 0, 100);
   }
   const verdict = cryptoVerdict(total === null ? 0 : total);
   const sorted = available.slice().sort((a, b) => b.score - a.score);
@@ -718,12 +720,13 @@ function computeCryptoScore({ quote, kline, btcKline, meta, derivatives, fng, ch
   if (sorted.length >= 2) {
     desc += `最强项为${sorted[0].name}（${sorted[0].score}），最弱项为${sorted[sorted.length - 1].name}（${sorted[sorted.length - 1].score}）。`;
   }
-  if (coverage < 100) desc += `当前权重覆盖 ${coverage}%，缺失维度已计入覆盖惩罚。`;
+  if (coverage < 100) desc += `当前权重覆盖 ${coverage}%，缺失维度已按覆盖度折算。`;
   return {
     total,
     verdict,
     dims,
     coverage,
+    comparable: cov.comparable,
     availableCount: available.length,
     dimCount: dims.length,
     desc,

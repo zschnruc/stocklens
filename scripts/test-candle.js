@@ -393,10 +393,10 @@ function auditCandlestick(html, expectBars) {
     fng: { current: 20, classification: 'Fear' },
     chainTvl: { change30d: 20, current: 1e11, chain: 'Ethereum' },
   });
-  check('加密五维齐全时覆盖率 100 且总分有效', fullCoin.coverage === 100 && fullCoin.availableCount === 5 && fullCoin.total > 0 && fullCoin.total <= 100);
+  check('加密五维齐全时覆盖率 100 且总分有效', fullCoin.coverage === 100 && fullCoin.availableCount === 5 && fullCoin.total > 0 && fullCoin.total <= 100 && fullCoin.comparable === true);
   const thinCoin = computeCryptoScore({ quote: { amount: 1e7 }, kline: coinKline, meta: null });
   const thinWeighted = thinCoin.dims.filter((d) => d.available).reduce((a, d) => a + d.score * d.weight, 0) / thinCoin.coverage;
-  check('加密低覆盖时施加 0.7+0.3×覆盖率惩罚', thinCoin.coverage === 65 && thinCoin.total === Math.round(thinWeighted * 0.895));
+  check('加密低覆盖时施加统一 0.6+0.4×覆盖率折算', thinCoin.coverage === 65 && thinCoin.total === Math.round(thinWeighted * 0.86) && thinCoin.comparable === false);
   check('加密缺失维度被标记且不出现 NaN', thinCoin.coverage < 100 && thinCoin.missing.length === 2 && Number.isFinite(thinCoin.total));
   check('USD 大数缩写格式', fmtUsdCompact(1.28e12) === '$1.28T' && fmtUsdCompact(2.5e9) === '$2.50B');
   check('加密榜默认取前 10', CRYPTO_BOARD_SIZE === 10);
@@ -517,6 +517,62 @@ function auditCandlestick(html, expectBars) {
   }));
   const intraHtml = renderCandlestick(intraRows, { period: '5m', width: 660, window: 30 });
   check('分钟线渲染带时间刻度与完整区间', intraHtml.includes('11-19 09:00') && /K 线图：[^"]*2026-11-19 09:00/.test(intraHtml));
+
+  console.log('评分数学口径（v2.4，离线纯函数）');
+  const unratedReports = scoreReports(
+    { market: 'A', reports: { list: Array.from({ length: 16 }, (_, i) => ({ title: 't' + i, rawDate: '2026-11-01', ratingScore: null, target: null })) } },
+    { price: 100 }
+  );
+  check('研报无评级时按有值项归一分母（不再腰斩到 40）', unratedReports.score === 100 && unratedReports.reasons.join('').includes('评级子项不计入'));
+  const ratedReports = scoreReports(
+    { market: 'A', reports: { list: Array.from({ length: 16 }, (_, i) => ({ title: 't' + i, rawDate: '2026-11-01', ratingScore: 0.8, target: null })) } },
+    { price: 100 }
+  );
+  check('研报有评级无目标价按 0.75 分母归一', ratedReports.score === 88);
+  const mddLow = scoreCryptoVolatility({ metrics: { vol30: 60, maxDrawdown90: 10, atrPct: 5 } }).score;
+  const mddMid = scoreCryptoVolatility({ metrics: { vol30: 60, maxDrawdown90: 30, atrPct: 5 } }).score;
+  const mddTiny = scoreCryptoVolatility({ metrics: { vol30: 60, maxDrawdown90: 5, atrPct: 5 } }).score;
+  const mddHigh = scoreCryptoVolatility({ metrics: { vol30: 60, maxDrawdown90: 80, atrPct: 5 } }).score;
+  check('加密回撤越深得分越低', mddLow > mddMid && mddMid > mddHigh && mddHigh < 70);
+  check('极浅回撤不再落入 12 分低分兜底', mddTiny >= mddLow);
+  const slopeCloses = Array.from({ length: 100 }, (_, i) => 100 + i);
+  const slopeRows = slopeCloses.map((c) => ({ date: '2026-01-01', open: c, close: c, high: c, low: c, volume: 1 }));
+  const slopeTrend = techTrend(slopeRows);
+  const meanOf = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const expSlope20 = (meanOf(slopeCloses.slice(-20)) / meanOf(slopeCloses.slice(-40, -20)) - 1) * 100;
+  const expSlope60 = (meanOf(slopeCloses.slice(-60)) / meanOf(slopeCloses.slice(-80, -20)) - 1) * 100;
+  check('MA20 斜率使用完整 20 日窗口', Math.abs(slopeTrend.metrics.slope20 - expSlope20) < 1e-9);
+  check('MA60 斜率使用完整 60 日窗口', Math.abs(slopeTrend.metrics.slope60 - expSlope60) < 1e-9);
+  const shortTrend = techTrend(slopeRows.slice(-70));
+  check('60–79 根数据时斜率护栏生效', shortTrend.available === true && shortTrend.metrics.slope60 === 0);
+  check('覆盖度折算三套评分共用同一系数', coverageFactor(100) === 1 && coverageFactor(45) === 0.78 && coverageMeta(75).comparable === false && coverageMeta(100).comparable === true);
+  const partialScore = computeScore({
+    market: 'US',
+    quote: { price: 100 },
+    kline: { metrics: { r20: 8, r60: 20, r120: 40, trend: '多头排列', maxDrawdown: -6, ma20: 95, ma60: 90, volatility: 0.3 } },
+    reports: { list: [] },
+    financials: { supported: false },
+    news: Array.from({ length: 8 }, () => ({ title: '公司业绩增长超预期 创新高', date: '2026-11-01' })),
+  });
+  check('个股覆盖不足时标记不可比', partialScore.coverage === 45 && partialScore.comparable === false);
+  const partialEtf = computeEtfScore({
+    quote: { price: 1 },
+    kline: {},
+    technical: { consensus: { available: true, score: 80 }, dims: [{ available: true, dir: 'bullish' }] },
+    fundamentals: null,
+    boardMeta: null,
+  });
+  check('ETF 评分返回 comparable 且覆盖不足为 false', partialEtf.comparable === false && partialEtf.coverage < 100);
+  const partialCrypto = computeCryptoScore({
+    quote: { price: 1, volume: 5e8 },
+    kline: { metrics: { vol30: 60, maxDrawdown90: 20, atrPct: 5, r7: 1, r30: 2, r90: 3 } },
+    btcKline: { metrics: { r7: 1, r30: 2, r90: 3 } },
+    meta: { marketCap: 1e9, rank: 50 },
+    derivatives: null,
+    fng: null,
+    chainTvl: null,
+  });
+  check('加密评分返回 comparable 且覆盖不足为 false', partialCrypto.comparable === false && partialCrypto.total !== null);
 
   console.log('K 线视图窗口（v1.9，离线纯函数）');
   const vz = candleClampView({ count: 500, endOffset: -3 }, 240, 120);

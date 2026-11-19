@@ -111,7 +111,7 @@ function etfScreenerRowHTML(row, threshold) {
       <span class="verdict-pill ${verdict.cls}">${esc(verdict.label)}</span>
     </td>
     <td class="sr-dims">${dimCells || '<span class="muted">—</span>'}</td>
-    <td class="sr-cover"><span class="badge ${score.coverage === 100 ? 'teal' : ''}">${Number.isFinite(score.coverage) ? score.coverage + '%' : '—'}</span></td>
+    <td class="sr-cover"><span class="badge ${score.coverage === 100 ? 'teal' : ''}" title="${score.coverage === 100 ? '权重覆盖 100%' : `权重覆盖 ${score.coverage}% · 综合分已按覆盖度折算，不宜横向比较`}">${Number.isFinite(score.coverage) ? score.coverage + '%' : '—'}</span></td>
     <td class="sr-action"><button class="btn sm" type="button" data-action="etf-screener-open">查看研判 ${ico('arrow', 'sm')}</button></td>
   </tr>`;
 }

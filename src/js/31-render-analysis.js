@@ -285,7 +285,7 @@ function renderFactorCard(score) {
     <details class="score-explain" open>
       <summary>评分依据 <span>可用 ${availCount}/${dimCount} 维 · 权重覆盖 ${score.coverage}% · ${score.missing.length ? `缺失 ${esc(score.missing.join('、'))}` : '四维齐全'}</span></summary>
       <div class="explain-grid">${explain}</div>
-      <p class="inline-note">综合分 = 可用维度加权平均（研报 30% / 盈利 25% / 技术 25% / 舆情 20%），缺失维度从权重中剔除。评级、目标价、财务与情绪均来自公开数据，不做主观填充。</p>
+      <p class="inline-note">综合分 = 可用维度加权平均（研报 30% / 盈利 25% / 技术 25% / 舆情 20%），缺失维度从权重中剔除，再乘以覆盖度折算系数（0.6 + 0.4 × 覆盖度）。评级、目标价、财务与情绪均来自公开数据，不做主观填充。</p>
     </details>
   </article>`;
 }
@@ -298,14 +298,14 @@ function renderScoreCard(score, createdAt) {
   const coverageText =
     score.coverage === 100
       ? `${dimCount} 维数据齐全`
-      : `可用 ${availCount}/${dimCount} 维 · 缺失 ${score.missing.join('、')}`;
+      : `可用 ${availCount}/${dimCount} 维 · 缺失 ${score.missing.join('、')} · 已按覆盖度折算`;
   return `<aside class="card score-card">
     <div class="card-kicker">${ico('spark')}综合研判</div>
     ${renderGauge(score.total, score.verdict, score.coverage)}
     <p class="score-desc">${esc(score.desc)}</p>
     <div class="score-foot">
       <span class="confidence">${ico('shield', 'sm')}<span>权重覆盖 <b>${score.coverage}%</b><br>${esc(coverageText)}</span></span>
-      <span class="score-mini-bars" title="权重覆盖 ${score.coverage}%">${renderScoreMiniBars(score.coverage)}</span>
+      <span class="score-mini-bars" title="${score.coverage === 100 ? '权重覆盖 100%' : `权重覆盖 ${score.coverage}% · 综合分已按覆盖度折算`}">${renderScoreMiniBars(score.coverage)}</span>
     </div>
     <div class="score-updated">更新于 ${esc(
       createdAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })

@@ -29,6 +29,17 @@ function band(value, rows, fallback = 50) {
   return fallback;
 }
 
+/* 覆盖度统一口径（FR-18.4）：缺失维度越多，折算系数越低。
+   个股 / ETF / 加密共用，保证跨市场标签含义一致；仅覆盖 100% 时视为可比。 */
+function coverageFactor(coverage) {
+  const c = clamp(Number(coverage) || 0, 0, 100);
+  return 0.6 + 0.4 * (c / 100);
+}
+function coverageMeta(coverage) {
+  const c = Math.round(clamp(Number(coverage) || 0, 0, 100));
+  return { coverage: c, comparable: c >= 100, factor: coverageFactor(c) };
+}
+
 function growthScore(v) {
   return band(v, [
     [50, 100], [30, 94], [20, 86], [10, 76], [5, 68], [0, 56], [-10, 38], [-25, 24],
@@ -115,13 +126,22 @@ function scoreReports(data, quote) {
     ], 22);
   }
 
-  let sum = coverage * 0.3 + (rating !== null ? rating * 0.45 : 0);
-  let weight = 0.75;
+  /* FR-18.1：有值才计入权重，避免评级缺失时把已得分子按 0.75 分母稀释 */
+  let sum = 0;
+  let weight = 0;
+  if (Number.isFinite(coverage)) {
+    sum += coverage * 0.3;
+    weight += 0.3;
+  }
+  if (rating !== null) {
+    sum += rating * 0.45;
+    weight += 0.45;
+  }
   if (targetScore !== null) {
     sum += targetScore * 0.25;
     weight += 0.25;
   }
-  const score = Math.round(sum / weight);
+  const score = weight > 0 ? Math.round(sum / weight) : null;
   const reasons = [`近 6 个月共 ${list.length} 篇研报，覆盖度打分 ${coverage}。`];
   if (rated.length) {
     reasons.push(`已评级 ${rated.length} 篇：买入/增持 ${buys} 篇，中性 ${neutrals} 篇，减持/卖出 ${sells} 篇；按近 30 天加权，评级均值 ${Math.round(rating)}。`);
@@ -242,11 +262,14 @@ function computeScore({ market, quote, kline, reports, financials, news }) {
   });
   const available = dims.filter((d) => d.available);
   const weightSum = available.reduce((a, d) => a + d.weight, 0);
+  const cov = coverageMeta(Math.round((weightSum / 100) * 100));
+  const coverage = cov.coverage;
   let total = null;
   if (weightSum > 0) {
-    total = Math.round(available.reduce((a, d) => a + d.score * d.weight, 0) / weightSum);
+    const weighted = available.reduce((a, d) => a + d.score * d.weight, 0) / weightSum;
+    /* FR-18.4：与 ETF / 加密共用同一覆盖度折算，覆盖不足不再与满覆盖同分同标签 */
+    total = Math.round(weighted * cov.factor);
   }
-  const coverage = Math.round((weightSum / 100) * 100);
   const availableCount = available.length;
   const dimCount = dims.length;
   const verdict = verdictFor(total === null ? 0 : total);
@@ -258,7 +281,7 @@ function computeScore({ market, quote, kline, reports, financials, news }) {
     }）。`;
   }
   if (coverage < 100) {
-    desc += `当前可用 ${availableCount}/${dimCount} 个维度、权重覆盖 ${coverage}%，缺失维度已从权重中剔除。`;
+    desc += `当前可用 ${availableCount}/${dimCount} 个维度、权重覆盖 ${coverage}%，缺失维度已从权重中剔除并按覆盖度折算。`;
     if (market !== 'A') {
       desc += '港美股缺少免费中文研报等维度，分数仅在可用维度内可比，请勿与 A 股评分直接比较高低。';
     }
@@ -268,6 +291,7 @@ function computeScore({ market, quote, kline, reports, financials, news }) {
     verdict,
     dims,
     coverage,
+    comparable: cov.comparable,
     availableCount,
     dimCount,
     market,

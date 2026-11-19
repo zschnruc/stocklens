@@ -41,8 +41,11 @@ function techTrend(rows) {
   const last = closes[n - 1];
   const ma = (len) => closes.slice(-len).reduce((a, b) => a + b, 0) / len;
   const ma5 = ma(5), ma10 = ma(10), ma20 = ma(20), ma60 = ma(60);
-  const ma20Prev = (closes.slice(-25, -5).reduce((a, b) => a + b, 0)) / 20;
-  const ma60Prev = (closes.slice(-65, -45).reduce((a, b) => a + b, 0)) / 20;
+  /* FR-18.3：斜率用「当前均值 vs 20 个交易日前结束的完整窗口均值」，
+     50 日前的 slice(-25,-5) 会与当前 MA20 重叠 15 根，60 日窗口也不能只用 20 根样本。 */
+  const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const ma20Prev = n >= 40 ? mean(closes.slice(-40, -20)) : ma20;
+  const ma60Prev = n >= 80 ? mean(closes.slice(-80, -20)) : ma60;
   const slope20 = (ma20 / ma20Prev - 1) * 100;
   const slope60 = (ma60 / ma60Prev - 1) * 100;
   const dev20 = (last / ma20 - 1) * 100;
