@@ -655,9 +655,9 @@ function goEtf(input) {
   }
 }
 
-/* ETF 榜单/快照指标：从缓存榜单中按代码查找规模与成交额（零新增请求）；找不到时降级 */
+/* ETF 榜单/快照指标：从候选池中按代码查找规模与成交额（零新增请求）；找不到时降级 */
 function findEtfBoardMeta(code) {
-  return getEtfBoard(ETF_BOARD_SIZE)
+  return getEtfIndustryPool()
     .catch(() => [])
     .then((list) => (Array.isArray(list) ? list : []).find((s) => s && s.code === code) || null);
 }

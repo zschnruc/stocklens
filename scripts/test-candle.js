@@ -285,6 +285,29 @@ function auditCandlestick(html, expectBars) {
   check('ETF 低覆盖施加惩罚（总分显著低于满分）', thinEtf.total === null || thinEtf.total <= 85);
   check('ETF 缺数据标记覆盖不足与缺失维度', thinEtf.coverage < 100 && thinEtf.missing.length > 0);
 
+  console.log('首页 ETF 榜行业去重（v2.2，离线纯函数）');
+  check('半导体与芯片归为同一行业', etfIndustryKey('半导体ETF国联安') === '半导体' && etfIndustryKey('芯片ETF') === '半导体');
+  check('科创芯片优先归半导体', etfIndustryKey('科创芯片ETF') === '半导体');
+  check('新能源车归汽车、新能源归新能源', etfIndustryKey('新能源车ETF') === '汽车' && etfIndustryKey('新能源ETF') === '新能源');
+  check('宽基与风格按指数/风格归并', etfIndustryKey('沪深300ETF') === '宽基-沪深300' && etfIndustryKey('红利ETF') === '红利');
+  check('主题优先于宽基（创业板算力/创业板50）', etfIndustryKey('创业板算力ETF') === '科技' && etfIndustryKey('创业板50ETF') === '宽基-创业板50' && etfIndustryKey('创业板ETF') === '宽基-创业板');
+  check('上证指数与上证50分开归并', etfIndustryKey('上证指数ETF') === '宽基-上证指数' && etfIndustryKey('上证50ETF') === '宽基-上证50');
+  check('无法识别主题返回空 key', etfIndustryKey('某主题ETF') === '');
+  const dupEtfRows = [
+    { code: '512480', name: '半导体ETF', amount: 9e8 },
+    { code: '159995', name: '芯片ETF', amount: 1.2e9 },
+    { code: '510300', name: '沪深300ETF', amount: 5e9 },
+    { code: '510050', name: '上证50ETF', amount: 4e9 },
+    { code: '512690', name: '酒ETF', amount: 3e8 },
+    { code: '600001', name: '某主题ETF', amount: 1e8 },
+    { code: '600002', name: '另一主题ETF', amount: 2e8 },
+  ];
+  const dedupedEtf = dedupeEtfByIndustry(dupEtfRows, 10);
+  check('同行业只保留成交额最大者', dedupedEtf.some((s) => s.code === '159995') && !dedupedEtf.some((s) => s.code === '512480'));
+  check('行业去重后保持成交额降序', dedupedEtf.every((s, i) => i === 0 || dedupedEtf[i - 1].amount >= s.amount));
+  check('无法识别行业按独立标的保留', dedupedEtf.some((s) => s.code === '600001') && dedupedEtf.some((s) => s.code === '600002'));
+  check('行业去重结果按 size 截断', dedupeEtfByIndustry(dupEtfRows, 3).length === 3);
+
   console.log('ETF 高分榜（v1.7，离线纯函数）');
   /* 候选用同一 ETF 榜单解析，强制 kind=etf 以便 stockDataset 路由到 /etf */
   const screenCand = normalizeEtfRow({ f12: '512480', f13: 1, f14: '半导体ETF', f2: '0.9', f6: '9e8', f20: '2e10' });

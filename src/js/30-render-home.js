@@ -226,7 +226,7 @@ function homeHTML() {
             <span class="board-ico etf">${ico('layers', 'lg')}</span>
             <div class="board-head-main">
               <h3>行业 ETF 热门榜</h3>
-              <span>沪深场内基金 · 按当日成交额 · 含规模</span>
+              <span>沪深场内基金 · 按成交额 · 同行业仅保留最大</span>
             </div>
             <div class="board-update">
               <span class="board-time" id="etfBoardTime">更新中…</span>
@@ -442,7 +442,7 @@ async function loadEtfBoard(force = false) {
   if (!body) return;
   setBoardStatus('etf', 'loading');
   try {
-    const rows = await getEtfBoard(ETF_BOARD_SIZE, 'board', force);
+    const rows = await getEtfIndustryBoard(ETF_BOARD_SIZE, force);
     if (!body.isConnected) return; /* 已离开首页 */
     if (!rows.length) throw new Error('empty');
     body.innerHTML = rows.map((s, i) => etfRowHTML(s, i)).join('');
