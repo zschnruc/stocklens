@@ -1515,7 +1515,7 @@ html[data-theme="light"] .crypto-risk{background:rgba(169,118,35,.05)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v2.2.0 · 构建于 2026/11/18 11:33:36</p>
+      <p>研值 StockLens v2.3.0 · 构建于 2026/11/19 09:08:37</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -2305,13 +2305,30 @@ async function getQuoteBatch(keys) {
 }
 
 /* ---------------- Tencent K-line ---------------- */
-/* K 线周期：同一腾讯接口切换 period 参数（FR-3.2） */
-const KLINE_PERIODS = ['day', 'week', 'month'];
-const KLINE_COUNT = { day: 320, week: 260, month: 140 };
-/* 东财周期参数：101 日 / 102 周 / 103 月 */
-const EM_KLT = { day: 101, week: 102, month: 103 };
+/* K 线周期：同一腾讯接口切换 period 参数（FR-3.2）；v2.3 增加分钟级周期 */
+const KLINE_PERIODS = ['day', 'week', 'month', '60m', '15m', '5m'];
+const INTRADAY_PERIODS = ['60m', '15m', '5m'];
+const KLINE_PERIOD_LABELS = { day: '日K', week: '周K', month: '月K', '60m': '60分', '15m': '15分', '5m': '5分' };
+const KLINE_PERIOD_META = { day: '日K', week: '周K', month: '月K', '60m': '60 分钟', '15m': '15 分钟', '5m': '5 分钟' };
+const KLINE_WINDOW = { day: 240, week: 260, month: 140, '60m': 180, '15m': 180, '5m': 180 };
+const KLINE_COUNT = { day: 320, week: 260, month: 140, '60m': 240, '15m': 240, '5m': 240 };
+/* 东财周期参数：101 日 / 102 周 / 103 月 / 60、15、5 分钟 */
+const EM_KLT = { day: 101, week: 102, month: 103, '60m': 60, '15m': 15, '5m': 5 };
 /* 起始日期：早于所需根数即可，东财按 beg..end 返回区间，取尾部 KLINE_COUNT 根 */
 const EM_BEG = { day: '20230101', week: '20180101', month: '20100101' };
+/* 分钟线按回溯天数动态计算 beg（东财分钟线可用历史有限，取到由接口截断） */
+const EM_BEG_DAYS = { '60m': 200, '15m': 60, '5m': 20 };
+function isIntradayPeriod(period) {
+  return INTRADAY_PERIODS.includes(period);
+}
+function emBegDate(period) {
+  if (EM_BEG[period]) return EM_BEG[period];
+  const days = EM_BEG_DAYS[period] || 30;
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
+}
 
 function normalizeKlinePeriod(period) {
   return KLINE_PERIODS.includes(period) ? period : 'day';
@@ -2391,24 +2408,27 @@ async function getKline(stock, quote, period = 'day') {
   }
   if (!key) throw new Error('缺少 K 线代码');
   const isUS = stock.market === 'US';
+  const intraday = isIntradayPeriod(p);
   const count = KLINE_COUNT[p] || 320;
   const build = (points, source) => {
     if (points.length < 5) throw new Error('K 线数据不足');
-    /* 技术面指标仅在日线上有意义，周/月只返回原始点供图表使用 */
+    /* 技术面指标仅在日线上有意义，周/月/分钟只返回原始点供图表使用 */
     return { key, period: p, points, metrics: p === 'day' ? klineMetrics(points) : null, source };
   };
   return cached(`kline:${p}:${key}`, TTL.kline, async () => {
-    /* A股/港股主源：东财 push2his 前复权（腾讯 fqkline 已被 WAF 拦截返回 501）。
-       ETF 不做前复权（fqt=0），个股与港股用前复权（fqt=1）。 */
-    if (!isUS) {
+    /* A股/港股/ETF 主源：东财 push2his 前复权（腾讯 fqkline 已被 WAF 拦截返回 501）。
+       美股分钟线同样走东财（日/周/月仍用腾讯）；ETF 不做前复权（fqt=0），个股与港股用前复权（fqt=1）。 */
+    if (!isUS || intraday) {
       try {
+        const secid = isUS ? emUsSecid(stock, quote) : emSecid(stock);
+        if (!secid) throw new Error('缺少 K 线代码');
         const params = new URLSearchParams({
-          secid: emSecid(stock),
+          secid,
           fields1: 'f1,f2,f3,f4,f5,f6',
           fields2: 'f51,f52,f53,f54,f55,f56',
           klt: String(EM_KLT[p]),
           fqt: stock.kind === 'etf' || isEtfCode(stock.code) ? '0' : '1',
-          beg: EM_BEG[p],
+          beg: emBegDate(p),
           end: '20500101',
           lmt: String(count),
         });
@@ -2419,9 +2439,12 @@ async function getKline(stock, quote, period = 'day') {
           if (points.length >= 5) return build(points, '东方财富');
         }
       } catch (e) {
-        /* 东财不可用则回退腾讯 */
+        /* 东财不可用：分钟线无其他数据源，直接失败；日/周/月回退腾讯 */
+        if (intraday) throw new Error('分时 K 线数据暂不可用');
       }
     }
+    /* 分钟线仅东财提供，走腾讯会拿到错误周期，直接失败避免画错数据 */
+    if (intraday) throw new Error('分时 K 线数据暂不可用');
     /* 回退 / 美股：腾讯 fqkline（美股为 usfqkline）。注：腾讯 A股/港股 fqkline 当前被 WAF 拦截，
        仅在东财异常时才可能失败，保留兜底以便上游恢复后自动可用。 */
     const base = isUS ? API.usKline : API.kline;
@@ -2587,6 +2610,19 @@ function usSecucode(stock, quote) {
   if (/\.PS$/i.test(raw)) return raw.replace(/\.PS$/i, '.O');
   if (/\.[A-Z]{1,2}$/i.test(raw)) return raw;
   return raw + '.O';
+}
+
+/* 美股东财 secid（分钟线用）：105 纳斯达克 / 106 纽交所 / 107 美交所 */
+const EM_US_MARKET = { OQ: '105', PS: '105', N: '106', NYSE: '106', A: '107', AMEX: '107' };
+function emUsSecid(stock, quote) {
+  const raw = String((quote && quote.rawCode) || (stock && stock.rawCode) || (stock && stock.code) || '')
+    .replace(/^us/i, '')
+    .trim();
+  if (!raw) return '';
+  const m = raw.match(/^([^.]+)(?:\.([A-Z]+))?$/i);
+  const code = (m ? m[1] : raw).toUpperCase();
+  const suffix = (m && m[2] ? m[2] : '').toUpperCase();
+  return `${EM_US_MARKET[suffix] || '105'}.${code}`;
 }
 
 /* 东财美股财报为长表：每行一个科目，按 REPORT（如 2026/FY）分组后透视 */
@@ -4027,6 +4063,11 @@ function candlePriceDigits(lo, hi) {
 }
 
 function candleDateLabel(date, period) {
+  if (isIntradayPeriod(period)) {
+    const raw = String(date || '');
+    const m = raw.match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+    return m ? `${m[2]}-${m[3]} ${m[4]}:${m[5]}` : raw;
+  }
   const s = fmtDate(date);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   return period === 'month' ? s.slice(2, 7) : s.slice(5);
@@ -4330,12 +4371,13 @@ function buildCandle(rows, opts = {}) {
     sub: subOk ? sub : 'volume',
     subSeries,
     boll,
-    range: { first: pts[0].date, last: pts[n - 1].date, count: n },
+    range: { first: pts[0].date, last: pts[n - 1].date, count: n, period: opts.period || '' },
   });
 
   const subKey = subOk ? sub : 'volume';
   const subLabel = (KLINE_SUBS.find((s) => s.key === subKey) || {}).label || '量';
-  const aria = `K 线图：${n} 根蜡烛，${fmtDate(pts[0].date)} 至 ${fmtDate(pts[n - 1].date)}，副图 ${subLabel}${
+  const intraday = isIntradayPeriod(opts.period);
+  const aria = `K 线图：${n} 根蜡烛，${fmtDate(pts[0].date, intraday)} 至 ${fmtDate(pts[n - 1].date, intraday)}，副图 ${subLabel}${
     boll ? '，叠加布林带' : ''
   }`;
 
@@ -4344,7 +4386,7 @@ function buildCandle(rows, opts = {}) {
     width: g.width,
     height: g.height,
     aria,
-    range: { first: pts[0].date, last: pts[n - 1].date, count: n },
+    range: { first: pts[0].date, last: pts[n - 1].date, count: n, period: opts.period || '' },
     zoomable: rows.length > CANDLE_MIN_BARS,
     inner: `${ticks}<line class="candle-axis" x1="${axisX}" y1="${g.mainTop}" x2="${axisX}" y2="${g.axisBottom}"/>${bollSvg}<path class="candle-ma ma60" d="${ma60Path}"></path><path class="candle-ma ma20" d="${ma20Path}"></path>${candles}${anchorsSvg}${subSep}${subSvg}${latestSvg}${dateIdx}<line class="candle-cross-v" data-role="v" x1="0" y1="${g.mainTop}" x2="0" y2="${g.axisBottom}" style="display:none"></line><line class="candle-cross-h" data-role="h" x1="${g.padL}" y1="0" x2="${axisX}" y2="0" style="display:none"></line><g class="candle-yp" data-role="yp" style="display:none"><rect x="${axisX + 1}" y="-7" width="${
       g.padR - 4
@@ -4406,7 +4448,8 @@ function updateCandleRangeLabel(host, built) {
   const card = host && host.closest('.chart-card');
   const el = card && card.querySelector('[data-role="kline-range"]');
   if (!el || !built.range) return;
-  el.textContent = `${fmtDate(built.range.first)} — ${fmtDate(built.range.last)} · ${built.range.count} 根`;
+  const intraday = isIntradayPeriod(built.range.period);
+  el.textContent = `${fmtDate(built.range.first, intraday)} — ${fmtDate(built.range.last, intraday)} · ${built.range.count} 根`;
 }
 
 /* 工具条 / 双击共用的按钮入口（FR-13.2） */
@@ -6023,6 +6066,13 @@ function cryptoDateFromMs(ms) {
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
 }
+/* 分钟级 K 线需要时间：UTC 口径与日线保持一致 */
+function cryptoDateTimeFromMs(ms) {
+  const d = new Date(Number(ms));
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${cryptoDateFromMs(ms)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
 function cryptoDateFromSec(sec) {
   return cryptoDateFromMs(Number(sec) * 1000);
 }
@@ -6033,11 +6083,11 @@ function cryptoTimeText(ms) {
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} UTC`;
 }
 
-function parseCryptoKlines(rows) {
+function parseCryptoKlines(rows, withTime = false) {
   if (!Array.isArray(rows)) return [];
   return rows
     .map((row) => ({
-      date: cryptoDateFromMs(row[0]),
+      date: withTime ? cryptoDateTimeFromMs(row[0]) : cryptoDateFromMs(row[0]),
       open: num(row[1]),
       high: num(row[2]),
       low: num(row[3]),
@@ -6125,8 +6175,8 @@ function getCryptoQuote(stock) {
   });
 }
 
-const CRYPTO_INTERVAL = { day: '1d', week: '1w', month: '1M' };
-const CRYPTO_KLINE_LIMIT = { day: 320, week: 260, month: 140 };
+const CRYPTO_INTERVAL = { day: '1d', week: '1w', month: '1M', '60m': '1h', '15m': '15m', '5m': '5m' };
+const CRYPTO_KLINE_LIMIT = { day: 320, week: 260, month: 140, '60m': 240, '15m': 240, '5m': 240 };
 
 function getCryptoKline(stock, period = 'day') {
   const p = normalizeKlinePeriod(period);
@@ -6134,7 +6184,7 @@ function getCryptoKline(stock, period = 'day') {
   return cached(`crypto:kline:${p}:${symbol}`, CRYPTO_TTL.kline, async () => {
     const url = `${CRYPTO_API.binance}/klines?symbol=${symbol}USDT&interval=${CRYPTO_INTERVAL[p]}&limit=${CRYPTO_KLINE_LIMIT[p]}`;
     const rows = await fetchJSON(url, { timeout: 15000 });
-    const points = parseCryptoKlines(rows);
+    const points = parseCryptoKlines(rows, isIntradayPeriod(p));
     if (points.length < 5) throw new Error('加密 K 线数据不足');
     return {
       key: 'crypto:' + symbol,
@@ -7544,10 +7594,10 @@ function renderScoreCard(score, createdAt) {
 
 function chartPeriodTabs() {
   const cur = state.klinePeriod || 'day';
-  return `<div class="kline-tabs" role="tablist" aria-label="K 线周期">${[['day', '日K'], ['week', '周K'], ['month', '月K']]
+  return `<div class="kline-tabs" role="tablist" aria-label="K 线周期">${KLINE_PERIODS
     .map(
-      ([p, label]) =>
-        `<button class="kline-tab ${cur === p ? 'active' : ''}" type="button" role="tab" aria-selected="${cur === p}" data-action="kline-period" data-period="${p}">${label}</button>`
+      (p) =>
+        `<button class="kline-tab ${cur === p ? 'active' : ''}" type="button" role="tab" aria-selected="${cur === p}" title="${KLINE_PERIOD_META[p] || p}" data-action="kline-period" data-period="${p}">${KLINE_PERIOD_LABELS[p] || p}</button>`
     )
     .join('')}</div>`;
 }
@@ -7610,17 +7660,20 @@ function renderChartSection(kline) {
   const m = dayK && dayK.metrics;
   const pts = kline.points;
   const period = kline.period || 'day';
-  const periodLabel = { day: '日K', week: '周K', month: '月K' }[period] || '日K';
+  const intraday = isIntradayPeriod(period);
+  const periodLabel = KLINE_PERIOD_META[period] || '日K';
   const first = pts[0];
   const last = pts[pts.length - 1];
   /* FR-3.6：蜡烛渲染条件不满足时降级为原有 sparkline */
   const anchors = targetAnchors();
   const chartKey = `${(state.stock && state.stock.market) || 'X'}_${(state.stock && state.stock.code) || 'x'}_${period}`;
   const isCoin = !!(state.stock && (state.stock.kind === 'coin' || state.stock.market === 'CRYPTO'));
+  const isEtf = !!(state.stock && (state.stock.kind === 'etf' || isEtfCode(state.stock.code || '')));
+  const adjusted = !isCoin && !isEtf;
   const candles = renderCandlestick(pts, {
     key: chartKey,
     period,
-    window: period === 'day' ? 240 : period === 'week' ? 260 : 140,
+    window: KLINE_WINDOW[period] || 240,
     sub: state.subChart || 'volume',
     boll: !!state.bollOn,
     targets: anchors,
@@ -7643,8 +7696,8 @@ function renderChartSection(kline) {
     <div>
       <div class="chart-head"><strong>${isCoin ? '价格 K 线' : '股价 K 线'}</strong>${chartPeriodTabs()}${chartZoomControls(pts.length)}
         <span class="kline-legend" aria-hidden="true"><i class="ma20"></i>MA20<i class="ma60"></i>MA60</span>
-        <span class="kline-meta" data-role="kline-range">${esc(fmtDate(first.date))} — ${esc(fmtDate(last.date))} · ${pts.length} 根</span>
-        <span class="kline-meta">${period === 'day' && !isCoin ? '前复权 · ' : ''}${periodLabel}${isCoin ? ' · UTC' : ''}</span></div>
+        <span class="kline-meta" data-role="kline-range">${esc(fmtDate(first.date, intraday))} — ${esc(fmtDate(last.date, intraday))} · ${pts.length} 根</span>
+        <span class="kline-meta">${adjusted ? '前复权 · ' : ''}${periodLabel}${isCoin ? ' · UTC' : ''}</span></div>
       ${chartSubControls(pts.length)}
       ${anchors ? '<span class="kline-note">目标价为研报发布口径，前复权 K 线在最新交易日与实际价格基本一致</span>' : ''}
       ${chartBody}
@@ -10104,7 +10157,7 @@ function switchKlinePeriod(period) {
     .catch(() => {
       /* FR-3.6：周/月获取失败降级回日K */
       if (token !== state.token) return;
-      toast(`${p === 'week' ? '周' : '月'}K 数据获取失败，已切回日K`, 'error');
+      toast(`${KLINE_PERIOD_META[p] || 'K 线'}数据获取失败，已切回日K`, 'error');
       state.klinePeriod = 'day';
       if (dayK) updateChart(dayK);
       else updateChart(null);
