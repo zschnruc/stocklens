@@ -1515,7 +1515,7 @@ html[data-theme="light"] .crypto-risk{background:rgba(169,118,35,.05)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v2.3.0 · 构建于 2026/11/19 09:08:37</p>
+      <p>研值 StockLens v2.4.0 · 构建于 2026/11/19 10:01:27</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -3580,6 +3580,17 @@ function band(value, rows, fallback = 50) {
   return fallback;
 }
 
+/* 覆盖度统一口径（FR-18.4）：缺失维度越多，折算系数越低。
+   个股 / ETF / 加密共用，保证跨市场标签含义一致；仅覆盖 100% 时视为可比。 */
+function coverageFactor(coverage) {
+  const c = clamp(Number(coverage) || 0, 0, 100);
+  return 0.6 + 0.4 * (c / 100);
+}
+function coverageMeta(coverage) {
+  const c = Math.round(clamp(Number(coverage) || 0, 0, 100));
+  return { coverage: c, comparable: c >= 100, factor: coverageFactor(c) };
+}
+
 function growthScore(v) {
   return band(v, [
     [50, 100], [30, 94], [20, 86], [10, 76], [5, 68], [0, 56], [-10, 38], [-25, 24],
@@ -3666,13 +3677,22 @@ function scoreReports(data, quote) {
     ], 22);
   }
 
-  let sum = coverage * 0.3 + (rating !== null ? rating * 0.45 : 0);
-  let weight = 0.75;
+  /* FR-18.1：有值才计入权重，避免评级缺失时把已得分子按 0.75 分母稀释 */
+  let sum = 0;
+  let weight = 0;
+  if (Number.isFinite(coverage)) {
+    sum += coverage * 0.3;
+    weight += 0.3;
+  }
+  if (rating !== null) {
+    sum += rating * 0.45;
+    weight += 0.45;
+  }
   if (targetScore !== null) {
     sum += targetScore * 0.25;
     weight += 0.25;
   }
-  const score = Math.round(sum / weight);
+  const score = weight > 0 ? Math.round(sum / weight) : null;
   const reasons = [`近 6 个月共 ${list.length} 篇研报，覆盖度打分 ${coverage}。`];
   if (rated.length) {
     reasons.push(`已评级 ${rated.length} 篇：买入/增持 ${buys} 篇，中性 ${neutrals} 篇，减持/卖出 ${sells} 篇；按近 30 天加权，评级均值 ${Math.round(rating)}。`);
@@ -3793,11 +3813,14 @@ function computeScore({ market, quote, kline, reports, financials, news }) {
   });
   const available = dims.filter((d) => d.available);
   const weightSum = available.reduce((a, d) => a + d.weight, 0);
+  const cov = coverageMeta(Math.round((weightSum / 100) * 100));
+  const coverage = cov.coverage;
   let total = null;
   if (weightSum > 0) {
-    total = Math.round(available.reduce((a, d) => a + d.score * d.weight, 0) / weightSum);
+    const weighted = available.reduce((a, d) => a + d.score * d.weight, 0) / weightSum;
+    /* FR-18.4：与 ETF / 加密共用同一覆盖度折算，覆盖不足不再与满覆盖同分同标签 */
+    total = Math.round(weighted * cov.factor);
   }
-  const coverage = Math.round((weightSum / 100) * 100);
   const availableCount = available.length;
   const dimCount = dims.length;
   const verdict = verdictFor(total === null ? 0 : total);
@@ -3809,7 +3832,7 @@ function computeScore({ market, quote, kline, reports, financials, news }) {
     }）。`;
   }
   if (coverage < 100) {
-    desc += `当前可用 ${availableCount}/${dimCount} 个维度、权重覆盖 ${coverage}%，缺失维度已从权重中剔除。`;
+    desc += `当前可用 ${availableCount}/${dimCount} 个维度、权重覆盖 ${coverage}%，缺失维度已从权重中剔除并按覆盖度折算。`;
     if (market !== 'A') {
       desc += '港美股缺少免费中文研报等维度，分数仅在可用维度内可比，请勿与 A 股评分直接比较高低。';
     }
@@ -3819,6 +3842,7 @@ function computeScore({ market, quote, kline, reports, financials, news }) {
     verdict,
     dims,
     coverage,
+    comparable: cov.comparable,
     availableCount,
     dimCount,
     market,
@@ -4928,8 +4952,11 @@ function techTrend(rows) {
   const last = closes[n - 1];
   const ma = (len) => closes.slice(-len).reduce((a, b) => a + b, 0) / len;
   const ma5 = ma(5), ma10 = ma(10), ma20 = ma(20), ma60 = ma(60);
-  const ma20Prev = (closes.slice(-25, -5).reduce((a, b) => a + b, 0)) / 20;
-  const ma60Prev = (closes.slice(-65, -45).reduce((a, b) => a + b, 0)) / 20;
+  /* FR-18.3：斜率用「当前均值 vs 20 个交易日前结束的完整窗口均值」，
+     50 日前的 slice(-25,-5) 会与当前 MA20 重叠 15 根，60 日窗口也不能只用 20 根样本。 */
+  const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const ma20Prev = n >= 40 ? mean(closes.slice(-40, -20)) : ma20;
+  const ma60Prev = n >= 80 ? mean(closes.slice(-80, -20)) : ma60;
   const slope20 = (ma20 / ma20Prev - 1) * 100;
   const slope60 = (ma60 / ma60Prev - 1) * 100;
   const dev20 = (last / ma20 - 1) * 100;
@@ -5789,15 +5816,13 @@ function computeEtfScore({ quote, kline, technical, fundamentals, boardMeta } = 
   });
   const available = dims.filter((d) => d.available);
   const weightSum = available.reduce((a, d) => a + d.weight, 0);
-  const coverage = Math.round(weightSum); // 权重合计即 100，coverage 直接等于 weightSum
+  const cov = coverageMeta(Math.round(weightSum)); // 权重合计即 100，覆盖度直接等于 weightSum
+  const coverage = cov.coverage;
   let total = null;
   if (weightSum > 0) {
-    total = Math.round(available.reduce((a, d) => a + d.score * d.weight, 0) / weightSum);
-    /* 低覆盖惩罚：缺失维度越多，越压低总分，避免「两维缺失仍满分」 */
-    if (coverage < 100) {
-      const factor = 0.6 + 0.4 * (coverage / 100);
-      total = Math.round(total * factor);
-    }
+    const weighted = available.reduce((a, d) => a + d.score * d.weight, 0) / weightSum;
+    /* FR-18.4：与个股 / 加密共用同一覆盖度折算 */
+    total = Math.round(weighted * cov.factor);
   }
   const verdict = verdictFor(total === null ? 0 : total);
   const sorted = available.slice().sort((a, b) => b.score - a.score);
@@ -5807,13 +5832,14 @@ function computeEtfScore({ quote, kline, technical, fundamentals, boardMeta } = 
     }）。`;
   }
   if (coverage < 100) {
-    desc += `当前数据覆盖 ${coverage}%，缺失维度已计入覆盖惩罚。`;
+    desc += `当前数据覆盖 ${coverage}%，缺失维度已按覆盖度折算。`;
   }
   return {
     total,
     verdict,
     dims,
     coverage,
+    comparable: cov.comparable,
     desc,
     missing: dims.filter((d) => !d.available).map((d) => d.short),
     createdAt: new Date(),
@@ -6479,8 +6505,9 @@ function scoreCryptoVolatility(kline) {
     return { available: false, note: '波动率数据不足', reasons: [] };
   }
   const volS = cryptoVolScore(m.vol30);
+  /* FR-18.2：band 按阈值降序匹配，回撤越深得分越低；<10% 视为极浅回撤给 98 分 */
   const mddS = Number.isFinite(m.maxDrawdown90)
-    ? band(m.maxDrawdown90, [[10, 96], [20, 88], [35, 76], [50, 58], [65, 40], [80, 24]], 12)
+    ? band(m.maxDrawdown90, [[80, 24], [65, 40], [50, 58], [35, 76], [20, 88], [10, 96]], 98)
     : null;
   const atrS = Number.isFinite(m.atrPct)
     ? band(m.atrPct, [[12, 50], [9, 66], [6, 88], [4, 92], [2.5, 82], [1.5, 66]], 40)
@@ -6609,12 +6636,13 @@ function computeCryptoScore({ quote, kline, btcKline, meta, derivatives, fng, ch
   });
   const available = dims.filter((d) => d.available);
   const weightSum = available.reduce((a, d) => a + d.weight, 0);
-  const coverage = Math.round(weightSum);
+  const cov = coverageMeta(weightSum);
+  const coverage = cov.coverage;
   let total = null;
   if (weightSum > 0) {
     const weighted = available.reduce((a, d) => a + d.score * d.weight, 0) / weightSum;
-    const factor = 0.7 + 0.3 * (coverage / 100);
-    total = clamp(Math.round(weighted * factor), 0, 100);
+    /* FR-18.4：与个股 / ETF 共用同一覆盖度折算 */
+    total = clamp(Math.round(weighted * cov.factor), 0, 100);
   }
   const verdict = cryptoVerdict(total === null ? 0 : total);
   const sorted = available.slice().sort((a, b) => b.score - a.score);
@@ -6622,12 +6650,13 @@ function computeCryptoScore({ quote, kline, btcKline, meta, derivatives, fng, ch
   if (sorted.length >= 2) {
     desc += `最强项为${sorted[0].name}（${sorted[0].score}），最弱项为${sorted[sorted.length - 1].name}（${sorted[sorted.length - 1].score}）。`;
   }
-  if (coverage < 100) desc += `当前权重覆盖 ${coverage}%，缺失维度已计入覆盖惩罚。`;
+  if (coverage < 100) desc += `当前权重覆盖 ${coverage}%，缺失维度已按覆盖度折算。`;
   return {
     total,
     verdict,
     dims,
     coverage,
+    comparable: cov.comparable,
     availableCount: available.length,
     dimCount: dims.length,
     desc,
@@ -7564,7 +7593,7 @@ function renderFactorCard(score) {
     <details class="score-explain" open>
       <summary>评分依据 <span>可用 ${availCount}/${dimCount} 维 · 权重覆盖 ${score.coverage}% · ${score.missing.length ? `缺失 ${esc(score.missing.join('、'))}` : '四维齐全'}</span></summary>
       <div class="explain-grid">${explain}</div>
-      <p class="inline-note">综合分 = 可用维度加权平均（研报 30% / 盈利 25% / 技术 25% / 舆情 20%），缺失维度从权重中剔除。评级、目标价、财务与情绪均来自公开数据，不做主观填充。</p>
+      <p class="inline-note">综合分 = 可用维度加权平均（研报 30% / 盈利 25% / 技术 25% / 舆情 20%），缺失维度从权重中剔除，再乘以覆盖度折算系数（0.6 + 0.4 × 覆盖度）。评级、目标价、财务与情绪均来自公开数据，不做主观填充。</p>
     </details>
   </article>`;
 }
@@ -7577,14 +7606,14 @@ function renderScoreCard(score, createdAt) {
   const coverageText =
     score.coverage === 100
       ? `${dimCount} 维数据齐全`
-      : `可用 ${availCount}/${dimCount} 维 · 缺失 ${score.missing.join('、')}`;
+      : `可用 ${availCount}/${dimCount} 维 · 缺失 ${score.missing.join('、')} · 已按覆盖度折算`;
   return `<aside class="card score-card">
     <div class="card-kicker">${ico('spark')}综合研判</div>
     ${renderGauge(score.total, score.verdict, score.coverage)}
     <p class="score-desc">${esc(score.desc)}</p>
     <div class="score-foot">
       <span class="confidence">${ico('shield', 'sm')}<span>权重覆盖 <b>${score.coverage}%</b><br>${esc(coverageText)}</span></span>
-      <span class="score-mini-bars" title="权重覆盖 ${score.coverage}%">${renderScoreMiniBars(score.coverage)}</span>
+      <span class="score-mini-bars" title="${score.coverage === 100 ? '权重覆盖 100%' : `权重覆盖 ${score.coverage}% · 综合分已按覆盖度折算`}">${renderScoreMiniBars(score.coverage)}</span>
     </div>
     <div class="score-updated">更新于 ${esc(
       createdAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -8379,7 +8408,7 @@ function screenerRowHTML(row, threshold) {
       <span class="verdict-pill ${verdict.cls}">${esc(verdict.label)}</span>
     </td>
     <td class="sr-dims">${dimCells || '<span class="muted">—</span>'}</td>
-    <td class="sr-cover"><span class="badge ${score.coverage === 100 ? 'teal' : ''}">${Number.isFinite(score.coverage) ? score.coverage + '%' : '—'}</span></td>
+    <td class="sr-cover"><span class="badge ${score.coverage === 100 ? 'teal' : ''}" title="${score.coverage === 100 ? '权重覆盖 100%' : `权重覆盖 ${score.coverage}% · 综合分已按覆盖度折算，不宜横向比较`}">${Number.isFinite(score.coverage) ? score.coverage + '%' : '—'}</span></td>
     <td class="sr-action"><button class="btn sm" type="button" data-action="screener-open">查看研判 ${ico('arrow', 'sm')}</button></td>
   </tr>`;
 }
@@ -8806,7 +8835,7 @@ function etfScreenerRowHTML(row, threshold) {
       <span class="verdict-pill ${verdict.cls}">${esc(verdict.label)}</span>
     </td>
     <td class="sr-dims">${dimCells || '<span class="muted">—</span>'}</td>
-    <td class="sr-cover"><span class="badge ${score.coverage === 100 ? 'teal' : ''}">${Number.isFinite(score.coverage) ? score.coverage + '%' : '—'}</span></td>
+    <td class="sr-cover"><span class="badge ${score.coverage === 100 ? 'teal' : ''}" title="${score.coverage === 100 ? '权重覆盖 100%' : `权重覆盖 ${score.coverage}% · 综合分已按覆盖度折算，不宜横向比较`}">${Number.isFinite(score.coverage) ? score.coverage + '%' : '—'}</span></td>
     <td class="sr-action"><button class="btn sm" type="button" data-action="etf-screener-open">查看研判 ${ico('arrow', 'sm')}</button></td>
   </tr>`;
 }
