@@ -1460,6 +1460,71 @@ html[data-theme="light"] .crypto-risk{background:rgba(169,118,35,.05)}
   .crypto-risk{font-size:11px;padding:10px 12px}
 }
 
+
+/* ===== css/27-commodity.css ===== */
+/* ============================================================
+   大宗商品模块样式 — 首页商品板块 + 商品轻量研判页
+   复用 base/analysis 变量与布局，仅补充商品区块。
+   ============================================================ */
+
+/* 首页商品板块 */
+.home-boards.commodity-board{margin-top:26px}
+.commodity-board .boards-grid{grid-template-columns:1fr}
+.board-ico.commodity{color:var(--gold);background:rgba(231,180,92,.1);border-color:rgba(231,180,92,.24)}
+.commodity-board .board-card-head h3{color:var(--gold)}
+.commodity-board .boards-head p{max-width:860px}
+.commodity-board .board-list{padding:14px}
+
+.commodity-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.commodity-tile{
+  display:flex;flex-direction:column;gap:5px;padding:15px 16px;
+  text-align:left;color:inherit;cursor:pointer;
+  border:1px solid var(--line);border-radius:14px;background:var(--panel);
+  transition:border-color .16s ease,transform .16s ease,background .16s ease;
+}
+.commodity-tile:hover{border-color:rgba(231,180,92,.36);background:rgba(231,180,92,.045);transform:translateY(-1px)}
+.commodity-tile:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.ct-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.ct-top b{font-size:13px;color:var(--text)}
+.ct-top small{font-size:10px;color:var(--faint);white-space:nowrap}
+.ct-price{font-family:var(--mono);font-size:24px;line-height:1.2;font-variant-numeric:tabular-nums;color:var(--text)}
+.ct-chg{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+.ct-chg.up{color:var(--up)}
+.ct-chg.down{color:var(--down)}
+.ct-chg.flat{color:var(--muted)}
+.ct-range{font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+
+/* 研判页提示条 */
+.commodity-risk{
+  display:flex;align-items:flex-start;gap:9px;margin-top:12px;padding:11px 14px;
+  border:1px solid rgba(231,180,92,.22);border-radius:12px;
+  background:rgba(231,180,92,.055);font-size:11.5px;line-height:1.65;color:var(--muted)
+}
+.commodity-risk .ico{color:var(--gold);flex:none;margin-top:1px}
+.commodity-risk b{color:var(--text);font-weight:600}
+html[data-theme="light"] .commodity-risk{background:rgba(169,118,35,.05)}
+.commodity-inline{margin-top:10px}
+.commodity-foot{margin-top:22px}
+
+/* 数据边界卡 */
+.commodity-limits{padding:18px 19px}
+.commodity-limit-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.commodity-limit-grid>div{display:flex;flex-direction:column;gap:4px;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.commodity-limit-grid b{font-size:12px;color:var(--gold)}
+.commodity-limit-grid span{font-size:11.5px;line-height:1.65;color:var(--muted)}
+.commodity-limits .inline-note{margin-top:12px}
+
+@media (max-width: 900px){
+  .commodity-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .commodity-limit-grid{grid-template-columns:1fr}
+}
+@media (max-width: 560px){
+  .commodity-grid{grid-template-columns:1fr}
+  .commodity-board .board-list{padding:10px}
+  .commodity-risk{font-size:11px;padding:10px 12px}
+  .ct-price{font-size:22px}
+}
+
 </style>
 </head>
 <body>
@@ -1515,7 +1580,7 @@ html[data-theme="light"] .crypto-risk{background:rgba(169,118,35,.05)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v2.5.0 · 构建于 2026/11/20 09:21:43</p>
+      <p>研值 StockLens v2.6.0 · 构建于 2026/11/20 10:00:13</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -1704,16 +1769,17 @@ function marketFromKey(key) {
   return 'A';
 }
 function marketLabel(m) {
-  return m === 'US' ? '美股' : m === 'HK' ? '港股' : m === 'CRYPTO' ? '加密' : 'A股';
+  return m === 'US' ? '美股' : m === 'HK' ? '港股' : m === 'CRYPTO' ? '加密' : m === 'COMMODITY' ? '商品' : 'A股';
 }
 function marketBadgeClass(m) {
-  return m === 'US' ? 'blue' : m === 'HK' ? 'teal' : m === 'CRYPTO' ? 'violet' : 'gold';
+  return m === 'US' ? 'blue' : m === 'HK' ? 'teal' : m === 'CRYPTO' ? 'violet' : m === 'COMMODITY' ? 'gold' : 'gold';
 }
 function currencyOf(market) {
-  return market === 'US' || market === 'CRYPTO' ? 'USD' : market === 'HK' ? 'HKD' : 'CNY';
+  return market === 'US' || market === 'CRYPTO' || market === 'COMMODITY' ? 'USD' : market === 'HK' ? 'HKD' : 'CNY';
 }
 function exchangeLabel(stock, quote) {
   if (stock.market === 'CRYPTO') return '7×24 加密市场';
+  if (stock.market === 'COMMODITY') return '期货连续合约';
   if (stock.market === 'HK') return '香港交易所';
   if (stock.market === 'US') {
     const raw = (quote && quote.rawCode) || stock.rawCode || '';
@@ -2182,14 +2248,19 @@ function searchStocks(query) {
   const memo = searchMemo.get(q);
   if (memo && Date.now() - memo.t < 5 * 60 * 1000) return Promise.resolve(memo.d);
   if (memo) searchMemo.delete(q); /* 过期条目随手清除，避免 Map 只增不减 */
-  /* 股票联想与加密候选并行；任一路失败都不影响另一路 */
+  /* 股票联想、加密候选与商品别名并行；任一路失败都不影响其他路 */
   const run = async () => {
-    const cryptoPromise = typeof searchCrypto === 'function' ? searchCrypto(q) : Promise.resolve([]);
-    const [stockRes, cryptoRes] = await Promise.allSettled([smartbox(q), cryptoPromise]);
+    const coinPromise = typeof searchCrypto === 'function' ? searchCrypto(q) : Promise.resolve([]);
+    const commodity =
+      typeof searchCommodities === 'function' ? searchCommodities(q) : [];
+    const [stockRes, cryptoRes] = await Promise.allSettled([smartbox(q), coinPromise]);
     const crypto = cryptoRes.status === 'fulfilled' ? cryptoRes.value || [] : [];
     const stocks = stockRes.status === 'fulfilled' ? parseSearchRaw(stockRes.value) : [];
-    const seen = new Set(crypto.map((s) => s.market + ':' + s.code));
-    return crypto.concat(stocks.filter((s) => !seen.has(s.market + ':' + s.code))).slice(0, 10);
+    const seen = new Set([...commodity, ...crypto].map((s) => s.market + ':' + s.code));
+    return commodity
+      .concat(crypto)
+      .concat(stocks.filter((s) => !seen.has(s.market + ':' + s.code)))
+      .slice(0, 10);
   };
   const p = searchChain.then(run, run);
   searchChain = p.catch(() => {});
@@ -2226,6 +2297,15 @@ function parseSymbolInput(input) {
   }
   m = q.match(/^us([A-Za-z][A-Za-z0-9.\-]*)$/i);
   if (m) return usStockFields(m[1]);
+  /* 商品显式前缀与中文/英文别名；两字母代码（CL/GC/SI）不在别名表，仍按美股解析 */
+  m = q.match(/^(?:cmd|commodity):([a-z][a-z0-9_-]*)$/i);
+  if (m) {
+    const hit = typeof normalizeCommodityStock === 'function' ? normalizeCommodityStock({ key: m[1] }) : null;
+    if (hit) return hit;
+  }
+  const commodity =
+    typeof commodityResolveQuery === 'function' ? commodityResolveQuery(q) : null;
+  if (commodity) return commodity;
   /* 加密货币别名优先于「字母即美股」的兜底：BTC / btc / 比特币 / 以太坊 */
   const coin = typeof cryptoResolveQuery === 'function' ? cryptoResolveQuery(q) : null;
   if (coin) return coin;
@@ -2462,6 +2542,8 @@ async function getKline(stock, quote, period = 'day') {
   const p = normalizeKlinePeriod(period);
   /* 加密资产走 Binance 数据镜像，与 A/HK/US 的东财/腾讯链路完全隔离 */
   if (stock.market === 'CRYPTO' || stock.kind === 'coin') return getCryptoKline(stock, p);
+  /* 大宗商品走东财商品 secid（101/102/112），与股票 K 线链路隔离 */
+  if (stock.market === 'COMMODITY' || stock.kind === 'commodity') return getCommodityKline(stock, p);
   let key = stock.klineCode || stock.quoteKey;
   if (stock.market === 'US') {
     /* 腾讯 usfqkline 需要带交易所后缀的完整 raw：AAPL.OQ / BRK.A.N / BAC-B.N（FR-19.2） */
@@ -6842,6 +6924,302 @@ function fmtCryptoSupply(n, symbol = '') {
 }
 
 
+/* ===== js/28-commodity.js ===== */
+/* ============================================================
+   大宗商品数据层（轻量版）
+   行情：腾讯财经 hf_* 商品批量接口（GBK，CORS *）
+   K 线：东方财富 push2his 商品 secid（日/周/月/分钟）
+   首批 6 个品种：黄金 / 白银 / WTI / 布伦特 / 铜 / 天然气
+   本模块不生成综合评分，只提供行情、K 线与技术研判所需数据。
+   ============================================================ */
+'use strict';
+
+const COMMODITY_TTL = {
+  board: 45 * 1000,
+};
+
+const COMMODITY_LIST = [
+  {
+    key: 'gold',
+    code: 'GC',
+    name: '黄金',
+    en: 'Gold',
+    group: '贵金属',
+    tencent: 'hf_GC',
+    spot: 'hf_XAU',
+    secid: '101.GC00Y',
+    unit: '美元/盎司',
+    digits: 2,
+    contract: 'COMEX 黄金连续合约',
+  },
+  {
+    key: 'silver',
+    code: 'SI',
+    name: '白银',
+    en: 'Silver',
+    group: '贵金属',
+    tencent: 'hf_SI',
+    spot: 'hf_XAG',
+    secid: '101.SI00Y',
+    unit: '美元/盎司',
+    digits: 2,
+    contract: 'COMEX 白银连续合约',
+  },
+  {
+    key: 'wti',
+    code: 'CL',
+    name: 'WTI 原油',
+    en: 'WTI Crude',
+    group: '能源',
+    tencent: 'hf_CL',
+    secid: '102.CL00Y',
+    unit: '美元/桶',
+    digits: 2,
+    contract: 'NYMEX WTI 原油连续合约',
+  },
+  {
+    key: 'brent',
+    code: 'B',
+    name: '布伦特原油',
+    en: 'Brent Crude',
+    group: '能源',
+    tencent: 'hf_OIL',
+    secid: '112.B00Y',
+    unit: '美元/桶',
+    digits: 2,
+    contract: 'ICE 布伦特原油连续合约',
+  },
+  {
+    key: 'copper',
+    code: 'HG',
+    name: '铜',
+    en: 'Copper',
+    group: '工业金属',
+    tencent: 'hf_HG',
+    secid: '101.HG00Y',
+    unit: '美元/磅',
+    digits: 4,
+    contract: 'COMEX 铜连续合约',
+  },
+  {
+    key: 'gas',
+    code: 'NG',
+    name: '天然气',
+    en: 'Natural Gas',
+    group: '能源',
+    tencent: 'hf_NG',
+    secid: '102.NG00Y',
+    unit: '美元/百万英热',
+    digits: 3,
+    contract: 'NYMEX 天然气连续合约',
+  },
+];
+
+const COMMODITY_BY_KEY = new Map(COMMODITY_LIST.map((c) => [c.key, c]));
+const COMMODITY_BY_CODE = new Map(COMMODITY_LIST.map((c) => [c.code, c]));
+const COMMODITY_BY_TENCENT = new Map(COMMODITY_LIST.map((c) => [c.tencent.toLowerCase(), c]));
+
+/* 别名只收中文名与 3 字母以上的英文词：两个字母的 CL / GC / SI 等继续按美股代码解析 */
+const COMMODITY_ALIASES = {
+  gold: ['黄金', '金价', '纽约黄金', '伦敦金', '现货黄金', 'comex黄金', 'gold', 'xau', 'xauusd'],
+  silver: ['白银', '银价', '纽约白银', '伦敦银', '现货白银', 'comex白银', 'silver', 'xag', 'xagusd'],
+  wti: ['wti', 'wti原油', '原油', '美原油', '纽约原油', '轻质原油', 'crude', 'crudeoil', 'oil'],
+  brent: ['布伦特', '布伦特原油', '布油', 'brent', 'brentoil'],
+  copper: ['铜', '美铜', '伦铜', 'comex铜', 'copper'],
+  gas: ['天然气', '美国天然气', 'nymex天然气', '亨利港', 'natgas', 'naturalgas'],
+};
+const COMMODITY_ALIAS_MAP = new Map();
+Object.keys(COMMODITY_ALIASES).forEach((key) => {
+  COMMODITY_ALIASES[key].forEach((alias) => COMMODITY_ALIAS_MAP.set(alias.toLowerCase(), key));
+});
+
+function commodityByKey(key) {
+  const k = String(key || '').trim().toLowerCase();
+  if (!k) return null;
+  return COMMODITY_BY_KEY.get(k) || COMMODITY_BY_CODE.get(k.toUpperCase()) || null;
+}
+
+function commodityFields(def) {
+  return {
+    market: 'COMMODITY',
+    kind: 'commodity',
+    code: def.key,
+    rawCode: def.key,
+    name: def.name,
+    quoteKey: 'commodity:' + def.key,
+    klineCode: 'commodity:' + def.key,
+  };
+}
+
+function normalizeCommodityStock(input) {
+  const s = typeof input === 'string' ? { key: input } : input || {};
+  const def =
+    commodityByKey(s.key) ||
+    commodityByKey(s.code) ||
+    commodityByKey(s.rawCode) ||
+    (s.name ? commodityByKey(COMMODITY_ALIAS_MAP.get(String(s.name).trim().toLowerCase()) || '') : null);
+  if (!def) return null;
+  return Object.assign(commodityFields(def), { name: s.name || def.name });
+}
+
+/* 手输 / 搜索：只匹配别名表，避免劫持 CL、GC 等两字母美股代码 */
+function commodityResolveQuery(query) {
+  const raw = String(query || '').trim().toLowerCase();
+  if (!raw) return null;
+  const key = COMMODITY_ALIAS_MAP.get(raw);
+  return key ? normalizeCommodityStock({ key }) : null;
+}
+
+function searchCommodities(query) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return [];
+  const out = [];
+  const seen = new Set();
+  COMMODITY_LIST.forEach((def) => {
+    if (out.length >= 4) return;
+    const aliases = COMMODITY_ALIASES[def.key] || [];
+    const hit =
+      def.key.startsWith(q) ||
+      def.name.toLowerCase().includes(q) ||
+      def.en.toLowerCase().includes(q) ||
+      aliases.some((a) => a.toLowerCase().startsWith(q) || a.toLowerCase().includes(q));
+    if (!hit || seen.has(def.key)) return;
+    seen.add(def.key);
+    out.push(normalizeCommodityStock({ key: def.key }));
+  });
+  return out;
+}
+
+/* ---------------- 行情 ---------------- */
+
+function parseCommodityQuoteFields(def, f) {
+  if (!def || !Array.isArray(f) || f.length < 14) return null;
+  const price = num(f[0]);
+  if (!Number.isFinite(price) || price <= 0) return null;
+  const prevClose = num(f[7]);
+  const change = Number.isFinite(prevClose) ? price - prevClose : null;
+  const date = String(f[12] || '');
+  const clock = String(f[6] || '');
+  return Object.assign(commodityFields(def), {
+    price,
+    change,
+    changePct: num(f[1]),
+    prevClose,
+    open: num(f[8]),
+    high: num(f[4]),
+    low: num(f[5]),
+    date,
+    quoteTime: clock,
+    time: [date, clock].filter(Boolean).join(' '),
+    currency: 'USD',
+    unit: def.unit,
+    digits: def.digits,
+    group: def.group,
+    contract: def.contract,
+    secid: def.secid,
+    tencentCode: def.tencent,
+    source: '腾讯财经',
+  });
+}
+
+function parseCommoditySpot(def, f) {
+  if (!def || !def.spot || !Array.isArray(f)) return null;
+  const price = num(f[0]);
+  if (!Number.isFinite(price) || price <= 0) return null;
+  return {
+    code: def.spot,
+    name: String(f[13] || ''),
+    price,
+    changePct: num(f[1]),
+    date: String(f[12] || ''),
+    time: String(f[6] || ''),
+  };
+}
+
+async function fetchCommodityQuoteMap() {
+  const keys = COMMODITY_LIST.map((c) => c.tencent).concat(['hf_XAU', 'hf_XAG']);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const res = await fetch(API.quote + keys.join(','), { signal: ctrl.signal, cache: 'no-store' });
+    if (!res.ok) throw new Error(`商品行情 HTTP ${res.status}`);
+    const text = decodeGBK(await res.arrayBuffer());
+    const map = new Map();
+    const re = /v_([^=]+)="([^"]*)"/g;
+    let m;
+    while ((m = re.exec(text))) map.set(m[1], m[2].split(','));
+    if (!map.size) throw new Error('商品行情数据为空');
+    return map;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function commodityBoardRows(map) {
+  return COMMODITY_LIST.map((def) => {
+    const quote = parseCommodityQuoteFields(def, map.get(def.tencent));
+    if (!quote) return Object.assign(commodityFields(def), { price: null, changePct: null, unit: def.unit });
+    quote.spot = parseCommoditySpot(def, map.get(def.spot));
+    return quote;
+  });
+}
+
+function getCommodityBoard(force = false) {
+  return cached('commodity:board', COMMODITY_TTL.board, async () => commodityBoardRows(await fetchCommodityQuoteMap()), force);
+}
+
+function getCommodityQuote(stock, force = false) {
+  const def = commodityByKey(stock && (stock.code || stock.rawCode));
+  if (!def) return Promise.reject(new Error('未知的大宗商品品种'));
+  return getCommodityBoard(force).then((rows) => {
+    const hit = rows.find((r) => r && r.code === def.key);
+    if (!hit || !Number.isFinite(hit.price)) throw new Error('商品行情数据为空');
+    return hit;
+  });
+}
+
+/* ---------------- K 线 ---------------- */
+
+function getCommodityKline(stock, period = 'day') {
+  const def = commodityByKey(stock && (stock.code || stock.rawCode));
+  if (!def) return Promise.reject(new Error('未知的大宗商品品种'));
+  const p = normalizeKlinePeriod(period);
+  const count = KLINE_COUNT[p] || 320;
+  return cached(`commodity:kline:${p}:${def.secid}`, klineTtl(p), async () => {
+    const params = new URLSearchParams({
+      secid: def.secid,
+      fields1: 'f1,f2,f3,f4,f5,f6',
+      fields2: 'f51,f52,f53,f54,f55,f56',
+      klt: String(EM_KLT[p]),
+      /* 商品无复权概念，传 1 与东财默认口径一致，页面不展示「前复权」字样 */
+      fqt: '1',
+      beg: emBegDate(p),
+      end: '20500101',
+      lmt: String(count),
+    });
+    const data = await emJsonp(`${API.emKline}?${params}`);
+    const lines = data && data.data && data.data.klines;
+    if (!Array.isArray(lines) || !lines.length) throw new Error('商品 K 线数据暂不可用');
+    const points = parseEmKlines(lines.slice(-count));
+    if (points.length < 5) throw new Error('商品 K 线数据不足');
+    return {
+      key: 'commodity:' + def.secid,
+      period: p,
+      points,
+      metrics: p === 'day' ? klineMetrics(points) : null,
+      source: '东方财富',
+    };
+  });
+}
+
+/* ---------------- 展示格式 ---------------- */
+
+function fmtCommodityPrice(n, def) {
+  const digits = def && Number.isFinite(def.digits) ? def.digits : 2;
+  return fmtPrice(n, digits);
+}
+
+
 /* ===== js/30-render-home.js ===== */
 /* ============================================================
    Home / landing renderer
@@ -6977,13 +7355,13 @@ function homeHTML() {
     <div class="hero">
       <span class="eyebrow"><i class="dot"></i>公开数据 · 实时行情 · 可解释评分</span>
       <h1>读懂研报，<br><span>把判断交给证据。</span></h1>
-      <p class="lede">输入 A 股、港股、美股或加密货币，聚合研报、同行、财务、行情与舆情，用可解释的评分形成一张可追溯的研究底稿。</p>
+      <p class="lede">输入 A 股、港股、美股、加密货币或大宗商品，聚合研报、同行、财务、行情与舆情，用可解释的评分形成一张可追溯的研究底稿。</p>
 
       <div class="search-shell">
         <form class="search-box" id="searchForm" autocomplete="off">
           ${ico('search')}
-          <input id="stockSearch" type="text" placeholder="输入股票名称、代码或币种，如 贵州茅台 / 600519 / NVDA / BTC"
-            aria-label="搜索股票或加密货币" spellcheck="false">
+          <input id="stockSearch" type="text" placeholder="输入股票名称、代码或品种，如 贵州茅台 / 600519 / NVDA / BTC / 黄金"
+            aria-label="搜索股票、加密货币或大宗商品" spellcheck="false">
           <button class="search-submit" type="submit" aria-label="开始分析">
             <span>开始分析</span>${ico('arrow')}
           </button>
@@ -6998,6 +7376,10 @@ function homeHTML() {
       <div class="hot-row crypto-hot-row" id="cryptoHotRow">
         <span class="hot-label">加密</span>
         ${CRYPTO_HOT.map((sym) => cryptoChipHTML(sym)).join('')}
+      </div>
+      <div class="hot-row commodity-hot-row" id="commodityHotRow">
+        <span class="hot-label">商品</span>
+        ${COMMODITY_LIST.map((c) => commodityChipHTML(c.key)).join('')}
       </div>
       ${
         recent.length
@@ -7015,7 +7397,7 @@ function homeHTML() {
       </div>
 
       <div class="hero-stats">
-        <div class="hero-stat"><strong>4 类市场</strong><span>A 股 · 港股 · 美股 · 加密</span></div>
+        <div class="hero-stat"><strong>5 类市场</strong><span>A 股 · 港股 · 美股 · 加密 · 商品</span></div>
         <div class="hero-stat"><strong>4 个维度</strong><span>研报 · 盈利 · 技术 · 舆情</span></div>
         <div class="hero-stat"><strong>20 篇</strong><span>近半年最新个股研报</span></div>
       </div>
@@ -7107,6 +7489,8 @@ function homeHTML() {
       </div>
     </section>
 
+    ${commodityBoardHTML()}
+
     <section class="features" aria-labelledby="featureTitle">
       <div class="features-head">
         <div>
@@ -7130,6 +7514,7 @@ function homeHTML() {
         <div class="coverage-row warn">${ico('info', 'sm')}<span><strong>港股 · 简版</strong>：行情 / K 线 / 财务指标 / 同业标签 / 新闻舆情；研报区显示暂无免费中文源。</span></div>
         <div class="coverage-row warn">${ico('info', 'sm')}<span><strong>美股 · 简版</strong>：行情 / K 线 / 同业标签 / 新闻舆情；盈利成长与中文研报暂缺，评分按可用维度折算。</span></div>
         <div class="coverage-row">${ico('spark', 'sm')}<span><strong>加密货币 · 独立口径</strong>：行情 / K 线 / 市值排名 / 合约资金费率与持仓 / 恐慌贪婪指数 / 主链 TVL；无财报与机构研报，评分不与其他市场直接比较。</span></div>
+        <div class="coverage-row">${ico('pulse', 'sm')}<span><strong>大宗商品 · 轻量版</strong>：6 个核心品种的行情、日/周/月与分钟 K 线、五维技术研判；期货连续合约与现货存在基差，不做综合评分、库存与持仓。</span></div>
         <div class="coverage-row">${ico('shield', 'sm')}<span><strong>可解释性</strong>：每个维度展示得分、权重、数据覆盖与理由；数据不足时直接标注「不可用」。</span></div>
       </div>
     </section>
@@ -7142,10 +7527,12 @@ function renderHome() {
   syncTopbar('home');
   loadHotQuotes();
   loadCryptoHotQuotes();
+  loadCommodityHotQuotes();
   loadWatchQuotes();
   loadHomeBoards();
   loadEtfBoard();
   loadCryptoBoard();
+  loadCommodityBoard();
 }
 
 /* ---------------- 首页双榜单（FR-9） ---------------- */
@@ -7178,6 +7565,8 @@ function boardEmptyHTML(kind) {
     ? '行业 ETF 榜单暂不可用，稍后刷新重试'
     : kind === 'crypto'
     ? '加密榜单暂不可用，稍后刷新重试'
+    : kind === 'commodity'
+    ? '商品行情暂不可用，稍后刷新重试'
     : '热门榜单暂不可用，稍后刷新重试';
   return `<div class="board-empty">${ico('info', 'sm')}<span>${text}</span></div>`;
 }
@@ -7188,8 +7577,9 @@ const BOARD_UI = {
   inflow: { body: '#inflowBoardBody', time: '#inflowBoardTime', label: '主力净流入榜' },
   etf: { body: '#etfBoardBody', time: '#etfBoardTime', label: '行业 ETF 榜' },
   crypto: { body: '#cryptoBoardBody', time: '#cryptoBoardTime', label: '加密热门榜' },
+  commodity: { body: '#commodityBoardBody', time: '#commodityBoardTime', label: '大宗商品行情' },
 };
-const BOARD_LOADING = { hot: false, inflow: false, etf: false, crypto: false };
+const BOARD_LOADING = { hot: false, inflow: false, etf: false, crypto: false, commodity: false };
 const BOARD_LAST_OK = {}; /* kind → 最近一次成功更新的毫秒时间戳（用于失败时提示） */
 
 /* 更新时间与刷新按钮的加载/成功/失败态 */
@@ -7257,6 +7647,7 @@ async function refreshHomeBoard(kind) {
     if (kind === 'hot' || kind === 'inflow') await loadRankBoard(kind, true);
     else if (kind === 'etf') await loadEtfBoard(true);
     else if (kind === 'crypto') await loadCryptoBoard(true);
+    else if (kind === 'commodity') await loadCommodityBoard(true);
   } finally {
     BOARD_LOADING[kind] = false;
   }
@@ -7420,7 +7811,7 @@ async function loadHotQuotes() {
 
 function suggestionHTML(items) {
   if (!items.length) {
-    return `<div class="sug-empty">没有匹配结果。试试股票代码或币种，如 <span class="mono">600519</span> / <span class="mono">00700</span> / <span class="mono">NVDA</span> / <span class="mono">BTC</span></div>`;
+    return `<div class="sug-empty">没有匹配结果。试试股票代码、币种或商品，如 <span class="mono">600519</span> / <span class="mono">00700</span> / <span class="mono">NVDA</span> / <span class="mono">BTC</span> / <span class="mono">黄金</span></div>`;
   }
   return (
     items
@@ -7846,8 +8237,9 @@ function renderChartSection(kline) {
   const anchors = targetAnchors();
   const chartKey = `${(state.stock && state.stock.market) || 'X'}_${(state.stock && state.stock.code) || 'x'}_${period}`;
   const isCoin = !!(state.stock && (state.stock.kind === 'coin' || state.stock.market === 'CRYPTO'));
+  const isCommodity = !!(state.stock && (state.stock.kind === 'commodity' || state.stock.market === 'COMMODITY'));
   const isEtf = !!(state.stock && (state.stock.kind === 'etf' || isEtfCode(state.stock.code || '')));
-  const adjusted = !isCoin && !isEtf;
+  const adjusted = !isCoin && !isEtf && !isCommodity;
   const candles = renderCandlestick(pts, {
     key: chartKey,
     period,
@@ -7872,7 +8264,7 @@ function renderChartSection(kline) {
     : '';
   return `<article class="card chart-card">
     <div>
-      <div class="chart-head"><strong>${isCoin ? '价格 K 线' : '股价 K 线'}</strong>${chartPeriodTabs()}${chartZoomControls(pts.length)}
+      <div class="chart-head"><strong>${isCoin || isCommodity ? '价格 K 线' : '股价 K 线'}</strong>${chartPeriodTabs()}${chartZoomControls(pts.length)}
         <span class="kline-legend" aria-hidden="true"><i class="ma20"></i>MA20<i class="ma60"></i>MA60</span>
         <span class="kline-meta" data-role="kline-range">${esc(fmtDate(first.date, intraday))} — ${esc(fmtDate(last.date, intraday))} · ${pts.length} 根</span>
         <span class="kline-meta">${adjusted ? '前复权 · ' : ''}${periodLabel}${isCoin ? ' · UTC' : ''}</span></div>
@@ -8423,11 +8815,14 @@ function updateTechnicalSection(result) {
 
 /* 渲染 section 内部：综合卡 + 雷达 + 五维详情 */
 function renderTechnicalSectionInner(result) {
+  const isCommodity = !!(state.stock && (state.stock.kind === 'commodity' || state.stock.market === 'COMMODITY'));
   if (!result) {
     return emptyState({
       icon: 'chart',
       title: '技术数据暂不可用',
-      desc: '历史 K 线数据不足，无法生成技术研判。行情、研报与新闻等其他模块不受影响。',
+      desc: isCommodity
+        ? '历史 K 线数据不足，无法生成技术研判。商品行情与价格 K 线不受影响。'
+        : '历史 K 线数据不足，无法生成技术研判。行情、研报与新闻等其他模块不受影响。',
     });
   }
   return `${techConsensusCard(result)}
@@ -8442,7 +8837,7 @@ function renderTechnicalSectionInner(result) {
       </article>
     </div>
     <div class="tech-dim-grid">${result.dims.map(techDimCard).join('')}</div>
-    <div class="source-note" style="margin-top:12px">计算口径：MA(5/10/20/60) · MACD(12,26,9) · RSI(6,12) · KDJ(9,3,3) · BOLL(20,2) · OBV · 量比(5/20)。全部基于前复权日 K 本地计算，无额外网络请求。</div>`;
+    <div class="source-note" style="margin-top:12px">计算口径：MA(5/10/20/60) · MACD(12,26,9) · RSI(6,12) · KDJ(9,3,3) · BOLL(20,2) · OBV · 量比(5/20)。全部基于${isCommodity ? '商品连续合约日 K' : '前复权日 K'}本地计算，无额外网络请求。</div>`;
 }
 
 
@@ -9342,6 +9737,217 @@ function renderCryptoOnchain(stock, fng, tvl) {
 }
 
 
+/* ===== js/37-render-commodity.js ===== */
+/* ============================================================
+   大宗商品 renderers — 独立研判页（轻量版）
+   行情头 + K 线（复用 v1.9+）+ 技术研判（复用五维引擎）
+   不做综合评分、期限结构、库存与持仓。
+   ============================================================ */
+'use strict';
+
+const COMMODITY_SECTION_NAV = [
+  ['chart', '价格走势'],
+  ['technical', '技术研判'],
+  ['limits', '数据边界'],
+];
+
+function commodityShell(stock) {
+  const def = commodityByKey(stock.code);
+  return `<div class="analysis-wrap" id="analysisWrap">
+    ${crumbHTML(stock)}
+    <div id="stockMeta">${commodityHeaderSkeleton(stock)}</div>
+    <div class="commodity-risk no-print">${ico('alert', 'sm')}<span>页面展示的是 <b>${esc(
+      (def && def.contract) || '期货连续合约'
+    )}</b>，与现货存在基差且会定期移仓；期货为保证金杠杆交易，波动可能放大损失。本页仅聚合公开数据用于研究，不构成投资建议。</span></div>
+    <nav class="section-nav" aria-label="页面章节">
+      ${COMMODITY_SECTION_NAV.map(([id, label]) => `<a href="#${id}" data-scroll="${id}">${label}</a>`).join('')}
+      <span class="nav-live"><i></i>数据实时拉取</span>
+    </nav>
+
+    <div id="overviewArea">
+      <div id="chartSlot">${loadingCard('正在绘制商品 K 线…', 2)}</div>
+      <p class="inline-note commodity-inline">K 线来自东方财富商品连续合约，价格为 USD 计价；连续合约会随主力换月跳空，长周期比较时需注意移仓影响。</p>
+    </div>
+
+    <section class="section-block" id="technical">
+      ${sectionHead('02', '技术研判', '趋势、动量、随机、波动与量价五维度分析，基于日线本地计算')}
+      <div id="technicalSlot">${loadingCard('正在计算多维技术信号…', 4)}</div>
+    </section>
+
+    <section class="section-block" id="limits">
+      ${sectionHead('03', '数据边界', '本页只做公开行情与技术面的研究整理')}
+      <article class="card commodity-limits">
+        <div class="commodity-limit-grid">
+          <div><b>已提供</b><span>实时行情（腾讯财经）· 日/周/月与分钟 K 线（东方财富）· 五维技术研判（本地计算）</span></div>
+          <div><b>暂不提供</b><span>库存数据（EIA / LME）· CFTC 持仓报告 · 期限结构曲线 · 商品专属综合评分</span></div>
+          <div><b>为什么</b><span>上述数据缺少稳定且允许浏览器直连的免费来源，缺失时明确标注，不用估算值填充。</span></div>
+        </div>
+        <p class="inline-note">商品没有财报、机构研报与市盈率，个股式四维评分不适用；技术研判只反映历史价格，不判断供需与宏观方向。</p>
+      </article>
+    </section>
+
+    <p class="analysis-foot commodity-foot">行情来自腾讯财经公开接口，K 线来自东方财富，技术指标由浏览器本地计算。期货交易具有杠杆效应，境内相关业务需遵守监管规定；本页不提供交易入口，评分与信号不构成任何投资建议。</p>
+  </div>`;
+}
+
+function commodityHeaderSkeleton(stock) {
+  return `<header class="stock-head">
+    <div class="stock-title">
+      <div class="stock-tags"><span class="badge gold">大宗商品</span><span class="badge">USD 计价</span></div>
+      <h1>${esc(stock.name || stock.code)} <span class="code">${esc(stock.code)}</span></h1>
+      <div class="stock-sub"><span class="spinner" style="width:13px;height:13px;border-width:1.5px"></span>正在获取商品行情…</div>
+    </div>
+    <div class="stock-price"><div class="skeleton" style="width:160px;height:38px;margin-left:auto"></div></div>
+  </header>
+  <div class="metric-strip">
+    ${Array.from({ length: 6 }, () => '<div class="metric"><div class="skeleton" style="height:10px;width:52px"></div><div class="skeleton" style="height:16px;width:78px;margin-top:6px"></div></div>').join('')}
+  </div>`;
+}
+
+function renderCommoditySkeleton(stock) {
+  setViewHTML(commodityShell(stock));
+  document.title = `${stock.name || stock.code} · 大宗商品 · 研值 StockLens`;
+  syncTopbar('analysis');
+}
+
+function commodityHeader(stock, quote) {
+  const def = commodityByKey(stock.code);
+  const digits = def ? def.digits : 2;
+  const spot = quote.spot;
+  const spotCell = spot
+    ? metricCell(
+        '伦敦现货参考',
+        `${fmtPrice(spot.price, digits)}`,
+        pctClass(spot.changePct),
+        `${fmtPct(spot.changePct)} · 与期货口径不同`
+      )
+    : metricCell('合约口径', esc((def && def.group) || '商品'), '', esc((def && def.unit) || ''));
+  return `<header class="stock-head">
+    <div class="stock-title">
+      <div class="stock-tags">
+        <span class="badge gold">大宗商品</span>
+        ${def ? `<span class="badge teal">${esc(def.group)}</span>` : ''}
+        <span class="badge">USD · ${esc((def && def.unit) || '')}</span>
+      </div>
+      <h1>${esc(quote.name || stock.name)} <span class="code">${esc((def && def.code) || stock.code)}</span></h1>
+      <div class="stock-sub">
+        <span>${esc(quote.contract || (def && def.contract) || '期货连续合约')}</span>
+        <span class="mini-sep"></span>
+        <span>${esc(quote.time || '—')}</span>
+        <span class="mini-sep"></span>
+        <span class="source-note" style="margin:0">行情来自腾讯财经公开接口</span>
+      </div>
+    </div>
+    <div class="stock-price">
+      <div class="price-row">
+        <span class="price-main ${pctClass(quote.changePct)}">${fmtCommodityPrice(quote.price, def)}</span>
+        <span class="price-change ${pctClass(quote.changePct)}">${fmtSigned(quote.change, digits)} · ${fmtPct(quote.changePct)}</span>
+      </div>
+      <div class="price-time">最高 ${fmtCommodityPrice(quote.high, def)} · 最低 ${fmtCommodityPrice(quote.low, def)}</div>
+      <div class="stock-actions no-print">
+        <button class="btn sm" type="button" data-action="copy-link">${ico('share', 'sm')}分享</button>
+        <button class="btn sm" type="button" data-action="refresh">${ico('refresh', 'sm')}刷新</button>
+      </div>
+    </div>
+  </header>
+  <div class="metric-strip">
+    ${metricCell('昨收', fmtCommodityPrice(quote.prevClose, def))}
+    ${metricCell('今开', fmtCommodityPrice(quote.open, def))}
+    ${metricCell('最高', fmtCommodityPrice(quote.high, def))}
+    ${metricCell('最低', fmtCommodityPrice(quote.low, def))}
+    ${spotCell}
+    ${metricCell('报价单位', esc((def && def.unit) || '—'), '', esc(quote.quoteTime || ''))}
+  </div>`;
+}
+
+function renderCommodityHeader(stock, quote) {
+  const box = $('#stockMeta');
+  if (!box) return;
+  box.innerHTML = commodityHeader(stock, quote);
+  hydrateIcons(box);
+}
+
+/* ---------------- 首页商品板块 ---------------- */
+
+function commodityChipHTML(key) {
+  const stock = normalizeCommodityStock({ key });
+  if (!stock) return '';
+  return `<button type="button" class="hot-chip commodity-chip" ${stockDataset(stock)}>${esc(stock.name)}<span class="hot-chg" data-commchg="${esc(
+    stock.code
+  )}">—</span></button>`;
+}
+
+function commodityBoardHTML() {
+  return `<section class="home-boards commodity-board" aria-labelledby="commodityBoardTitle">
+    <div class="boards-head">
+      <div class="section-kicker">大宗商品</div>
+      <h2 id="commodityBoardTitle">黄金 · 原油 · 工业金属</h2>
+      <p>6 个核心品种的期货连续合约行情，点击进入独立页面查看日/周/月与分钟 K 线、五维技术研判。USD 计价，连续合约与现货存在基差。</p>
+    </div>
+    <div class="boards-grid">
+      <article class="card board-card" id="commodityBoardCard">
+        <div class="board-card-head">
+          <span class="board-ico commodity">${ico('pulse', 'lg')}</span>
+          <div class="board-head-main">
+            <h3>核心商品 6 品种</h3>
+            <span>腾讯财经行情 · 东方财富 K 线 · 期货连续合约</span>
+          </div>
+          <div class="board-update">
+            <span class="board-time" id="commodityBoardTime">更新中…</span>
+            <button type="button" class="board-refresh" data-action="board-refresh" data-board="commodity" aria-label="手动刷新大宗商品行情" title="手动刷新">${ico('refresh', 'sm')}</button>
+          </div>
+        </div>
+        <div class="board-list" id="commodityBoardBody">${loadingCard('正在获取商品行情…', 4)}</div>
+      </article>
+    </div>
+  </section>`;
+}
+
+function commodityTileHTML(row) {
+  const def = commodityByKey(row.code);
+  return `<button type="button" class="commodity-tile" ${stockDataset(row)}>
+    <span class="ct-top"><b>${esc(row.name)}</b><small>${esc((def && def.code) || '')} · ${esc((def && def.group) || '商品')}</small></span>
+    <span class="ct-price">${fmtCommodityPrice(row.price, def)}</span>
+    <span class="ct-chg ${pctClass(row.changePct)}">${fmtSigned(row.change, def ? def.digits : 2)} · ${fmtPct(row.changePct)}</span>
+    <span class="ct-range">高 ${fmtCommodityPrice(row.high, def)} · 低 ${fmtCommodityPrice(row.low, def)}</span>
+  </button>`;
+}
+
+async function loadCommodityBoard(force = false) {
+  const body = $('#commodityBoardBody');
+  if (!body) return;
+  setBoardStatus('commodity', 'loading');
+  try {
+    const rows = await getCommodityBoard(force);
+    if (!body.isConnected) return;
+    if (!rows.length) throw new Error('empty');
+    body.innerHTML = `<div class="commodity-grid">${rows.map(commodityTileHTML).join('')}</div>`;
+    body.dataset.loaded = '1';
+    setBoardStatus('commodity', 'ok', Date.now());
+  } catch (e) {
+    if (!body.isConnected) return;
+    if (!(force && body.dataset.loaded === '1')) body.innerHTML = boardEmptyHTML('commodity');
+    setBoardStatus('commodity', 'error');
+  }
+}
+
+async function loadCommodityHotQuotes() {
+  try {
+    const rows = await getCommodityBoard();
+    rows.forEach((row) => {
+      $$(`[data-commchg="${row.code}"]`).forEach((el) => {
+        const def = commodityByKey(row.code);
+        el.textContent = def ? fmtPct(row.changePct) : '—';
+        el.classList.remove('up', 'down', 'flat');
+        el.classList.add(pctClass(row.changePct));
+      });
+    });
+  } catch (e) {
+    /* 首页商品行情失败不影响其他板块 */
+  }
+}
+
+
 /* ===== js/50-main.js ===== */
 /* ============================================================
    App shell — routing, search, orchestration, interactions
@@ -9396,6 +10002,7 @@ const state = {
   search: { items: [], active: -1, query: '', seq: 0 },
   etf: null,
   crypto: null,
+  commodity: null,
 };
 
 /* ---------------- stock objects ---------------- */
@@ -9407,8 +10014,15 @@ function normalizeStock(input) {
   let quoteKey = s.quoteKey || '';
   let klineCode = s.klineCode || '';
   let name = s.name || code;
-  /* 标的类型：'etf' 走 ETF 专属研判，'coin' 走加密研判，其余为个股。搜索/榜单/输入已带 kind，这里保留 */
-  let kind = s.kind === 'etf' ? 'etf' : s.kind === 'coin' ? 'coin' : 'stock';
+  /* 标的类型：'etf' 走 ETF 专属研判，'coin' 走加密研判，'commodity' 走商品轻量研判，其余为个股 */
+  let kind =
+    s.kind === 'etf'
+      ? 'etf'
+      : s.kind === 'coin'
+      ? 'coin'
+      : s.kind === 'commodity' || market === 'COMMODITY'
+      ? 'commodity'
+      : 'stock';
 
   if (market === 'CRYPTO') {
     const symbol = (code || rawCode).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15);
@@ -9429,6 +10043,17 @@ function normalizeStock(input) {
     rawCode = code;
     if (!quoteKey) quoteKey = 'hk' + code;
     if (!klineCode) klineCode = 'hk' + code;
+  } else if (market === 'COMMODITY' || kind === 'commodity') {
+    const c =
+      typeof normalizeCommodityStock === 'function'
+        ? normalizeCommodityStock({ key: code, code, rawCode, name: s.name })
+        : null;
+    kind = 'commodity';
+    code = c ? c.code : String(code || rawCode || '').toLowerCase();
+    rawCode = code;
+    name = s.name || (c && c.name) || code;
+    if (!quoteKey) quoteKey = 'commodity:' + code;
+    if (!klineCode) klineCode = 'commodity:' + code;
   } else {
     const f = usStockFields(rawCode || code);
     code = f.code;
@@ -9454,7 +10079,10 @@ function stockFromDataset(ds) {
 
 function hashForStock(stock) {
   const raw = stock.market === 'US' ? stock.rawCode || stock.code : stock.code;
-  /* ETF / 加密使用独立路由，与个股研判分流 */
+  /* 商品 / ETF / 加密使用独立路由，与个股研判分流 */
+  if (stock.kind === 'commodity' || stock.market === 'COMMODITY') {
+    return `#/commodity/${encodeURIComponent(stock.code)}`;
+  }
   if (stock.kind === 'coin' || stock.market === 'CRYPTO') {
     return `#/coin/${encodeURIComponent(stock.code)}`;
   }
@@ -9477,6 +10105,15 @@ function lookupKnownStock(market, code) {
 
 function stockFromHash() {
   const hash = location.hash || '';
+  /* 大宗商品独立路由优先识别 */
+  const commodityHash = hash.match(/^#\/commodity\/([a-z][a-z0-9_-]*)/i);
+  if (commodityHash) {
+    const key = decodeURIComponent(commodityHash[1]).toLowerCase();
+    const hit = typeof normalizeCommodityStock === 'function' ? normalizeCommodityStock({ key }) : null;
+    if (!hit) return null;
+    const known = lookupKnownStock('COMMODITY', hit.code);
+    return known ? normalizeStock(known) : normalizeStock(hit);
+  }
   /* 加密独立路由优先识别 */
   const coinHash = hash.match(/^#\/coin\/([A-Za-z0-9]{2,15})/i);
   if (coinHash) {
@@ -9599,7 +10236,12 @@ function routeFromHash() {
   }
   const stock = stockFromHash();
   if (!stock) {
-    if ((location.hash || '').startsWith('#/stock/') || (location.hash || '').startsWith('#/etf/') || (location.hash || '').startsWith('#/coin/')) {
+    if (
+      (location.hash || '').startsWith('#/stock/') ||
+      (location.hash || '').startsWith('#/etf/') ||
+      (location.hash || '').startsWith('#/coin/') ||
+      (location.hash || '').startsWith('#/commodity/')
+    ) {
       toast('链接中的代码无效，已返回首页', 'error');
       try {
         history.replaceState(null, '', location.pathname + location.search);
@@ -9820,6 +10462,9 @@ async function analyzeStock(inputStock, opts = {}) {
   }
   if (normalized.kind === 'etf') {
     return analyzeEtf(inputStock, opts);
+  }
+  if (normalized.kind === 'commodity') {
+    return analyzeCommodity(inputStock, opts);
   }
   const token = ++state.token;
   const stock = normalizeStock(inputStock);
@@ -10261,6 +10906,65 @@ function maybeRefreshCryptoScore(token) {
   });
   state.score = score;
   renderCryptoOverview(score);
+}
+
+/* ---------------- 大宗商品研判编排（独立路由 #/commodity） ---------------- */
+async function analyzeCommodity(inputStock, opts = {}) {
+  const token = ++state.token;
+  const stock = normalizeStock(inputStock);
+  state.route = 'analysis';
+  state.stock = stock;
+  state.quote = null;
+  state.core = {};
+  state.coreSettled = new Set();
+  state.technical = null;
+  state.score = null;
+  state.reports = null; /* 商品没有研报目标价，清空避免沿用上一只股票锚点 */
+  state.profile = null;
+  state.profileReady = false;
+  state.periodKlines = {};
+  state.klinePeriod = 'day';
+  state.commodity = { token };
+  renderCommoditySkeleton(stock);
+  if (!opts.keepScroll) scrollTopSmooth();
+
+  try {
+    const quote = await getCommodityQuote(stock);
+    if (token !== state.token) return;
+    stock.name = quote.name || stock.name;
+    state.stock = stock;
+    state.quote = quote;
+    addRecent(stock);
+    renderCommodityHeader(stock, quote);
+    document.title = `${quote.name} · 大宗商品 · 研值 StockLens`;
+    bindCommodityData(token, stock);
+  } catch (err) {
+    if (token !== state.token) return;
+    renderFatal(stock, '商品行情获取失败：' + quoteErrorText(err));
+    toast('商品行情获取失败：' + quoteErrorText(err), 'error');
+  }
+}
+
+function bindCommodityData(token, stock) {
+  getCommodityKline(stock, 'day')
+    .then((kline) => {
+      if (token !== state.token) return;
+      state.periodKlines.day = kline;
+      state.core.kline = kline;
+      state.coreSettled.add('kline');
+      updateChart(kline);
+      const technical = analyzeTechnical(kline && kline.points);
+      state.technical = technical;
+      updateTechnicalSection(technical);
+    })
+    .catch(() => {
+      if (token !== state.token) return;
+      state.core.kline = null;
+      state.coreSettled.add('kline');
+      updateChart(null);
+      state.technical = null;
+      updateTechnicalSection(null);
+    });
 }
 
 /* ---------------- 自选股清单（FR-6） ---------------- */
