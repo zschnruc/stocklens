@@ -718,6 +718,21 @@ html[data-theme="light"] .candle-boll-area{fill:rgba(62,111,209,.08)}
 .section-tools .filter-input::placeholder{color:var(--faint)}
 
 /* reports */
+/* FR-18.5 港美股分析师评级条 */
+.fh-ratings{padding:4px 2px}
+.fh-head{font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px}
+.fh-bar .fh-seg{display:block;height:100%;min-width:2px}
+.fh-bar .fh-seg.up{background:var(--up)}
+.fh-bar .fh-seg.down{background:var(--down)}
+.fh-bar .fh-seg:not(.up):not(.down){background:var(--faint)}
+.fh-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}
+.fh-row{
+  display:flex;flex-direction:column;gap:4px;padding:10px 12px;border:1px solid var(--line);
+  border-radius:12px;background:rgba(255,255,255,.012);font-size:11px;color:var(--muted)
+}
+.fh-row span:last-child{font-size:17px;font-weight:700;color:var(--text);font-family:var(--mono)}
+.fh-row span.up{color:var(--up)!important}
+.fh-row span.down{color:var(--down)!important}
 .report-list{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:rgba(255,255,255,.012)}
 .report-item{
   display:grid;grid-template-columns:70px minmax(0,1fr) auto;gap:16px;
@@ -1580,7 +1595,7 @@ html[data-theme="light"] .commodity-risk{background:rgba(169,118,35,.05)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v2.6.0 · 构建于 2026/11/20 10:00:13</p>
+      <p>研值 StockLens v2.6.0 · 构建于 2026/11/26 11:15:17</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -2654,9 +2669,147 @@ function normalizeReport(r) {
   };
 }
 
+/* FR-18.5：港股 ADR → Finnhub symbol 映射（实测：这些 ADR 的 /recommendation 返回对应港股评级）。
+   仅收录在美股有 ADR 且 Finnhub 免费层确实返回数据的港股；未收录的港股返回 unsupported。 */
+const HK_ADR_SYMBOL = {
+  '00700': 'TCEHY', // 腾讯控股
+  '09988': 'BABA', // 阿里巴巴
+  '09618': 'JD', // 京东集团
+  '03690': 'MPNGY', // 美团
+  '01810': 'XIACY', // 小米集团
+  '02015': 'LI', // 理想汽车
+  '09866': 'NIO', // 蔚来
+  '09868': 'XPEV', // 小鹏汽车
+  '00005': 'HSBC', // 汇丰控股
+};
+
+/* FR-18.5/18.6 第三方免费层凭据：以确定性编码形式随程序分发，避免源码与单文件产物
+   中出现可直接复制的明文。算法为「按位置异或 + 十六进制」，与 scripts/vendor-keys.js 一致。
+   注意：这是编码存储，不是加密，也不构成安全隔离——浏览器运行时仍会还原为明文并作为
+   查询参数发送（DevTools / 网络面板均可取得）。真正保密只能依靠服务端代理；
+   轮换凭据请运行 node scripts/vendor-keys.js --write 后重新构建。 */
+const SL_VENDOR_CFG = {
+  fh: '3e1dd2bb8570482fb296bd967e0901b3d8f9c77e5a01fedfb9946c3356bac1b2922d255ffc85eccd',
+  fmp: '1906e3fbaf616d32eff0fba4475037b4d8a7907d0f31e3de82b12d2555f188ac',
+};
+const SL_VENDOR_MEMO = Object.create(null);
+function slVendorValue(id) {
+  if (SL_VENDOR_MEMO[id]) return SL_VENDOR_MEMO[id];
+  const hex = SL_VENDOR_CFG[id] || '';
+  let out = '';
+  for (let i = 0, j = 0; i < hex.length; i += 2, j += 1) {
+    out += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16) ^ ((j * 37 + 0x5a) & 0xff));
+  }
+  SL_VENDOR_MEMO[id] = out;
+  return out;
+}
+
+/* 返回 Finnhub recommendation 可用的 symbol：美股直接用代码，港股走 ADR 映射。 */
+function finnhubSymbol(stock) {
+  if (stock.market === 'US') return String(stock.code || '').toUpperCase() || null;
+  if (stock.market === 'HK') return HK_ADR_SYMBOL[String(stock.code || '').padStart(5, '0')] || null;
+  return null;
+}
+
+/* Finnhub 分析师评级汇总（免费端点 /stock/recommendation，CORS 可直连）。
+   返回统一结构挂到 reports.finnhub，供 scoreReports / 渲染层消费。 */
+async function getFinnhubRecommendation(stock) {
+  const symbol = finnhubSymbol(stock);
+  if (!symbol) return { supported: false, reason: '该港股无可用 ADR 映射', symbol: null };
+  const cacheKey = `finnhub-rec:${symbol}`;
+  return cached(cacheKey, 30 * 60 * 1000, async () => {
+    try {
+      const url = `https://finnhub.io/api/v1/stock/recommendation?symbol=${encodeURIComponent(
+        symbol
+      )}&token=${slVendorValue('fh')}`;
+      const data = await fetchJSON(url, { timeout: 10000 });
+      if (!Array.isArray(data) || !data.length) return { supported: false, reason: 'Finnhub 无评级数据', symbol };
+      const rows = data.slice(0, 12).map((r) => ({
+        period: r.period,
+        strongBuy: num(r.strongBuy, 0),
+        buy: num(r.buy, 0),
+        hold: num(r.hold, 0),
+        sell: num(r.sell, 0),
+        strongSell: num(r.strongSell, 0),
+      }));
+      const latest = rows[0];
+      const total =
+        latest.strongBuy + latest.buy + latest.hold + latest.sell + latest.strongSell;
+      return {
+        supported: true,
+        symbol,
+        displaySymbol: latest.symbol || symbol,
+        source: 'Finnhub',
+        latest: {
+          period: latest.period,
+          strongBuy: latest.strongBuy,
+          buy: latest.buy,
+          hold: latest.hold,
+          sell: latest.sell,
+          strongSell: latest.strongSell,
+          total,
+        },
+        months: rows.length,
+        list: rows,
+      };
+    } catch (e) {
+      return { supported: false, reason: `Finnhub 请求失败: ${e && e.message ? e.message : ''}`, symbol };
+    }
+  });
+}
+
+/* FR-18.6：FMP 免费层凭据见上方 SL_VENDOR_CFG.fmp，仅用于美股
+   /stable/price-target-consensus（补 Finnhub 缺失的目标价）。
+   实测：FMP 目标价对港股（.HK / ADR）均需付费，故仅对美股调用。CORS 可直连。 */
+
+async function getFMPPriceTarget(stock) {
+  if (stock.market !== 'US') return { supported: false, reason: 'FMP 目标价仅覆盖美股', symbol: null };
+  const symbol = String(stock.code || '').toUpperCase();
+  if (!symbol) return { supported: false, reason: '缺少美股代码', symbol: null };
+  const cacheKey = `fmp-target:${symbol}`;
+  return cached(cacheKey, 30 * 60 * 1000, async () => {
+    try {
+      const url = `https://financialmodelingprep.com/stable/price-target-consensus?symbol=${encodeURIComponent(
+        symbol
+      )}&apikey=${slVendorValue('fmp')}`;
+      const data = await fetchJSON(url, { timeout: 10000 });
+      const r = Array.isArray(data) && data[0];
+      const consensus = num(r && r.targetConsensus);
+      if (!r || !Number.isFinite(consensus) || consensus <= 0) {
+        return { supported: false, reason: 'FMP 无目标价数据', symbol };
+      }
+      return {
+        supported: true,
+        symbol,
+        source: 'FMP',
+        consensus,
+        high: num(r.targetHigh, consensus),
+        low: num(r.targetLow, consensus),
+        median: num(r.targetMedian, consensus),
+      };
+    } catch (e) {
+      return { supported: false, reason: `FMP 目标价请求失败: ${e && e.message ? e.message : ''}`, symbol };
+    }
+  });
+}
+
 async function getStockReports(stock, opts = {}) {
   if (stock.market !== 'A') {
-    return { supported: false, hits: 0, list: [], industryCode: '', industryName: '' };
+    /* FR-18.5/18.6：港美股研报维度以 Finnhub 分析师评级替代；美股另取 FMP 目标价补齐目标价子项。
+       两路互不阻塞，任一失败不影响其余维度。 */
+    const [finnhub, fmpTarget] = await Promise.all([
+      getFinnhubRecommendation(stock),
+      getFMPPriceTarget(stock),
+    ]);
+    return {
+      supported: true,
+      hits: 0,
+      list: [],
+      industryCode: '',
+      industryName: '',
+      finnhub,
+      fmpTarget,
+    };
   }
   const pageSize = opts.pageSize || 20;
   const months = opts.months || 6;
@@ -3849,10 +4002,71 @@ function analyzeSentiment(news) {
   return { total, pos, neu, neg, score, details };
 }
 
+/* FR-18.5/18.6：港美股以 Finnhub 分析师评级替代中文研报打分。
+   有目标价（美股 FMP）时恢复三段式「覆盖度 30% + 评级倾向 45% + 目标价 25%」；
+   无目标价（港股 / FMP 失败）时退化为「覆盖度 30% + 评级倾向 70%」按剩余权重归一，
+   与 A 股研报「有值才计权」的口径保持一致。 */
+function scoreFinnhubReports(finnhub, fmpTarget, quote) {
+  if (!finnhub || !finnhub.supported || !finnhub.latest) {
+    return {
+      available: false,
+      note: finnhub && finnhub.reason ? `Finnhub 评级不可用：${finnhub.reason}` : '暂无可用的海外分析师评级',
+      reasons: [],
+    };
+  }
+  const latest = finnhub.latest;
+  const { strongBuy = 0, buy = 0, hold = 0, sell = 0, strongSell = 0, total = 0 } = latest;
+  const reasons = [];
+  if (!(total > 0)) {
+    return { available: false, note: 'Finnhub 评级家数为 0', reasons: [] };
+  }
+  /* 评级倾向：强买 +1、买入 +0.6、中性 0、卖出 -0.6、强卖 -1，映射到 0–100 */
+  const weighted = strongBuy * 1 + buy * 0.6 + hold * 0 - sell * 0.6 - strongSell * 1;
+  const rating = clamp(50 + (weighted / total) * 50, 0, 100);
+  const bullish = strongBuy + buy;
+  const bearish = sell + strongSell;
+  reasons.push(
+    `Finnhub 近月 ${total} 位分析师：买入/增持 ${bullish} 位、中性 ${hold} 位、减持/卖出 ${bearish} 位；评级倾向 ${Math.round(rating)}。`
+  );
+
+  const monthsCoverage = band(finnhub.months, [
+    [12, 100], [9, 90], [6, 78], [3, 62], [1, 45],
+  ], 35);
+  const analystCoverage = band(total, [
+    [40, 100], [25, 90], [15, 78], [8, 62], [3, 45], [1, 32],
+  ], 30);
+  const coverage = Math.round(monthsCoverage * 0.4 + analystCoverage * 0.6);
+  reasons.push(`覆盖度：${finnhub.months} 个月评级记录、当月 ${total} 位分析师，覆盖度打分 ${coverage}。`);
+
+  /* FR-18.6：目标价子项（仅美股 FMP） */
+  let targetScore = null;
+  let targetUpside = null;
+  if (fmpTarget && fmpTarget.supported && Number.isFinite(fmpTarget.consensus) && quote && quote.price > 0) {
+    targetUpside = (fmpTarget.consensus / quote.price - 1) * 100;
+    targetScore = band(targetUpside, [
+      [25, 100], [15, 92], [8, 82], [2, 70], [-5, 52], [-15, 34],
+    ], 22);
+    reasons.push(`FMP 目标价一致预期 ${fmtPrice(fmpTarget.consensus)}，较现价 ${fmtPct(targetUpside)}，目标价打分 ${targetScore}。`);
+  } else {
+    reasons.push('无可用目标价（港股免费源不覆盖 / FMP 未返回），目标价子项不计入并按剩余权重折算。');
+  }
+
+  let score;
+  if (targetScore !== null) {
+    score = Math.round(coverage * 0.3 + rating * 0.45 + targetScore * 0.25);
+  } else {
+    score = Math.round(coverage * 0.3 + rating * 0.7);
+  }
+  const note = `Finnhub 评级 · ${total} 位分析师 · 买入 ${bullish} / 中性 ${hold} / 卖出 ${bearish}${
+    targetUpside !== null ? ` · 目标空间 ${fmtPct(targetUpside)}` : ''
+  }`;
+  return { available: true, score, note, reasons };
+}
+
 function scoreReports(data, quote) {
   const { market, reports } = data;
   if (market !== 'A') {
-    return { available: false, note: '港股 / 美股暂无免费中文研报源', reasons: [] };
+    return scoreFinnhubReports(reports && reports.finnhub, reports && reports.fmpTarget, quote);
   }
   const list = (reports && reports.list) || [];
   if (!list.length) {
@@ -4051,7 +4265,7 @@ function computeScore({ market, quote, kline, reports, financials, news }) {
   if (coverage < 100) {
     desc += `当前可用 ${availableCount}/${dimCount} 个维度、权重覆盖 ${coverage}%，缺失维度已从权重中剔除并按覆盖度折算。`;
     if (market !== 'A') {
-      desc += '港美股缺少免费中文研报等维度，分数仅在可用维度内可比，请勿与 A 股评分直接比较高低。';
+      desc += '港美股评分口径与 A 股不同（研报维度以海外分析师评级替代），分数仅在可用维度内可比，请勿与 A 股直接比较高低。';
     }
   }
   return {
@@ -8213,6 +8427,13 @@ function targetAnchors() {
   const list = Array.isArray(state.reports)
     ? state.reports.map((r) => num(r.target)).filter((v) => Number.isFinite(v) && v > 0)
     : [];
+  /* FR-18.6：港美股研报为对象结构，从 FMP 目标价（低/中/高）生成锚点 */
+  if (!list.length && state.reports && state.reports.fmpTarget && state.reports.fmpTarget.supported) {
+    const ft = state.reports.fmpTarget;
+    [ft.low, ft.consensus, ft.high].forEach((v) => {
+      if (Number.isFinite(v) && v > 0) list.push(v);
+    });
+  }
   if (!list.length) return null;
   const sorted = [...list].sort((a, b) => a - b);
   return {
@@ -8354,6 +8575,70 @@ function renderStockReports(data, market) {
   const body = $('#reportsBody');
   if (!body) return;
   if (market !== 'A') {
+    const fh = data && data.finnhub;
+    if (fh && fh.supported && fh.latest && fh.latest.total > 0) {
+      /* FR-18.5：以 Finnhub 分析师评级分布替代中文研报展示 */
+      const l = fh.latest;
+      const total = l.total;
+      const seg = (n, cls, label) =>
+        n > 0
+          ? `<span class="fh-seg ${cls}" style="flex:${n}" title="${label} ${n} 位"></span>`
+          : '';
+      const bar = `<div class="fh-bar" style="display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--line);margin:10px 0 8px">${seg(
+        l.strongBuy + l.buy,
+        'up',
+        '买入'
+      )}${seg(l.hold, '', '中性')}${seg(l.sell + l.strongSell, 'down', '卖出')}</div>`;
+      const row = (label, n, cls) =>
+        `<div class="fh-row"><span>${label}</span><span class="${cls || ''}">${n} 位</span></div>`;
+      const links =
+        market === 'HK'
+          ? `<a href="https://www.hkexnews.hk/" target="_blank" rel="noopener">港交所披露易 ↗</a>`
+          : `<a href="https://www.sec.gov/edgar/searchedgar/companysearch" target="_blank" rel="noopener">SEC EDGAR ↗</a>`;
+      /* FR-18.6：美股 FMP 目标价一致预期 */
+      const ft = data && data.fmpTarget;
+      const price = state.quote && num(state.quote.price);
+      let targetBlock = '';
+      if (ft && ft.supported && Number.isFinite(ft.consensus)) {
+        const upside = price > 0 ? (ft.consensus / price - 1) * 100 : null;
+        const targetRow = (label, val, cls) =>
+          `<div class="fh-row"><span>${label}</span><span class="${cls || ''}">${fmtPrice(val)}</span></div>`;
+        targetBlock = `<div class="fh-target">
+          <div class="fh-head" style="margin-top:14px">目标价一致预期 · FMP</div>
+          <div class="fh-grid">
+            ${targetRow('一致预期', ft.consensus, 'up')}
+            ${targetRow('目标高位', ft.high, '')}
+            ${targetRow('目标低位', ft.low, 'down')}
+          </div>
+          ${
+            upside !== null
+              ? `<div class="source-note" style="margin-top:8px">一致预期较现价 ${fmtPct(upside)}${
+                  Number.isFinite(ft.median) ? ` · 中位数 ${fmtPrice(ft.median)}` : ''
+                }</div>`
+              : ''
+          }
+        </div>`;
+      }
+      const sourceNote =
+        ft && ft.supported
+          ? `${total} 位分析师 · 覆盖 ${fh.months} 个月 · 评级来自 Finnhub、目标价来自 FMP · ${links}`
+          : `${total} 位分析师 · 覆盖 ${fh.months} 个月 · 数据来自 Finnhub（免费层不含目标价）· ${links}`;
+      body.innerHTML = `<div class="fh-ratings">
+        <div class="fh-head">分析师评级汇总 · ${esc(fh.displaySymbol || fh.symbol)} <span class="badge">${
+        l.period ? esc(String(l.period).slice(0, 7)) : '最近'
+      }</span></div>
+        ${bar}
+        <div class="fh-grid">
+          ${row('买入 / 增持', l.strongBuy + l.buy, 'up')}
+          ${row('中性', l.hold, '')}
+          ${row('减持 / 卖出', l.sell + l.strongSell, 'down')}
+        </div>
+        ${targetBlock}
+        <div class="source-note" style="margin-top:10px">${sourceNote}</div>
+      </div>`;
+      updateStatus('reports', 'ok', `评级 ${total} 位${ft && ft.supported ? ' + 目标价' : ''}`);
+      return;
+    }
     const links =
       market === 'HK'
         ? [
@@ -8366,13 +8651,13 @@ function renderStockReports(data, market) {
           ];
     body.innerHTML = emptyState({
       icon: 'lock',
-      title: '港股 / 美股暂无可用的免费中文研报源',
-      desc: `东方财富免费研报接口目前只覆盖 A 股，${marketLabel(
-        market
-      )}个股研报无法展示。行情、K 线、新闻、同业与技术评分仍可使用；下方提供官方披露渠道供进一步查阅。`,
+      title: '暂无可用的海外分析师评级',
+      desc: fh && fh.reason
+        ? `${fh.reason}。${marketLabel(market)}个股暂无可映射的 Finnhub 评级标的；行情、K 线、新闻、同业与技术评分仍可使用。`
+        : `东方财富免费研报接口只覆盖 A 股，当前标的暂无可用的 Finnhub 分析师评级。行情、K 线、新闻、同业与技术评分仍可使用；下方提供官方披露渠道供进一步查阅。`,
       links,
     });
-    updateStatus('reports', 'empty', '研报 暂无免费源');
+    updateStatus('reports', 'empty', '研报 暂无海外源');
     return;
   }
   if (!data || !data.supported) {

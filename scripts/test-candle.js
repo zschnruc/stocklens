@@ -497,7 +497,7 @@ function auditCandlestick(html, expectBars) {
     news: [{ title: '公司增长强劲', content: '' }],
   });
   check('评分返回可用维度数与总维度数', usScore.availableCount === 3 && usScore.dimCount === 4 && usScore.coverage === 70);
-  check('非 A 股评分附带跨市场不可直接比较提示', /请勿与 A 股评分直接比较高低/.test(usScore.desc));
+  check('非 A 股评分附带跨市场不可直接比较提示', /请勿与 A 股直接比较高低/.test(usScore.desc));
 
   console.log('K 线分钟级周期（v2.3，离线纯函数）');
   check('周期归一化支持分钟线', normalizeKlinePeriod('5m') === '5m' && normalizeKlinePeriod('15m') === '15m' && normalizeKlinePeriod('60m') === '60m');
@@ -534,6 +534,47 @@ function auditCandlestick(html, expectBars) {
     { price: 100 }
   );
   check('研报有评级无目标价按 0.75 分母归一', ratedReports.score === 88);
+
+  /* FR-18.5 港美股 Finnhub 分析师评级维度（离线纯函数） */
+  const fhBase = (latest, months = 12) => ({
+    supported: true, symbol: 'AAPL', displaySymbol: 'AAPL', source: 'Finnhub', months,
+    latest: { period: '2026-11-01', total: 100, strongBuy: 0, buy: 0, hold: 0, sell: 0, strongSell: 0, ...latest },
+    list: [],
+  });
+  const fhStrongBuy = scoreReports({ market: 'US', reports: { finnhub: fhBase({ strongBuy: 100 }) } }, { price: 100 });
+  const fhAllSell = scoreReports({ market: 'US', reports: { finnhub: fhBase({ strongSell: 100 }) } }, { price: 100 });
+  const fhAllHold = scoreReports({ market: 'US', reports: { finnhub: fhBase({ hold: 100 }) } }, { price: 100 });
+  check('Finnhub 强买评级得满分且维度可用', fhStrongBuy.available && fhStrongBuy.score === 100);
+  check('Finnhub 全卖出评级低于中性', fhAllSell.score < fhAllHold.score && fhAllHold.score < fhStrongBuy.score);
+  check('Finnhub 全中性评级落在中位', fhAllHold.score === 65);
+  const fhUnsupported = scoreReports({ market: 'US', reports: { finnhub: { supported: false, reason: '无 ADR 映射' } } }, { price: 100 });
+  check('Finnhub 评级不可用时维度缺席而非伪造', !fhUnsupported.available && fhUnsupported.note.includes('无 ADR 映射'));
+  const fhThin = scoreReports({ market: 'HK', reports: { finnhub: fhBase({ strongBuy: 100 }, 1) } }, { price: 100 });
+  check('Finnhub 覆盖月数少则覆盖度折算更低', fhThin.score < fhStrongBuy.score);
+
+  /* FR-18.6 美股 FMP 目标价子项（离线纯函数） */
+  const fmpHi = { supported: true, symbol: 'AAPL', source: 'FMP', consensus: 130, high: 150, low: 110, median: 128 };
+  const fmpLo = { supported: true, symbol: 'AAPL', source: 'FMP', consensus: 80, high: 90, low: 70, median: 82 };
+  const fhWithHi = scoreReports(
+    { market: 'US', reports: { finnhub: fhBase({ strongSell: 100 }), fmpTarget: fmpHi } },
+    { price: 100 }
+  );
+  const fhWithLo = scoreReports(
+    { market: 'US', reports: { finnhub: fhBase({ strongSell: 100 }), fmpTarget: fmpLo } },
+    { price: 100 }
+  );
+  check('美股目标价高则评分高于目标价低', fhWithHi.score > fhWithLo.score && fhWithHi.score === 55);
+  check('目标价上行达 30% 拿到满分子项', fhWithHi.reasons.join('').includes('目标价打分 100'));
+  const fhNoTarget = scoreReports(
+    { market: 'US', reports: { finnhub: fhBase({ strongSell: 100 }), fmpTarget: { supported: false } } },
+    { price: 100 }
+  );
+  check('无目标价时退化为两段式（强卖得 30）', fhNoTarget.score === 30);
+  const fmpHK = await getFMPPriceTarget({ market: 'HK', code: '00700' });
+  check('港股 FMP 目标价不覆盖', !fmpHK.supported && fmpHK.reason.includes('仅覆盖美股'));
+  check('港股 ADR 映射命中腾讯/京东', finnhubSymbol({ market: 'HK', code: '00700' }) === 'TCEHY' && finnhubSymbol({ market: 'HK', code: '09618' }) === 'JD');
+  check('无 ADR 的港股返回空映射', finnhubSymbol({ market: 'HK', code: '02318' }) === null);
+  check('美股 symbol 直接透传大写', finnhubSymbol({ market: 'US', code: 'aapl' }) === 'AAPL');
   const mddLow = scoreCryptoVolatility({ metrics: { vol30: 60, maxDrawdown90: 10, atrPct: 5 } }).score;
   const mddMid = scoreCryptoVolatility({ metrics: { vol30: 60, maxDrawdown90: 30, atrPct: 5 } }).score;
   const mddTiny = scoreCryptoVolatility({ metrics: { vol30: 60, maxDrawdown90: 5, atrPct: 5 } }).score;

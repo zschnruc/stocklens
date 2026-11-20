@@ -603,9 +603,147 @@ function normalizeReport(r) {
   };
 }
 
+/* FR-18.5：港股 ADR → Finnhub symbol 映射（实测：这些 ADR 的 /recommendation 返回对应港股评级）。
+   仅收录在美股有 ADR 且 Finnhub 免费层确实返回数据的港股；未收录的港股返回 unsupported。 */
+const HK_ADR_SYMBOL = {
+  '00700': 'TCEHY', // 腾讯控股
+  '09988': 'BABA', // 阿里巴巴
+  '09618': 'JD', // 京东集团
+  '03690': 'MPNGY', // 美团
+  '01810': 'XIACY', // 小米集团
+  '02015': 'LI', // 理想汽车
+  '09866': 'NIO', // 蔚来
+  '09868': 'XPEV', // 小鹏汽车
+  '00005': 'HSBC', // 汇丰控股
+};
+
+/* FR-18.5/18.6 第三方免费层凭据：以确定性编码形式随程序分发，避免源码与单文件产物
+   中出现可直接复制的明文。算法为「按位置异或 + 十六进制」，与 scripts/vendor-keys.js 一致。
+   注意：这是编码存储，不是加密，也不构成安全隔离——浏览器运行时仍会还原为明文并作为
+   查询参数发送（DevTools / 网络面板均可取得）。真正保密只能依靠服务端代理；
+   轮换凭据请运行 node scripts/vendor-keys.js --write 后重新构建。 */
+const SL_VENDOR_CFG = {
+  fh: '3e1dd2bb8570482fb296bd967e0901b3d8f9c77e5a01fedfb9946c3356bac1b2922d255ffc85eccd',
+  fmp: '1906e3fbaf616d32eff0fba4475037b4d8a7907d0f31e3de82b12d2555f188ac',
+};
+const SL_VENDOR_MEMO = Object.create(null);
+function slVendorValue(id) {
+  if (SL_VENDOR_MEMO[id]) return SL_VENDOR_MEMO[id];
+  const hex = SL_VENDOR_CFG[id] || '';
+  let out = '';
+  for (let i = 0, j = 0; i < hex.length; i += 2, j += 1) {
+    out += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16) ^ ((j * 37 + 0x5a) & 0xff));
+  }
+  SL_VENDOR_MEMO[id] = out;
+  return out;
+}
+
+/* 返回 Finnhub recommendation 可用的 symbol：美股直接用代码，港股走 ADR 映射。 */
+function finnhubSymbol(stock) {
+  if (stock.market === 'US') return String(stock.code || '').toUpperCase() || null;
+  if (stock.market === 'HK') return HK_ADR_SYMBOL[String(stock.code || '').padStart(5, '0')] || null;
+  return null;
+}
+
+/* Finnhub 分析师评级汇总（免费端点 /stock/recommendation，CORS 可直连）。
+   返回统一结构挂到 reports.finnhub，供 scoreReports / 渲染层消费。 */
+async function getFinnhubRecommendation(stock) {
+  const symbol = finnhubSymbol(stock);
+  if (!symbol) return { supported: false, reason: '该港股无可用 ADR 映射', symbol: null };
+  const cacheKey = `finnhub-rec:${symbol}`;
+  return cached(cacheKey, 30 * 60 * 1000, async () => {
+    try {
+      const url = `https://finnhub.io/api/v1/stock/recommendation?symbol=${encodeURIComponent(
+        symbol
+      )}&token=${slVendorValue('fh')}`;
+      const data = await fetchJSON(url, { timeout: 10000 });
+      if (!Array.isArray(data) || !data.length) return { supported: false, reason: 'Finnhub 无评级数据', symbol };
+      const rows = data.slice(0, 12).map((r) => ({
+        period: r.period,
+        strongBuy: num(r.strongBuy, 0),
+        buy: num(r.buy, 0),
+        hold: num(r.hold, 0),
+        sell: num(r.sell, 0),
+        strongSell: num(r.strongSell, 0),
+      }));
+      const latest = rows[0];
+      const total =
+        latest.strongBuy + latest.buy + latest.hold + latest.sell + latest.strongSell;
+      return {
+        supported: true,
+        symbol,
+        displaySymbol: latest.symbol || symbol,
+        source: 'Finnhub',
+        latest: {
+          period: latest.period,
+          strongBuy: latest.strongBuy,
+          buy: latest.buy,
+          hold: latest.hold,
+          sell: latest.sell,
+          strongSell: latest.strongSell,
+          total,
+        },
+        months: rows.length,
+        list: rows,
+      };
+    } catch (e) {
+      return { supported: false, reason: `Finnhub 请求失败: ${e && e.message ? e.message : ''}`, symbol };
+    }
+  });
+}
+
+/* FR-18.6：FMP 免费层凭据见上方 SL_VENDOR_CFG.fmp，仅用于美股
+   /stable/price-target-consensus（补 Finnhub 缺失的目标价）。
+   实测：FMP 目标价对港股（.HK / ADR）均需付费，故仅对美股调用。CORS 可直连。 */
+
+async function getFMPPriceTarget(stock) {
+  if (stock.market !== 'US') return { supported: false, reason: 'FMP 目标价仅覆盖美股', symbol: null };
+  const symbol = String(stock.code || '').toUpperCase();
+  if (!symbol) return { supported: false, reason: '缺少美股代码', symbol: null };
+  const cacheKey = `fmp-target:${symbol}`;
+  return cached(cacheKey, 30 * 60 * 1000, async () => {
+    try {
+      const url = `https://financialmodelingprep.com/stable/price-target-consensus?symbol=${encodeURIComponent(
+        symbol
+      )}&apikey=${slVendorValue('fmp')}`;
+      const data = await fetchJSON(url, { timeout: 10000 });
+      const r = Array.isArray(data) && data[0];
+      const consensus = num(r && r.targetConsensus);
+      if (!r || !Number.isFinite(consensus) || consensus <= 0) {
+        return { supported: false, reason: 'FMP 无目标价数据', symbol };
+      }
+      return {
+        supported: true,
+        symbol,
+        source: 'FMP',
+        consensus,
+        high: num(r.targetHigh, consensus),
+        low: num(r.targetLow, consensus),
+        median: num(r.targetMedian, consensus),
+      };
+    } catch (e) {
+      return { supported: false, reason: `FMP 目标价请求失败: ${e && e.message ? e.message : ''}`, symbol };
+    }
+  });
+}
+
 async function getStockReports(stock, opts = {}) {
   if (stock.market !== 'A') {
-    return { supported: false, hits: 0, list: [], industryCode: '', industryName: '' };
+    /* FR-18.5/18.6：港美股研报维度以 Finnhub 分析师评级替代；美股另取 FMP 目标价补齐目标价子项。
+       两路互不阻塞，任一失败不影响其余维度。 */
+    const [finnhub, fmpTarget] = await Promise.all([
+      getFinnhubRecommendation(stock),
+      getFMPPriceTarget(stock),
+    ]);
+    return {
+      supported: true,
+      hits: 0,
+      list: [],
+      industryCode: '',
+      industryName: '',
+      finnhub,
+      fmpTarget,
+    };
   }
   const pageSize = opts.pageSize || 20;
   const months = opts.months || 6;
