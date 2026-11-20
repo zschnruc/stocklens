@@ -1515,7 +1515,7 @@ html[data-theme="light"] .crypto-risk{background:rgba(169,118,35,.05)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v2.4.0 · 构建于 2026/11/19 10:01:27</p>
+      <p>研值 StockLens v2.5.0 · 构建于 2026/11/20 09:21:43</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -1720,7 +1720,7 @@ function exchangeLabel(stock, quote) {
     if (/\.OQ$/i.test(raw)) return '纳斯达克';
     if (/\.N$/i.test(raw)) return '纽交所';
     if (/\.PS$/i.test(raw)) return 'OTC / ADR';
-    if (/\.A$/i.test(raw)) return 'NYSE American';
+    if (/\.(A|AM|AMEX)$/i.test(raw)) return 'NYSE American';
     return '美国市场';
   }
   const c = String(stock.code || '');
@@ -1792,15 +1792,51 @@ function readLocal(key) {
   }
 }
 let localWriteWarned = false;
-function writeLocal(key, value) {
+/* 配额溢出时按写入时间淘汰最旧的行情缓存，避免整个 localStorage 永久失效（FR-19.6） */
+function pruneLocalCache(keepRatio = 0.6) {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    const items = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('sl:c:')) continue;
+      let t = 0;
+      try {
+        t = (JSON.parse(localStorage.getItem(k)) || {}).t || 0;
+      } catch (e) {}
+      items.push([k, t]);
+    }
+    if (!items.length) return 0;
+    items.sort((a, b) => a[1] - b[1]);
+    const drop = Math.max(1, Math.floor(items.length * (1 - keepRatio)));
+    items.slice(0, drop).forEach(([k]) => localStorage.removeItem(k));
+    return drop;
   } catch (e) {
-    /* 配额溢出等场景：只告警一次，缓存自动降级为内存模式，不影响功能 */
+    return 0;
+  }
+}
+function writeLocal(key, value) {
+  let raw;
+  try {
+    raw = JSON.stringify(value);
+  } catch (e) {
+    return false;
+  }
+  try {
+    localStorage.setItem(key, raw);
+    return true;
+  } catch (e) {
+    /* 配额溢出：先淘汰最旧缓存再重试一次，仍失败才告警 */
+    if (pruneLocalCache()) {
+      try {
+        localStorage.setItem(key, raw);
+        return true;
+      } catch (e2) {}
+    }
     if (!localWriteWarned) {
       localWriteWarned = true;
       console.warn('[StockLens] 本地缓存写入失败（可能超出配额），数据缓存将仅在本次会话内存中生效');
     }
+    return false;
   }
 }
 const store = {
@@ -1817,6 +1853,14 @@ const store = {
     } catch (e) {}
   },
 };
+const MEM_CACHE_MAX = 120;
+function memSet(key, entry) {
+  memCache.set(key, entry);
+  if (memCache.size > MEM_CACHE_MAX) {
+    const oldest = memCache.keys().next().value;
+    if (oldest !== undefined) memCache.delete(oldest);
+  }
+}
 async function cached(key, ttl, loader, force = false) {
   const now = Date.now();
   if (!force) {
@@ -1824,19 +1868,22 @@ async function cached(key, ttl, loader, force = false) {
     if (mem && now - mem.t < ttl) return mem.d;
     const disk = readLocal('sl:c:' + key);
     if (disk && now - disk.t < ttl) {
-      memCache.set(key, disk);
+      memSet(key, disk);
       return disk.d;
     }
   }
-  if (inflight.has(key)) return inflight.get(key);
+  /* force 时不复用 inflight，保证手动刷新一定发起新请求（FR-19.6） */
+  if (!force && inflight.has(key)) return inflight.get(key);
   const p = loader()
     .then((d) => {
       const entry = { t: Date.now(), d };
-      memCache.set(key, entry);
+      memSet(key, entry);
       writeLocal('sl:c:' + key, entry);
       return d;
     })
-    .finally(() => inflight.delete(key));
+    .finally(() => {
+      if (inflight.get(key) === p) inflight.delete(key);
+    });
   inflight.set(key, p);
   return p;
 }
@@ -1965,6 +2012,19 @@ const TTL = {
   boards: 24 * 60 * 60 * 1000,
 };
 
+/* 分钟 K 线按周期收紧时效：5m 图最多滞后 1 根，15m/60m 相应放宽（FR-19.6） */
+const KLINE_TTL = {
+  day: 10 * 60 * 1000,
+  week: 10 * 60 * 1000,
+  month: 10 * 60 * 1000,
+  '5m': 60 * 1000,
+  '15m': 90 * 1000,
+  '60m': 2 * 60 * 1000,
+};
+function klineTtl(period) {
+  return KLINE_TTL[period] || TTL.kline;
+}
+
 /* ---------------- transport ---------------- */
 async function fetchJSON(url, options = {}) {
   const { timeout = 15000, headers = {} } = options;
@@ -2092,10 +2152,9 @@ function normalizeSearchItem(part) {
     return { market: 'HK', code, name, pinyin, quoteKey: 'hk' + code, rawCode: code, klineCode: 'hk' + code };
   }
   if (mk === 'us') {
-    const upper = rawCode.toUpperCase();
-    const klineCode = 'us' + upper;
-    const quoteRaw = upper.replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '');
-    return { market: 'US', code: quoteRaw, name, pinyin, quoteKey: 'us' + quoteRaw, rawCode: upper, klineCode };
+    /* 腾讯搜索返回的 rawCode 带交易所后缀（AAPL.OQ / AMJB.AM / BRK.A.N），
+       统一交给 usStockFields 生成 quoteKey 与 K 线键（FR-19.2） */
+    return Object.assign(usStockFields(rawCode.toUpperCase(), name), { pinyin });
   }
   return null;
 }
@@ -2166,19 +2225,11 @@ function parseSymbolInput(input) {
     return { market: 'HK', code, name: code, quoteKey: 'hk' + code, rawCode: code, klineCode: 'hk' + code };
   }
   m = q.match(/^us([A-Za-z][A-Za-z0-9.\-]*)$/i);
-  if (m) {
-    const raw = m[1].toUpperCase();
-    const quoteRaw = raw.replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '');
-    return { market: 'US', code: quoteRaw, name: quoteRaw, quoteKey: 'us' + quoteRaw, rawCode: raw, klineCode: 'us' + raw };
-  }
+  if (m) return usStockFields(m[1]);
   /* 加密货币别名优先于「字母即美股」的兜底：BTC / btc / 比特币 / 以太坊 */
   const coin = typeof cryptoResolveQuery === 'function' ? cryptoResolveQuery(q) : null;
   if (coin) return coin;
-  if (/^[A-Za-z][A-Za-z0-9.\-]{0,11}$/.test(q)) {
-    const raw = q.toUpperCase();
-    const quoteRaw = raw.replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '');
-    return { market: 'US', code: quoteRaw, name: quoteRaw, quoteKey: 'us' + quoteRaw, rawCode: raw, klineCode: 'us' + raw };
-  }
+  if (/^[A-Za-z][A-Za-z0-9.\-]{0,11}$/.test(q)) return usStockFields(q);
   return null;
 }
 
@@ -2249,25 +2300,37 @@ function parseQuoteLine(key, raw) {
   return quote;
 }
 
+async function fetchQuoteKey(key) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const res = await fetch(API.quote + encodeURIComponent(key), { signal: ctrl.signal, cache: 'no-store' });
+    if (!res.ok) throw new Error(`行情 HTTP ${res.status}`);
+    const buf = await res.arrayBuffer();
+    const text = decodeGBK(buf);
+    const escKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let m = text.match(new RegExp('v_' + escKey + '="([^"]*)"'));
+    if (!m) m = text.match(/v_[^=]+="([^"]*)"/);
+    return parseQuoteLine(key, m ? m[1] : '');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function getQuote(stock) {
-  const key = stock.quoteKey || stock.klineCode;
-  if (!key) throw new Error('缺少行情代码');
-  return cached('quote:' + key, TTL.quote, async () => {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 12000);
+  /* 美股同一标的可能有多种写法（腾讯 raw / 东财 secucode / 手输），逐个候选键兜底（FR-19.2） */
+  const keys = stock.market === 'US' ? usQuoteKeys(stock) : [stock.quoteKey || stock.klineCode];
+  const list = keys.filter(Boolean);
+  if (!list.length) throw new Error('缺少行情代码');
+  let lastErr = null;
+  for (const key of list) {
     try {
-      const res = await fetch(API.quote + encodeURIComponent(key), { signal: ctrl.signal, cache: 'no-store' });
-      if (!res.ok) throw new Error(`行情 HTTP ${res.status}`);
-      const buf = await res.arrayBuffer();
-      const text = decodeGBK(buf);
-      const escKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      let m = text.match(new RegExp('v_' + escKey + '="([^"]*)"'));
-      if (!m) m = text.match(/v_[^=]+="([^"]*)"/);
-      return parseQuoteLine(key, m ? m[1] : '');
-    } finally {
-      clearTimeout(timer);
+      return await cached('quote:' + key, TTL.quote, () => fetchQuoteKey(key));
+    } catch (e) {
+      lastErr = e;
     }
-  });
+  }
+  throw lastErr || new Error('未找到该股票的行情');
 }
 
 async function getQuoteBatch(keys) {
@@ -2401,10 +2464,12 @@ async function getKline(stock, quote, period = 'day') {
   if (stock.market === 'CRYPTO' || stock.kind === 'coin') return getCryptoKline(stock, p);
   let key = stock.klineCode || stock.quoteKey;
   if (stock.market === 'US') {
-    if (quote && quote.rawCode) key = 'us' + quote.rawCode;
-    else if (!key || !/\.(OQ|N|PS|A)$/i.test(key)) {
-      key = 'us' + (stock.rawCode || stock.code || '');
-    }
+    /* 腾讯 usfqkline 需要带交易所后缀的完整 raw：AAPL.OQ / BRK.A.N / BAC-B.N（FR-19.2） */
+    const raw = String((quote && quote.rawCode) || stock.rawCode || '')
+      .replace(/^us/i, '')
+      .trim()
+      .toUpperCase();
+    if (raw) key = 'us' + raw;
   }
   if (!key) throw new Error('缺少 K 线代码');
   const isUS = stock.market === 'US';
@@ -2415,7 +2480,7 @@ async function getKline(stock, quote, period = 'day') {
     /* 技术面指标仅在日线上有意义，周/月/分钟只返回原始点供图表使用 */
     return { key, period: p, points, metrics: p === 'day' ? klineMetrics(points) : null, source };
   };
-  return cached(`kline:${p}:${key}`, TTL.kline, async () => {
+  return cached(`kline:${p}:${key}`, klineTtl(p), async () => {
     /* A股/港股/ETF 主源：东财 push2his 前复权（腾讯 fqkline 已被 WAF 拦截返回 501）。
        美股分钟线同样走东财（日/周/月仍用腾讯）；ETF 不做前复权（fqt=0），个股与港股用前复权（fqt=1）。 */
     if (!isUS || intraday) {
@@ -2600,29 +2665,102 @@ async function getIndustryReports(industryCode, industryName, opts = {}) {
 }
 
 /* ---------------- Eastmoney financials / profile ---------------- */
-/* 美股 secucode：腾讯 .OQ/.N/.PS → 东财 .O/.N/.A，缺省按纳斯达克 .O */
-function usSecucode(stock, quote) {
+/* 美股交易所后缀映射（FR-19.2）：腾讯 raw 用 .OQ/.N/.AM/.PS，手输与东财 secucode 用
+   .O/.N/.A/.NYSE/.AMEX。105 纳斯达克 / 106 纽交所 / 107 美交所，缺省按纳斯达克兜底。 */
+const US_EXCHANGE = {
+  OQ: { em: 'O', market: '105' },
+  O: { em: 'O', market: '105' },
+  PS: { em: 'O', market: '105' },
+  N: { em: 'N', market: '106' },
+  NYSE: { em: 'N', market: '106' },
+  AM: { em: 'A', market: '107' },
+  AMEX: { em: 'A', market: '107' },
+  A: { em: 'A', market: '107' },
+};
+/* 去掉交易所后缀、保留类股段：AAPL.OQ → AAPL，BRK.A.N → BRK.A，JPM.NYSE → JPM，BRK.A → BRK */
+function usStripExchange(raw) {
+  const parts = String(raw || '')
+    .replace(/^us/i, '')
+    .trim()
+    .toUpperCase()
+    .split('.')
+    .filter(Boolean);
+  if (parts.length > 1 && US_EXCHANGE[parts[parts.length - 1]]) parts.pop();
+  return parts.join('.');
+}
+/* 东财类股/优先股用下划线：BRK.A → BRK_A，BAC-B → BAC_B */
+function usEmCode(raw) {
+  return usStripExchange(raw).replace(/[.\-]/g, '_');
+}
+/* 腾讯只认「去交易所后缀」的代码：东财下划线转回点（BRK_A → BRK.A） */
+function usTencentCode(raw) {
+  return String(raw || '')
+    .replace(/^us/i, '')
+    .trim()
+    .toUpperCase()
+    .replace(/_([A-Z])$/, '.$1');
+}
+/* 腾讯 quote 候选键：类股形态优先、去后缀其次、仅首段兜底（手输 BRK.A / 东财 BRK_A 等） */
+function usQuoteKeys(stock, quote) {
   const raw = String((quote && quote.rawCode) || (stock && stock.rawCode) || (stock && stock.code) || '')
     .replace(/^us/i, '')
-    .trim();
-  if (!raw) return '';
-  if (/\.OQ$/i.test(raw)) return raw.replace(/\.OQ$/i, '.O');
-  if (/\.PS$/i.test(raw)) return raw.replace(/\.PS$/i, '.O');
-  if (/\.[A-Z]{1,2}$/i.test(raw)) return raw;
-  return raw + '.O';
+    .trim()
+    .toUpperCase();
+  if (!raw) return [];
+  const parts = raw.split('.').filter(Boolean);
+  const keys = [];
+  const push = (code) => {
+    const c = usTencentCode(code);
+    if (!c) return;
+    const k = 'us' + c;
+    if (!keys.includes(k)) keys.push(k);
+  };
+  const classLike = parts.length === 2 && parts[1].length === 1 && !/[._\-]/.test(parts[0]);
+  if (classLike) push(parts.join('.')); /* 两段且末段单字母更像类股：BRK.A → usBRK.A */
+  push(usStripExchange(raw)); /* BRK.A.N → BRK.A，BRK_A.N → BRK.A */
+  if (parts.length > 1) push(parts[0]); /* 再退一步只留首段：BRK.A → BRK */
+  return keys;
+}
+/* 标准美股字段：搜索 / 手输 / hash / 数据集统一走这里 */
+function usStockFields(raw, name) {
+  const upper = String(raw || '')
+    .replace(/^us/i, '')
+    .trim()
+    .toUpperCase();
+  const code = usTencentCode(usStripExchange(upper));
+  return {
+    market: 'US',
+    code,
+    name: name || code,
+    quoteKey: 'us' + code,
+    rawCode: upper,
+    klineCode: 'us' + upper,
+  };
+}
+const US_DEFAULT_EXCHANGE = { em: 'O', market: '105' };
+/* 拆分美股代码：raw 末段命中映射表即视为交易所，其余段（类股/优先股）转下划线 */
+function parseUsRaw(stock, quote) {
+  const raw = String((quote && quote.rawCode) || (stock && stock.rawCode) || (stock && stock.code) || '')
+    .replace(/^us/i, '')
+    .trim()
+    .toUpperCase();
+  if (!raw) return null;
+  const parts = raw.split('.').filter(Boolean);
+  const last = parts[parts.length - 1];
+  const exchange = (parts.length > 1 && US_EXCHANGE[last]) || US_DEFAULT_EXCHANGE;
+  return { code: usEmCode(raw), exchange };
+}
+
+/* 美股 secucode：东财口径 = 代码（类股用下划线） + .O/.N/.A */
+function usSecucode(stock, quote) {
+  const p = parseUsRaw(stock, quote);
+  return p ? `${p.code}.${p.exchange.em}` : '';
 }
 
 /* 美股东财 secid（分钟线用）：105 纳斯达克 / 106 纽交所 / 107 美交所 */
-const EM_US_MARKET = { OQ: '105', PS: '105', N: '106', NYSE: '106', A: '107', AMEX: '107' };
 function emUsSecid(stock, quote) {
-  const raw = String((quote && quote.rawCode) || (stock && stock.rawCode) || (stock && stock.code) || '')
-    .replace(/^us/i, '')
-    .trim();
-  if (!raw) return '';
-  const m = raw.match(/^([^.]+)(?:\.([A-Z]+))?$/i);
-  const code = (m ? m[1] : raw).toUpperCase();
-  const suffix = (m && m[2] ? m[2] : '').toUpperCase();
-  return `${EM_US_MARKET[suffix] || '105'}.${code}`;
+  const p = parseUsRaw(stock, quote);
+  return p ? `${p.exchange.market}.${p.code}` : '';
 }
 
 /* 东财美股财报为长表：每行一个科目，按 REPORT（如 2026/FY）分组后透视 */
@@ -3309,13 +3447,13 @@ async function getHKUSPeersFromPush2(stock, industryName) {
       .slice(0, 3)
       .map((r) => ({
         market: stock.market,
-        code: isHK ? String(r.code).padStart(5, '0') : String(r.code).replace(/\..*$/, ''),
+        code: isHK ? String(r.code).padStart(5, '0') : usTencentCode(String(r.code).replace(/\..*$/, '')),
         name: r.name,
         marketCap: Number.isFinite(r.marketCap) ? r.marketCap : null,
         profit: Number.isFinite(r.profit) ? r.profit : null,
         pe: r.pe,
         pb: r.pb,
-        quoteKey: isHK ? 'hk' + String(r.code).padStart(5, '0') : 'us' + String(r.code).replace(/\..*$/, ''),
+        quoteKey: isHK ? 'hk' + String(r.code).padStart(5, '0') : 'us' + usTencentCode(String(r.code).replace(/\..*$/, '')),
         klineCode: isHK ? 'hk' + String(r.code).padStart(5, '0') : 'us' + String(r.code),
       }));
   };
@@ -3342,10 +3480,7 @@ function dcCodeInFilter(codes) {
   return `(SECURITY_CODE in (${unique.map((c) => `"${c}"`).join(',')}))`;
 }
 function usBaseCode(raw) {
-  return String(raw || '')
-    .toUpperCase()
-    .replace(/^US/, '')
-    .replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '');
+  return usStockFields(raw).code;
 }
 function peerCurrencyLabel(currency) {
   const c = String(currency || '').toUpperCase();
@@ -4847,14 +4982,16 @@ function rsiSeries(closes, n) {
     if (c >= 0) gain += c;
     else loss -= c;
   }
+  /* 完全横盘（无涨无跌）时 RSI 记 50，避免误判为 100 超买 */
+  const rsiOf = (gain, loss) => (loss === 0 ? (gain === 0 ? 50 : 100) : (100 * gain) / (gain + loss));
   let ag = gain / n;
   let al = loss / n;
-  out[n] = al === 0 ? 100 : (100 * ag) / (ag + al);
+  out[n] = rsiOf(ag, al);
   for (let i = n + 1; i < closes.length; i++) {
     const c = closes[i] - closes[i - 1];
     ag = (ag * (n - 1) + Math.max(c, 0)) / n;
     al = (al * (n - 1) + Math.max(-c, 0)) / n;
-    out[i] = al === 0 ? 100 : (100 * ag) / (ag + al);
+    out[i] = rsiOf(ag, al);
   }
   return out;
 }
@@ -5230,11 +5367,13 @@ function analyzeTechnical(points) {
 const SCREENER_DEFAULT_SIZE = 40;
 const SCREENER_DEFAULT_THRESHOLD = 80;
 const SCREENER_CONCURRENCY = 4;
+/* 候选池时效：盘中名单变化快，5 分钟足够新；个股行情仍按各自 TTL 更新 */
+const SCREENER_POOL_TTL = 5 * 60 * 1000;
 
 /* 沪深 A 股（主板 / 创业板 / 科创板），按成交额排序取热门候选 */
 function getScreenerCandidates(size = SCREENER_DEFAULT_SIZE) {
   const n = clamp(Math.round(Number(size) || SCREENER_DEFAULT_SIZE), 10, 100);
-  return cached(`screener-candidates:${n}`, TTL.boards, async () => {
+  return cached(`screener-candidates:${n}`, SCREENER_POOL_TTL, async () => {
     const params = new URLSearchParams({
       pn: '1',
       pz: String(n),
@@ -5957,6 +6096,16 @@ const CRYPTO_TTL = {
   tvl: 30 * 60 * 1000,
 };
 
+/* 分钟 K 线按周期收紧时效（FR-19.6）：5m 1 分钟、15m 90 秒、60m 2 分钟 */
+const CRYPTO_KLINE_TTL = {
+  '5m': 60 * 1000,
+  '15m': 90 * 1000,
+  '60m': 2 * 60 * 1000,
+};
+function cryptoKlineTtl(period) {
+  return CRYPTO_KLINE_TTL[period] || CRYPTO_TTL.kline;
+}
+
 /* 稳定币不参与评分与首页榜单：价格锚定法币，动量/波动维度会得出畸形分数 */
 const CRYPTO_STABLES = new Set([
   'USDT', 'USDC', 'DAI', 'FDUSD', 'TUSD', 'USDE', 'PYUSD', 'BUSD', 'USDD', 'USDS',
@@ -5985,7 +6134,7 @@ const CRYPTO_CHAINS = {
   ETH: 'Ethereum', BNB: 'BSC', SOL: 'Solana', AVAX: 'Avalanche', TRX: 'Tron',
   TON: 'TON', SUI: 'Sui', APT: 'Aptos', NEAR: 'Near', ADA: 'Cardano', DOT: 'Polkadot',
   ATOM: 'Cosmos', ICP: 'ICP', ALGO: 'Algorand', VET: 'VeChain', HBAR: 'Hedera',
-  XRP: 'Ripple', LTC: 'Litecoin', BCH: 'Bitcoin', BTC: 'Bitcoin', ETC: 'EthereumClassic',
+  LTC: 'Litecoin', BCH: 'Bitcoincash', BTC: 'Bitcoin', ETC: 'EthereumClassic',
   ARB: 'Arbitrum', OP: 'Optimism', SEI: 'Sei', STX: 'Stacks', KAS: 'Kaspa', XLM: 'Stellar',
 };
 
@@ -6207,7 +6356,7 @@ const CRYPTO_KLINE_LIMIT = { day: 320, week: 260, month: 140, '60m': 240, '15m':
 function getCryptoKline(stock, period = 'day') {
   const p = normalizeKlinePeriod(period);
   const symbol = String((stock && (stock.code || stock.rawCode)) || '').toUpperCase();
-  return cached(`crypto:kline:${p}:${symbol}`, CRYPTO_TTL.kline, async () => {
+  return cached(`crypto:kline:${p}:${symbol}`, cryptoKlineTtl(p), async () => {
     const url = `${CRYPTO_API.binance}/klines?symbol=${symbol}USDT&interval=${CRYPTO_INTERVAL[p]}&limit=${CRYPTO_KLINE_LIMIT[p]}`;
     const rows = await fetchJSON(url, { timeout: 15000 });
     const points = parseCryptoKlines(rows, isIntradayPeriod(p));
@@ -7332,7 +7481,7 @@ function emptyState({ icon = 'info', title, desc, links = [], action = '' }) {
   return `<div class="empty-state">
     <div class="empty-icon">${ico(icon, 'lg')}</div>
     <h3>${esc(title)}</h3>
-    <p>${desc || ''}</p>
+    <p>${esc(desc || '')}</p>
     ${action || ''}
     ${
       links.length
@@ -9281,11 +9430,12 @@ function normalizeStock(input) {
     if (!quoteKey) quoteKey = 'hk' + code;
     if (!klineCode) klineCode = 'hk' + code;
   } else {
-    rawCode = rawCode.toUpperCase();
-    code = rawCode.replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '').replace(/^US/i, '');
-    if (!quoteKey) quoteKey = 'us' + code;
-    if (!klineCode) klineCode = 'us' + rawCode;
+    const f = usStockFields(rawCode || code);
+    code = f.code;
+    rawCode = f.rawCode;
     name = s.name || code;
+    if (!quoteKey) quoteKey = f.quoteKey;
+    if (!klineCode) klineCode = f.klineCode;
   }
   return { market, code, name, quoteKey, klineCode, rawCode, kind };
 }
@@ -9362,11 +9512,10 @@ function stockFromHash() {
     if (known) return known;
     return normalizeStock({ market: 'HK', code, name: code });
   }
-  const upper = raw.toUpperCase();
-  const code = upper.replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '');
-  const known = lookupKnownStock('US', code);
-  if (known) return { ...known, rawCode: upper, klineCode: 'us' + upper };
-  return normalizeStock({ market: 'US', code, rawCode: upper, name: code });
+  const fields = usStockFields(raw);
+  const known = lookupKnownStock('US', fields.code);
+  if (known) return normalizeStock({ ...known, rawCode: fields.rawCode });
+  return normalizeStock(fields);
 }
 
 function goStock(input) {
@@ -9698,6 +9847,8 @@ async function analyzeStock(inputStock, opts = {}) {
     if (token !== state.token) return;
     stock.name = quote.name || stock.name;
     stock.rawCode = quote.rawCode || stock.rawCode;
+    stock.quoteKey = quote.key || stock.quoteKey;
+    if (stock.market === 'US') stock.code = usBaseCode(quote.rawCode || stock.rawCode) || stock.code;
     state.stock = stock;
     state.quote = quote;
     addRecent(stock);
@@ -9882,6 +10033,8 @@ async function analyzeEtf(inputStock) {
     if (token !== state.token) return;
     stock.name = quote.name || stock.name;
     stock.rawCode = quote.rawCode || stock.rawCode;
+    stock.quoteKey = quote.key || stock.quoteKey;
+    if (stock.market === 'US') stock.code = usBaseCode(quote.rawCode || stock.rawCode) || stock.code;
     state.stock = stock;
     state.quote = quote;
     addRecent(stock);
