@@ -37,6 +37,8 @@ vm.runInThisContext(fs.readFileSync(path.join(src, '25-hotlists.js'), 'utf8'), {
 vm.runInThisContext(fs.readFileSync(path.join(src, '26-etf.js'), 'utf8'), { filename: '26-etf.js' });
 /* 加密研判：数据解析、别名与五维评分纯函数可离线验证（网络函数不在测试中调用） */
 vm.runInThisContext(fs.readFileSync(path.join(src, '27-crypto.js'), 'utf8'), { filename: '27-crypto.js' });
+/* 大宗商品：品种映射、别名、行情解析与商品 K 线周期可离线验证（网络函数不在测试中调用） */
+vm.runInThisContext(fs.readFileSync(path.join(src, '28-commodity.js'), 'utf8'), { filename: '28-commodity.js' });
 
 const enc = encodeURIComponent;
 let failures = 0;
@@ -657,6 +659,61 @@ function auditCandlestick(html, expectBars) {
     'localStorage 写满时淘汰最旧缓存并重试成功',
     quotaWritten === true && !quotaMap.has('sl:c:old0') && quotaMap.has('sl:c:new')
   );
+
+  console.log('大宗商品轻量研判（v2.6，离线纯函数）');
+  check('商品目录包含 6 个核心品种', COMMODITY_LIST.length === 6);
+  const cKeys = COMMODITY_LIST.map((c) => c.key).join(',');
+  check('品种顺序为 黄金/白银/WTI/布伦特/铜/天然气', cKeys === 'gold,silver,wti,brent,copper,gas');
+  check(
+    '商品 secid 映射固定且完整',
+    COMMODITY_LIST.every((c) => /^(101|102|112)\./.test(c.secid)) &&
+      COMMODITY_BY_KEY.get('gold').secid === '101.GC00Y' &&
+      COMMODITY_BY_KEY.get('brent').secid === '112.B00Y'
+  );
+  const goldStock = normalizeCommodityStock({ key: 'gold' });
+  check(
+    '商品标的字段归一：market/kind/quoteKey',
+    goldStock.market === 'COMMODITY' &&
+      goldStock.kind === 'commodity' &&
+      goldStock.code === 'gold' &&
+      goldStock.quoteKey === 'commodity:gold'
+  );
+  check('中文别名：黄金 → gold', (commodityResolveQuery('黄金') || {}).code === 'gold');
+  check('中文别名：原油 → WTI', (commodityResolveQuery('原油') || {}).code === 'wti');
+  check('英文别名：Brent → 布伦特', (commodityResolveQuery('Brent') || {}).code === 'brent');
+  check('商品搜索按中文前缀命中（原 → 原油两种）', searchCommodities('原').length >= 1);
+  check('商品搜索不返回重复品种', new Set(searchCommodities('黄金').map((s) => s.code)).size === searchCommodities('黄金').length);
+  const typedCl = parseSymbolInput('CL');
+  const typedGold = parseSymbolInput('黄金');
+  check('两字母代码 CL 仍按美股解析，不被商品占用', typedCl.market === 'US');
+  check('手输「黄金」进入商品路由', typedGold && typedGold.market === 'COMMODITY' && typedGold.code === 'gold');
+  check('手输 wti 进入商品路由', (parseSymbolInput('wti') || {}).code === 'wti');
+  check('商品显式前缀 commodity:copper 可用', (parseSymbolInput('commodity:copper') || {}).code === 'copper');
+  const goldFields = [3567.23, -3.21, 3566.9, 3567.2, 3638.1, 3562.6, '09:44:09', 3685.5, 3633.8, 0, 1, 2, '2026-11-20', '纽约黄金'];
+  const goldQuote = parseCommodityQuoteFields(COMMODITY_BY_KEY.get('gold'), goldFields);
+  check(
+    '商品行情解析：现价/涨跌/昨收/开高低',
+    goldQuote.price === 3567.23 &&
+      Math.abs(goldQuote.change + 118.27) < 0.01 &&
+      goldQuote.changePct === -3.21 &&
+      goldQuote.prevClose === 3685.5 &&
+      goldQuote.open === 3633.8 &&
+      goldQuote.high === 3638.1 &&
+      goldQuote.low === 3562.6
+  );
+  check('商品行情解析：单位与合约口径', goldQuote.unit === '美元/盎司' && /COMEX/.test(goldQuote.contract));
+  check('商品行情空值返回 null', parseCommodityQuoteFields(COMMODITY_BY_KEY.get('gold'), ['-', '-']) === null);
+  const spot = parseCommoditySpot(COMMODITY_BY_KEY.get('gold'), [3565.85, -1.63, 0, 0, 3636.63, 3562.23, '09:44', 3625.01, 3628.88, 0, 1, 1, '2026-11-20', '伦敦金']);
+  check('黄金现货参考解析正常', spot && spot.code === 'hf_XAU' && spot.price === 3565.85);
+  const boardMap = new Map([['hf_GC', goldFields]]);
+  const commBoardRows = commodityBoardRows(boardMap);
+  check(
+    '商品板块部分失败时逐项降级（黄金有价、其余为 —）',
+    commBoardRows.length === 6 && commBoardRows[0].price === 3567.23 && commBoardRows[1].price === null
+  );
+  check('铜按 4 位小数展示', fmtCommodityPrice(5.5015, COMMODITY_BY_KEY.get('copper')) === '5.5015');
+  check('商品市场标签与币种', marketLabel('COMMODITY') === '商品' && currencyOf('COMMODITY') === 'USD');
+  check('商品 K 线支持日/周/月/分钟（复用 EM_KLT）', ['day', 'week', 'month', '60m', '15m', '5m'].every((p) => Number.isFinite(EM_KLT[p])));
 
   console.log('K 线视图窗口（v1.9，离线纯函数）');
   const vz = candleClampView({ count: 500, endOffset: -3 }, 240, 120);
