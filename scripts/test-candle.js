@@ -629,6 +629,34 @@ function auditCandlestick(html, expectBars) {
   check('force 刷新不复用 inflight 请求', forceRuns === 2);
   const escapedEmpty = emptyState({ title: '测试', desc: '<img src=x onerror=alert(1)>' });
   check('空状态描述做 HTML 转义', !/<img/i.test(escapedEmpty) && /&lt;img/.test(escapedEmpty));
+  /* 配额溢出：先淘汰最旧的 sl:c: 条目再重试一次写入 */
+  const quotaMap = new Map();
+  let quotaThrown = false;
+  const quotaStub = {
+    get length() {
+      return quotaMap.size;
+    },
+    key: (i) => [...quotaMap.keys()][i] || null,
+    getItem: (k) => (quotaMap.has(k) ? quotaMap.get(k) : null),
+    setItem: (k, v) => {
+      if (!quotaThrown) {
+        quotaThrown = true;
+        throw new Error('QuotaExceededError');
+      }
+      quotaMap.set(k, v);
+    },
+    removeItem: (k) => quotaMap.delete(k),
+  };
+  for (let i = 0; i < 6; i++) quotaMap.set('sl:c:old' + i, JSON.stringify({ t: i, d: i }));
+  const localDesc = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { value: quotaStub, configurable: true });
+  const quotaWritten = writeLocal('sl:c:new', { t: 99, d: 'x' });
+  if (localDesc) Object.defineProperty(globalThis, 'localStorage', localDesc);
+  else delete globalThis.localStorage;
+  check(
+    'localStorage 写满时淘汰最旧缓存并重试成功',
+    quotaWritten === true && !quotaMap.has('sl:c:old0') && quotaMap.has('sl:c:new')
+  );
 
   console.log('K 线视图窗口（v1.9，离线纯函数）');
   const vz = candleClampView({ count: 500, endOffset: -3 }, 240, 120);
