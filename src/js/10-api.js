@@ -197,14 +197,19 @@ function searchStocks(query) {
   const memo = searchMemo.get(q);
   if (memo && Date.now() - memo.t < 5 * 60 * 1000) return Promise.resolve(memo.d);
   if (memo) searchMemo.delete(q); /* 过期条目随手清除，避免 Map 只增不减 */
-  /* 股票联想与加密候选并行；任一路失败都不影响另一路 */
+  /* 股票联想、加密候选与商品别名并行；任一路失败都不影响其他路 */
   const run = async () => {
-    const cryptoPromise = typeof searchCrypto === 'function' ? searchCrypto(q) : Promise.resolve([]);
-    const [stockRes, cryptoRes] = await Promise.allSettled([smartbox(q), cryptoPromise]);
+    const coinPromise = typeof searchCrypto === 'function' ? searchCrypto(q) : Promise.resolve([]);
+    const commodity =
+      typeof searchCommodities === 'function' ? searchCommodities(q) : [];
+    const [stockRes, cryptoRes] = await Promise.allSettled([smartbox(q), coinPromise]);
     const crypto = cryptoRes.status === 'fulfilled' ? cryptoRes.value || [] : [];
     const stocks = stockRes.status === 'fulfilled' ? parseSearchRaw(stockRes.value) : [];
-    const seen = new Set(crypto.map((s) => s.market + ':' + s.code));
-    return crypto.concat(stocks.filter((s) => !seen.has(s.market + ':' + s.code))).slice(0, 10);
+    const seen = new Set([...commodity, ...crypto].map((s) => s.market + ':' + s.code));
+    return commodity
+      .concat(crypto)
+      .concat(stocks.filter((s) => !seen.has(s.market + ':' + s.code)))
+      .slice(0, 10);
   };
   const p = searchChain.then(run, run);
   searchChain = p.catch(() => {});
@@ -241,6 +246,15 @@ function parseSymbolInput(input) {
   }
   m = q.match(/^us([A-Za-z][A-Za-z0-9.\-]*)$/i);
   if (m) return usStockFields(m[1]);
+  /* 商品显式前缀与中文/英文别名；两字母代码（CL/GC/SI）不在别名表，仍按美股解析 */
+  m = q.match(/^(?:cmd|commodity):([a-z][a-z0-9_-]*)$/i);
+  if (m) {
+    const hit = typeof normalizeCommodityStock === 'function' ? normalizeCommodityStock({ key: m[1] }) : null;
+    if (hit) return hit;
+  }
+  const commodity =
+    typeof commodityResolveQuery === 'function' ? commodityResolveQuery(q) : null;
+  if (commodity) return commodity;
   /* 加密货币别名优先于「字母即美股」的兜底：BTC / btc / 比特币 / 以太坊 */
   const coin = typeof cryptoResolveQuery === 'function' ? cryptoResolveQuery(q) : null;
   if (coin) return coin;
@@ -477,6 +491,8 @@ async function getKline(stock, quote, period = 'day') {
   const p = normalizeKlinePeriod(period);
   /* 加密资产走 Binance 数据镜像，与 A/HK/US 的东财/腾讯链路完全隔离 */
   if (stock.market === 'CRYPTO' || stock.kind === 'coin') return getCryptoKline(stock, p);
+  /* 大宗商品走东财商品 secid（101/102/112），与股票 K 线链路隔离 */
+  if (stock.market === 'COMMODITY' || stock.kind === 'commodity') return getCommodityKline(stock, p);
   let key = stock.klineCode || stock.quoteKey;
   if (stock.market === 'US') {
     /* 腾讯 usfqkline 需要带交易所后缀的完整 raw：AAPL.OQ / BRK.A.N / BAC-B.N（FR-19.2） */
