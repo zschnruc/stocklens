@@ -1,0 +1,62 @@
+/* ============================================================
+   大宗商品模块样式 — 首页商品板块 + 商品轻量研判页
+   复用 base/analysis 变量与布局，仅补充商品区块。
+   ============================================================ */
+
+/* 首页商品板块 */
+.home-boards.commodity-board{margin-top:26px}
+.commodity-board .boards-grid{grid-template-columns:1fr}
+.board-ico.commodity{color:var(--gold);background:rgba(231,180,92,.1);border-color:rgba(231,180,92,.24)}
+.commodity-board .board-card-head h3{color:var(--gold)}
+.commodity-board .boards-head p{max-width:860px}
+.commodity-board .board-list{padding:14px}
+
+.commodity-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.commodity-tile{
+  display:flex;flex-direction:column;gap:5px;padding:15px 16px;
+  text-align:left;color:inherit;cursor:pointer;
+  border:1px solid var(--line);border-radius:14px;background:var(--panel);
+  transition:border-color .16s ease,transform .16s ease,background .16s ease;
+}
+.commodity-tile:hover{border-color:rgba(231,180,92,.36);background:rgba(231,180,92,.045);transform:translateY(-1px)}
+.commodity-tile:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.ct-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.ct-top b{font-size:13px;color:var(--text)}
+.ct-top small{font-size:10px;color:var(--faint);white-space:nowrap}
+.ct-price{font-family:var(--mono);font-size:24px;line-height:1.2;font-variant-numeric:tabular-nums;color:var(--text)}
+.ct-chg{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+.ct-chg.up{color:var(--up)}
+.ct-chg.down{color:var(--down)}
+.ct-chg.flat{color:var(--muted)}
+.ct-range{font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+
+/* 研判页提示条 */
+.commodity-risk{
+  display:flex;align-items:flex-start;gap:9px;margin-top:12px;padding:11px 14px;
+  border:1px solid rgba(231,180,92,.22);border-radius:12px;
+  background:rgba(231,180,92,.055);font-size:11.5px;line-height:1.65;color:var(--muted)
+}
+.commodity-risk .ico{color:var(--gold);flex:none;margin-top:1px}
+.commodity-risk b{color:var(--text);font-weight:600}
+html[data-theme="light"] .commodity-risk{background:rgba(169,118,35,.05)}
+.commodity-inline{margin-top:10px}
+.commodity-foot{margin-top:22px}
+
+/* 数据边界卡 */
+.commodity-limits{padding:18px 19px}
+.commodity-limit-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.commodity-limit-grid>div{display:flex;flex-direction:column;gap:4px;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.commodity-limit-grid b{font-size:12px;color:var(--gold)}
+.commodity-limit-grid span{font-size:11.5px;line-height:1.65;color:var(--muted)}
+.commodity-limits .inline-note{margin-top:12px}
+
+@media (max-width: 900px){
+  .commodity-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .commodity-limit-grid{grid-template-columns:1fr}
+}
+@media (max-width: 560px){
+  .commodity-grid{grid-template-columns:1fr}
+  .commodity-board .board-list{padding:10px}
+  .commodity-risk{font-size:11px;padding:10px 12px}
+  .ct-price{font-size:22px}
+}

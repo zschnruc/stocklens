@@ -112,11 +112,14 @@ function updateTechnicalSection(result) {
 
 /* 渲染 section 内部：综合卡 + 雷达 + 五维详情 */
 function renderTechnicalSectionInner(result) {
+  const isCommodity = !!(state.stock && (state.stock.kind === 'commodity' || state.stock.market === 'COMMODITY'));
   if (!result) {
     return emptyState({
       icon: 'chart',
       title: '技术数据暂不可用',
-      desc: '历史 K 线数据不足，无法生成技术研判。行情、研报与新闻等其他模块不受影响。',
+      desc: isCommodity
+        ? '历史 K 线数据不足，无法生成技术研判。商品行情与价格 K 线不受影响。'
+        : '历史 K 线数据不足，无法生成技术研判。行情、研报与新闻等其他模块不受影响。',
     });
   }
   return `${techConsensusCard(result)}
@@ -131,5 +134,5 @@ function renderTechnicalSectionInner(result) {
       </article>
     </div>
     <div class="tech-dim-grid">${result.dims.map(techDimCard).join('')}</div>
-    <div class="source-note" style="margin-top:12px">计算口径：MA(5/10/20/60) · MACD(12,26,9) · RSI(6,12) · KDJ(9,3,3) · BOLL(20,2) · OBV · 量比(5/20)。全部基于前复权日 K 本地计算，无额外网络请求。</div>`;
+    <div class="source-note" style="margin-top:12px">计算口径：MA(5/10/20/60) · MACD(12,26,9) · RSI(6,12) · KDJ(9,3,3) · BOLL(20,2) · OBV · 量比(5/20)。全部基于${isCommodity ? '商品连续合约日 K' : '前复权日 K'}本地计算，无额外网络请求。</div>`;
 }

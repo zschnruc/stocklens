@@ -51,6 +51,7 @@ const state = {
   search: { items: [], active: -1, query: '', seq: 0 },
   etf: null,
   crypto: null,
+  commodity: null,
 };
 
 /* ---------------- stock objects ---------------- */
@@ -62,8 +63,15 @@ function normalizeStock(input) {
   let quoteKey = s.quoteKey || '';
   let klineCode = s.klineCode || '';
   let name = s.name || code;
-  /* 标的类型：'etf' 走 ETF 专属研判，'coin' 走加密研判，其余为个股。搜索/榜单/输入已带 kind，这里保留 */
-  let kind = s.kind === 'etf' ? 'etf' : s.kind === 'coin' ? 'coin' : 'stock';
+  /* 标的类型：'etf' 走 ETF 专属研判，'coin' 走加密研判，'commodity' 走商品轻量研判，其余为个股 */
+  let kind =
+    s.kind === 'etf'
+      ? 'etf'
+      : s.kind === 'coin'
+      ? 'coin'
+      : s.kind === 'commodity' || market === 'COMMODITY'
+      ? 'commodity'
+      : 'stock';
 
   if (market === 'CRYPTO') {
     const symbol = (code || rawCode).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15);
@@ -84,6 +92,17 @@ function normalizeStock(input) {
     rawCode = code;
     if (!quoteKey) quoteKey = 'hk' + code;
     if (!klineCode) klineCode = 'hk' + code;
+  } else if (market === 'COMMODITY' || kind === 'commodity') {
+    const c =
+      typeof normalizeCommodityStock === 'function'
+        ? normalizeCommodityStock({ key: code, code, rawCode, name: s.name })
+        : null;
+    kind = 'commodity';
+    code = c ? c.code : String(code || rawCode || '').toLowerCase();
+    rawCode = code;
+    name = s.name || (c && c.name) || code;
+    if (!quoteKey) quoteKey = 'commodity:' + code;
+    if (!klineCode) klineCode = 'commodity:' + code;
   } else {
     const f = usStockFields(rawCode || code);
     code = f.code;
@@ -109,7 +128,10 @@ function stockFromDataset(ds) {
 
 function hashForStock(stock) {
   const raw = stock.market === 'US' ? stock.rawCode || stock.code : stock.code;
-  /* ETF / 加密使用独立路由，与个股研判分流 */
+  /* 商品 / ETF / 加密使用独立路由，与个股研判分流 */
+  if (stock.kind === 'commodity' || stock.market === 'COMMODITY') {
+    return `#/commodity/${encodeURIComponent(stock.code)}`;
+  }
   if (stock.kind === 'coin' || stock.market === 'CRYPTO') {
     return `#/coin/${encodeURIComponent(stock.code)}`;
   }
@@ -132,6 +154,15 @@ function lookupKnownStock(market, code) {
 
 function stockFromHash() {
   const hash = location.hash || '';
+  /* 大宗商品独立路由优先识别 */
+  const commodityHash = hash.match(/^#\/commodity\/([a-z][a-z0-9_-]*)/i);
+  if (commodityHash) {
+    const key = decodeURIComponent(commodityHash[1]).toLowerCase();
+    const hit = typeof normalizeCommodityStock === 'function' ? normalizeCommodityStock({ key }) : null;
+    if (!hit) return null;
+    const known = lookupKnownStock('COMMODITY', hit.code);
+    return known ? normalizeStock(known) : normalizeStock(hit);
+  }
   /* 加密独立路由优先识别 */
   const coinHash = hash.match(/^#\/coin\/([A-Za-z0-9]{2,15})/i);
   if (coinHash) {
@@ -254,7 +285,12 @@ function routeFromHash() {
   }
   const stock = stockFromHash();
   if (!stock) {
-    if ((location.hash || '').startsWith('#/stock/') || (location.hash || '').startsWith('#/etf/') || (location.hash || '').startsWith('#/coin/')) {
+    if (
+      (location.hash || '').startsWith('#/stock/') ||
+      (location.hash || '').startsWith('#/etf/') ||
+      (location.hash || '').startsWith('#/coin/') ||
+      (location.hash || '').startsWith('#/commodity/')
+    ) {
       toast('链接中的代码无效，已返回首页', 'error');
       try {
         history.replaceState(null, '', location.pathname + location.search);
@@ -475,6 +511,9 @@ async function analyzeStock(inputStock, opts = {}) {
   }
   if (normalized.kind === 'etf') {
     return analyzeEtf(inputStock, opts);
+  }
+  if (normalized.kind === 'commodity') {
+    return analyzeCommodity(inputStock, opts);
   }
   const token = ++state.token;
   const stock = normalizeStock(inputStock);
@@ -916,6 +955,65 @@ function maybeRefreshCryptoScore(token) {
   });
   state.score = score;
   renderCryptoOverview(score);
+}
+
+/* ---------------- 大宗商品研判编排（独立路由 #/commodity） ---------------- */
+async function analyzeCommodity(inputStock, opts = {}) {
+  const token = ++state.token;
+  const stock = normalizeStock(inputStock);
+  state.route = 'analysis';
+  state.stock = stock;
+  state.quote = null;
+  state.core = {};
+  state.coreSettled = new Set();
+  state.technical = null;
+  state.score = null;
+  state.reports = null; /* 商品没有研报目标价，清空避免沿用上一只股票锚点 */
+  state.profile = null;
+  state.profileReady = false;
+  state.periodKlines = {};
+  state.klinePeriod = 'day';
+  state.commodity = { token };
+  renderCommoditySkeleton(stock);
+  if (!opts.keepScroll) scrollTopSmooth();
+
+  try {
+    const quote = await getCommodityQuote(stock);
+    if (token !== state.token) return;
+    stock.name = quote.name || stock.name;
+    state.stock = stock;
+    state.quote = quote;
+    addRecent(stock);
+    renderCommodityHeader(stock, quote);
+    document.title = `${quote.name} · 大宗商品 · 研值 StockLens`;
+    bindCommodityData(token, stock);
+  } catch (err) {
+    if (token !== state.token) return;
+    renderFatal(stock, '商品行情获取失败：' + quoteErrorText(err));
+    toast('商品行情获取失败：' + quoteErrorText(err), 'error');
+  }
+}
+
+function bindCommodityData(token, stock) {
+  getCommodityKline(stock, 'day')
+    .then((kline) => {
+      if (token !== state.token) return;
+      state.periodKlines.day = kline;
+      state.core.kline = kline;
+      state.coreSettled.add('kline');
+      updateChart(kline);
+      const technical = analyzeTechnical(kline && kline.points);
+      state.technical = technical;
+      updateTechnicalSection(technical);
+    })
+    .catch(() => {
+      if (token !== state.token) return;
+      state.core.kline = null;
+      state.coreSettled.add('kline');
+      updateChart(null);
+      state.technical = null;
+      updateTechnicalSection(null);
+    });
 }
 
 /* ---------------- 自选股清单（FR-6） ---------------- */

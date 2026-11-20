@@ -132,13 +132,13 @@ function homeHTML() {
     <div class="hero">
       <span class="eyebrow"><i class="dot"></i>公开数据 · 实时行情 · 可解释评分</span>
       <h1>读懂研报，<br><span>把判断交给证据。</span></h1>
-      <p class="lede">输入 A 股、港股、美股或加密货币，聚合研报、同行、财务、行情与舆情，用可解释的评分形成一张可追溯的研究底稿。</p>
+      <p class="lede">输入 A 股、港股、美股、加密货币或大宗商品，聚合研报、同行、财务、行情与舆情，用可解释的评分形成一张可追溯的研究底稿。</p>
 
       <div class="search-shell">
         <form class="search-box" id="searchForm" autocomplete="off">
           ${ico('search')}
-          <input id="stockSearch" type="text" placeholder="输入股票名称、代码或币种，如 贵州茅台 / 600519 / NVDA / BTC"
-            aria-label="搜索股票或加密货币" spellcheck="false">
+          <input id="stockSearch" type="text" placeholder="输入股票名称、代码或品种，如 贵州茅台 / 600519 / NVDA / BTC / 黄金"
+            aria-label="搜索股票、加密货币或大宗商品" spellcheck="false">
           <button class="search-submit" type="submit" aria-label="开始分析">
             <span>开始分析</span>${ico('arrow')}
           </button>
@@ -153,6 +153,10 @@ function homeHTML() {
       <div class="hot-row crypto-hot-row" id="cryptoHotRow">
         <span class="hot-label">加密</span>
         ${CRYPTO_HOT.map((sym) => cryptoChipHTML(sym)).join('')}
+      </div>
+      <div class="hot-row commodity-hot-row" id="commodityHotRow">
+        <span class="hot-label">商品</span>
+        ${COMMODITY_LIST.map((c) => commodityChipHTML(c.key)).join('')}
       </div>
       ${
         recent.length
@@ -170,7 +174,7 @@ function homeHTML() {
       </div>
 
       <div class="hero-stats">
-        <div class="hero-stat"><strong>4 类市场</strong><span>A 股 · 港股 · 美股 · 加密</span></div>
+        <div class="hero-stat"><strong>5 类市场</strong><span>A 股 · 港股 · 美股 · 加密 · 商品</span></div>
         <div class="hero-stat"><strong>4 个维度</strong><span>研报 · 盈利 · 技术 · 舆情</span></div>
         <div class="hero-stat"><strong>20 篇</strong><span>近半年最新个股研报</span></div>
       </div>
@@ -262,6 +266,8 @@ function homeHTML() {
       </div>
     </section>
 
+    ${commodityBoardHTML()}
+
     <section class="features" aria-labelledby="featureTitle">
       <div class="features-head">
         <div>
@@ -285,6 +291,7 @@ function homeHTML() {
         <div class="coverage-row warn">${ico('info', 'sm')}<span><strong>港股 · 简版</strong>：行情 / K 线 / 财务指标 / 同业标签 / 新闻舆情；研报区显示暂无免费中文源。</span></div>
         <div class="coverage-row warn">${ico('info', 'sm')}<span><strong>美股 · 简版</strong>：行情 / K 线 / 同业标签 / 新闻舆情；盈利成长与中文研报暂缺，评分按可用维度折算。</span></div>
         <div class="coverage-row">${ico('spark', 'sm')}<span><strong>加密货币 · 独立口径</strong>：行情 / K 线 / 市值排名 / 合约资金费率与持仓 / 恐慌贪婪指数 / 主链 TVL；无财报与机构研报，评分不与其他市场直接比较。</span></div>
+        <div class="coverage-row">${ico('pulse', 'sm')}<span><strong>大宗商品 · 轻量版</strong>：6 个核心品种的行情、日/周/月与分钟 K 线、五维技术研判；期货连续合约与现货存在基差，不做综合评分、库存与持仓。</span></div>
         <div class="coverage-row">${ico('shield', 'sm')}<span><strong>可解释性</strong>：每个维度展示得分、权重、数据覆盖与理由；数据不足时直接标注「不可用」。</span></div>
       </div>
     </section>
@@ -297,10 +304,12 @@ function renderHome() {
   syncTopbar('home');
   loadHotQuotes();
   loadCryptoHotQuotes();
+  loadCommodityHotQuotes();
   loadWatchQuotes();
   loadHomeBoards();
   loadEtfBoard();
   loadCryptoBoard();
+  loadCommodityBoard();
 }
 
 /* ---------------- 首页双榜单（FR-9） ---------------- */
@@ -333,6 +342,8 @@ function boardEmptyHTML(kind) {
     ? '行业 ETF 榜单暂不可用，稍后刷新重试'
     : kind === 'crypto'
     ? '加密榜单暂不可用，稍后刷新重试'
+    : kind === 'commodity'
+    ? '商品行情暂不可用，稍后刷新重试'
     : '热门榜单暂不可用，稍后刷新重试';
   return `<div class="board-empty">${ico('info', 'sm')}<span>${text}</span></div>`;
 }
@@ -343,8 +354,9 @@ const BOARD_UI = {
   inflow: { body: '#inflowBoardBody', time: '#inflowBoardTime', label: '主力净流入榜' },
   etf: { body: '#etfBoardBody', time: '#etfBoardTime', label: '行业 ETF 榜' },
   crypto: { body: '#cryptoBoardBody', time: '#cryptoBoardTime', label: '加密热门榜' },
+  commodity: { body: '#commodityBoardBody', time: '#commodityBoardTime', label: '大宗商品行情' },
 };
-const BOARD_LOADING = { hot: false, inflow: false, etf: false, crypto: false };
+const BOARD_LOADING = { hot: false, inflow: false, etf: false, crypto: false, commodity: false };
 const BOARD_LAST_OK = {}; /* kind → 最近一次成功更新的毫秒时间戳（用于失败时提示） */
 
 /* 更新时间与刷新按钮的加载/成功/失败态 */
@@ -412,6 +424,7 @@ async function refreshHomeBoard(kind) {
     if (kind === 'hot' || kind === 'inflow') await loadRankBoard(kind, true);
     else if (kind === 'etf') await loadEtfBoard(true);
     else if (kind === 'crypto') await loadCryptoBoard(true);
+    else if (kind === 'commodity') await loadCommodityBoard(true);
   } finally {
     BOARD_LOADING[kind] = false;
   }
@@ -575,7 +588,7 @@ async function loadHotQuotes() {
 
 function suggestionHTML(items) {
   if (!items.length) {
-    return `<div class="sug-empty">没有匹配结果。试试股票代码或币种，如 <span class="mono">600519</span> / <span class="mono">00700</span> / <span class="mono">NVDA</span> / <span class="mono">BTC</span></div>`;
+    return `<div class="sug-empty">没有匹配结果。试试股票代码、币种或商品，如 <span class="mono">600519</span> / <span class="mono">00700</span> / <span class="mono">NVDA</span> / <span class="mono">BTC</span> / <span class="mono">黄金</span></div>`;
   }
   return (
     items

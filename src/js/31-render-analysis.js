@@ -389,8 +389,9 @@ function renderChartSection(kline) {
   const anchors = targetAnchors();
   const chartKey = `${(state.stock && state.stock.market) || 'X'}_${(state.stock && state.stock.code) || 'x'}_${period}`;
   const isCoin = !!(state.stock && (state.stock.kind === 'coin' || state.stock.market === 'CRYPTO'));
+  const isCommodity = !!(state.stock && (state.stock.kind === 'commodity' || state.stock.market === 'COMMODITY'));
   const isEtf = !!(state.stock && (state.stock.kind === 'etf' || isEtfCode(state.stock.code || '')));
-  const adjusted = !isCoin && !isEtf;
+  const adjusted = !isCoin && !isEtf && !isCommodity;
   const candles = renderCandlestick(pts, {
     key: chartKey,
     period,
@@ -415,7 +416,7 @@ function renderChartSection(kline) {
     : '';
   return `<article class="card chart-card">
     <div>
-      <div class="chart-head"><strong>${isCoin ? '价格 K 线' : '股价 K 线'}</strong>${chartPeriodTabs()}${chartZoomControls(pts.length)}
+      <div class="chart-head"><strong>${isCoin || isCommodity ? '价格 K 线' : '股价 K 线'}</strong>${chartPeriodTabs()}${chartZoomControls(pts.length)}
         <span class="kline-legend" aria-hidden="true"><i class="ma20"></i>MA20<i class="ma60"></i>MA60</span>
         <span class="kline-meta" data-role="kline-range">${esc(fmtDate(first.date, intraday))} — ${esc(fmtDate(last.date, intraday))} · ${pts.length} 根</span>
         <span class="kline-meta">${adjusted ? '前复权 · ' : ''}${periodLabel}${isCoin ? ' · UTC' : ''}</span></div>
