@@ -81,10 +81,71 @@ function analyzeSentiment(news) {
   return { total, pos, neu, neg, score, details };
 }
 
+/* FR-18.5/18.6：港美股以 Finnhub 分析师评级替代中文研报打分。
+   有目标价（美股 FMP）时恢复三段式「覆盖度 30% + 评级倾向 45% + 目标价 25%」；
+   无目标价（港股 / FMP 失败）时退化为「覆盖度 30% + 评级倾向 70%」按剩余权重归一，
+   与 A 股研报「有值才计权」的口径保持一致。 */
+function scoreFinnhubReports(finnhub, fmpTarget, quote) {
+  if (!finnhub || !finnhub.supported || !finnhub.latest) {
+    return {
+      available: false,
+      note: finnhub && finnhub.reason ? `Finnhub 评级不可用：${finnhub.reason}` : '暂无可用的海外分析师评级',
+      reasons: [],
+    };
+  }
+  const latest = finnhub.latest;
+  const { strongBuy = 0, buy = 0, hold = 0, sell = 0, strongSell = 0, total = 0 } = latest;
+  const reasons = [];
+  if (!(total > 0)) {
+    return { available: false, note: 'Finnhub 评级家数为 0', reasons: [] };
+  }
+  /* 评级倾向：强买 +1、买入 +0.6、中性 0、卖出 -0.6、强卖 -1，映射到 0–100 */
+  const weighted = strongBuy * 1 + buy * 0.6 + hold * 0 - sell * 0.6 - strongSell * 1;
+  const rating = clamp(50 + (weighted / total) * 50, 0, 100);
+  const bullish = strongBuy + buy;
+  const bearish = sell + strongSell;
+  reasons.push(
+    `Finnhub 近月 ${total} 位分析师：买入/增持 ${bullish} 位、中性 ${hold} 位、减持/卖出 ${bearish} 位；评级倾向 ${Math.round(rating)}。`
+  );
+
+  const monthsCoverage = band(finnhub.months, [
+    [12, 100], [9, 90], [6, 78], [3, 62], [1, 45],
+  ], 35);
+  const analystCoverage = band(total, [
+    [40, 100], [25, 90], [15, 78], [8, 62], [3, 45], [1, 32],
+  ], 30);
+  const coverage = Math.round(monthsCoverage * 0.4 + analystCoverage * 0.6);
+  reasons.push(`覆盖度：${finnhub.months} 个月评级记录、当月 ${total} 位分析师，覆盖度打分 ${coverage}。`);
+
+  /* FR-18.6：目标价子项（仅美股 FMP） */
+  let targetScore = null;
+  let targetUpside = null;
+  if (fmpTarget && fmpTarget.supported && Number.isFinite(fmpTarget.consensus) && quote && quote.price > 0) {
+    targetUpside = (fmpTarget.consensus / quote.price - 1) * 100;
+    targetScore = band(targetUpside, [
+      [25, 100], [15, 92], [8, 82], [2, 70], [-5, 52], [-15, 34],
+    ], 22);
+    reasons.push(`FMP 目标价一致预期 ${fmtPrice(fmpTarget.consensus)}，较现价 ${fmtPct(targetUpside)}，目标价打分 ${targetScore}。`);
+  } else {
+    reasons.push('无可用目标价（港股免费源不覆盖 / FMP 未返回），目标价子项不计入并按剩余权重折算。');
+  }
+
+  let score;
+  if (targetScore !== null) {
+    score = Math.round(coverage * 0.3 + rating * 0.45 + targetScore * 0.25);
+  } else {
+    score = Math.round(coverage * 0.3 + rating * 0.7);
+  }
+  const note = `Finnhub 评级 · ${total} 位分析师 · 买入 ${bullish} / 中性 ${hold} / 卖出 ${bearish}${
+    targetUpside !== null ? ` · 目标空间 ${fmtPct(targetUpside)}` : ''
+  }`;
+  return { available: true, score, note, reasons };
+}
+
 function scoreReports(data, quote) {
   const { market, reports } = data;
   if (market !== 'A') {
-    return { available: false, note: '港股 / 美股暂无免费中文研报源', reasons: [] };
+    return scoreFinnhubReports(reports && reports.finnhub, reports && reports.fmpTarget, quote);
   }
   const list = (reports && reports.list) || [];
   if (!list.length) {
@@ -283,7 +344,7 @@ function computeScore({ market, quote, kline, reports, financials, news }) {
   if (coverage < 100) {
     desc += `当前可用 ${availableCount}/${dimCount} 个维度、权重覆盖 ${coverage}%，缺失维度已从权重中剔除并按覆盖度折算。`;
     if (market !== 'A') {
-      desc += '港美股缺少免费中文研报等维度，分数仅在可用维度内可比，请勿与 A 股评分直接比较高低。';
+      desc += '港美股评分口径与 A 股不同（研报维度以海外分析师评级替代），分数仅在可用维度内可比，请勿与 A 股直接比较高低。';
     }
   }
   return {
