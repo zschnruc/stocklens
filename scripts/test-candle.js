@@ -20,6 +20,9 @@ global.document = {
 
 const src = path.join(root, 'src', 'js');
 vm.runInThisContext(fs.readFileSync(path.join(src, '00-utils.js'), 'utf8'), { filename: '00-utils.js' });
+/* 图标与渲染层：emptyState 转义属可离线验证的纯函数（v2.5） */
+vm.runInThisContext(fs.readFileSync(path.join(src, '01-icons.js'), 'utf8'), { filename: '01-icons.js' });
+vm.runInThisContext(fs.readFileSync(path.join(src, '31-render-analysis.js'), 'utf8'), { filename: '31-render-analysis.js' });
 /* 数据层：emSecid / EM_KLT / parseEmKlines 等纯函数可离线验证（网络函数不在测试中调用） */
 vm.runInThisContext(fs.readFileSync(path.join(src, '10-api.js'), 'utf8'), { filename: '10-api.js' });
 vm.runInThisContext(fs.readFileSync(path.join(src, '22-indicators.js'), 'utf8'), { filename: '22-indicators.js' });
@@ -573,6 +576,59 @@ function auditCandlestick(html, expectBars) {
     chainTvl: null,
   });
   check('加密评分返回 comparable 且覆盖不足为 false', partialCrypto.comparable === false && partialCrypto.total !== null);
+
+  console.log('健壮性与工程化加固（v2.5，离线纯函数）');
+  const flatRsi = rsiSeries(Array.from({ length: 40 }, () => 10), 6);
+  check('完全横盘时 RSI 记 50（不再误判 100）', flatRsi.slice(6).every((v) => v === 50));
+  const upRsi = rsiSeries(Array.from({ length: 40 }, (_, i) => 10 + i), 6);
+  check('单边上涨时 RSI 仍接近 100', upRsi[upRsi.length - 1] > 99);
+  check('美股 secucode：类股 .A.N → BRK_A.N', usSecucode({ rawCode: 'BRK.A.N' }) === 'BRK_A.N');
+  check('美股 secucode：美交所 .AM → .A', usSecucode({ rawCode: 'AMJB.AM' }) === 'AMJB.A');
+  check('美股 secucode：手输 .AMEX 归一为 .A', usSecucode({ rawCode: 'IMO.AMEX' }) === 'IMO.A');
+  check('美股 secucode：手输 .NYSE 不再拼成 .NYSE.O', usSecucode({ rawCode: 'JPM.NYSE' }) === 'JPM.N');
+  check('美股东财 secid：BRK.A.N → 106.BRK_A', emUsSecid({ rawCode: 'BRK.A.N' }) === '106.BRK_A');
+  check('美股东财 secid：AMJB.AM → 107.AMJB', emUsSecid({ rawCode: 'AMJB.AM' }) === '107.AMJB');
+  check('美股东财 secid：IMO.AMEX → 107.IMO', emUsSecid({ rawCode: 'IMO.AMEX' }) === '107.IMO');
+  check('腾讯 quote 键：AAPL.OQ → usAAPL', usQuoteKeys({ rawCode: 'AAPL.OQ' })[0] === 'usAAPL');
+  check('腾讯 quote 键：AMJB.AM → usAMJB（不再带 .AM）', usQuoteKeys({ rawCode: 'AMJB.AM' })[0] === 'usAMJB');
+  check('腾讯 quote 键：BRK.A.N → usBRK.A（保留类股段）', usQuoteKeys({ rawCode: 'BRK.A.N' })[0] === 'usBRK.A');
+  check('腾讯 quote 键：手输 BRK.A 有保留类股段的兜底候选', usQuoteKeys({ rawCode: 'BRK.A' }).includes('usBRK.A'));
+  check('腾讯 quote 键：东财 BRK_A.N 反推 usBRK.A', usQuoteKeys({ rawCode: 'BRK_A.N' })[0] === 'usBRK.A');
+  check('交易所标签识别美交所 .AM', exchangeLabel({ market: 'US', rawCode: 'AMJB.AM' }) === 'NYSE American');
+  const usFields = usStockFields('BAC-B.N', '美国银行');
+  check('美股字段：优先股 BAC-B 保留连字符', usFields.code === 'BAC-B' && usFields.quoteKey === 'usBAC-B');
+  check('美股字段：K 线键保留完整交易所后缀', usFields.klineCode === 'usBAC-B.N');
+  const typedBrk = parseSymbolInput('BRK.A');
+  check(
+    '手输 BRK.A 首个候选为类股键且保留原始 K 线键',
+    typedBrk.market === 'US' && usQuoteKeys(typedBrk)[0] === 'usBRK.A' && typedBrk.klineCode === 'usBRK.A'
+  );
+  const typedAmex = parseSymbolInput('IMO.AMEX');
+  check('手输 IMO.AMEX 的 quote 键去掉交易所后缀', typedAmex.quoteKey === 'usIMO' && typedAmex.klineCode === 'usIMO.AMEX');
+  check('加密链映射：BCH 使用 Bitcoincash', CRYPTO_CHAINS.BCH === 'Bitcoincash' && !('XRP' in CRYPTO_CHAINS));
+  check('加密分钟 K 线时效收紧', cryptoKlineTtl('5m') === 60000 && cryptoKlineTtl('15m') === 90000 && cryptoKlineTtl('day') === CRYPTO_TTL.kline);
+  check('候选池时效收紧到 5 分钟', SCREENER_POOL_TTL === 5 * 60 * 1000);
+  check('内存缓存有上限', MEM_CACHE_MAX === 120);
+  for (let i = 0; i < MEM_CACHE_MAX + 5; i++) memSet('v25-' + i, { t: Date.now(), d: i });
+  check(
+    '内存缓存按插入顺序淘汰最旧条目',
+    memCache.size === MEM_CACHE_MAX && !memCache.has('v25-0') && memCache.has('v25-' + (MEM_CACHE_MAX + 4))
+  );
+  for (let i = 0; i < MEM_CACHE_MAX + 5; i++) memCache.delete('v25-' + i);
+  let forceRuns = 0;
+  let releaseForce;
+  const forceGate = new Promise((resolve) => (releaseForce = resolve));
+  const forceLoader = () => {
+    forceRuns += 1;
+    return forceGate.then(() => forceRuns);
+  };
+  const inflightA = cached('v25-force', 60 * 60 * 1000, forceLoader);
+  const inflightB = cached('v25-force', 60 * 60 * 1000, forceLoader, true);
+  releaseForce();
+  await Promise.all([inflightA, inflightB]);
+  check('force 刷新不复用 inflight 请求', forceRuns === 2);
+  const escapedEmpty = emptyState({ title: '测试', desc: '<img src=x onerror=alert(1)>' });
+  check('空状态描述做 HTML 转义', !/<img/i.test(escapedEmpty) && /&lt;img/.test(escapedEmpty));
 
   console.log('K 线视图窗口（v1.9，离线纯函数）');
   const vz = candleClampView({ count: 500, endOffset: -3 }, 240, 120);
