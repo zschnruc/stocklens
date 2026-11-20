@@ -86,14 +86,16 @@ function rsiSeries(closes, n) {
     if (c >= 0) gain += c;
     else loss -= c;
   }
+  /* 完全横盘（无涨无跌）时 RSI 记 50，避免误判为 100 超买 */
+  const rsiOf = (gain, loss) => (loss === 0 ? (gain === 0 ? 50 : 100) : (100 * gain) / (gain + loss));
   let ag = gain / n;
   let al = loss / n;
-  out[n] = al === 0 ? 100 : (100 * ag) / (ag + al);
+  out[n] = rsiOf(ag, al);
   for (let i = n + 1; i < closes.length; i++) {
     const c = closes[i] - closes[i - 1];
     ag = (ag * (n - 1) + Math.max(c, 0)) / n;
     al = (al * (n - 1) + Math.max(-c, 0)) / n;
-    out[i] = al === 0 ? 100 : (100 * ag) / (ag + al);
+    out[i] = rsiOf(ag, al);
   }
   return out;
 }

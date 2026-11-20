@@ -27,6 +27,16 @@ const CRYPTO_TTL = {
   tvl: 30 * 60 * 1000,
 };
 
+/* 分钟 K 线按周期收紧时效（FR-19.6）：5m 1 分钟、15m 90 秒、60m 2 分钟 */
+const CRYPTO_KLINE_TTL = {
+  '5m': 60 * 1000,
+  '15m': 90 * 1000,
+  '60m': 2 * 60 * 1000,
+};
+function cryptoKlineTtl(period) {
+  return CRYPTO_KLINE_TTL[period] || CRYPTO_TTL.kline;
+}
+
 /* 稳定币不参与评分与首页榜单：价格锚定法币，动量/波动维度会得出畸形分数 */
 const CRYPTO_STABLES = new Set([
   'USDT', 'USDC', 'DAI', 'FDUSD', 'TUSD', 'USDE', 'PYUSD', 'BUSD', 'USDD', 'USDS',
@@ -55,7 +65,7 @@ const CRYPTO_CHAINS = {
   ETH: 'Ethereum', BNB: 'BSC', SOL: 'Solana', AVAX: 'Avalanche', TRX: 'Tron',
   TON: 'TON', SUI: 'Sui', APT: 'Aptos', NEAR: 'Near', ADA: 'Cardano', DOT: 'Polkadot',
   ATOM: 'Cosmos', ICP: 'ICP', ALGO: 'Algorand', VET: 'VeChain', HBAR: 'Hedera',
-  XRP: 'Ripple', LTC: 'Litecoin', BCH: 'Bitcoin', BTC: 'Bitcoin', ETC: 'EthereumClassic',
+  LTC: 'Litecoin', BCH: 'Bitcoincash', BTC: 'Bitcoin', ETC: 'EthereumClassic',
   ARB: 'Arbitrum', OP: 'Optimism', SEI: 'Sei', STX: 'Stacks', KAS: 'Kaspa', XLM: 'Stellar',
 };
 
@@ -277,7 +287,7 @@ const CRYPTO_KLINE_LIMIT = { day: 320, week: 260, month: 140, '60m': 240, '15m':
 function getCryptoKline(stock, period = 'day') {
   const p = normalizeKlinePeriod(period);
   const symbol = String((stock && (stock.code || stock.rawCode)) || '').toUpperCase();
-  return cached(`crypto:kline:${p}:${symbol}`, CRYPTO_TTL.kline, async () => {
+  return cached(`crypto:kline:${p}:${symbol}`, cryptoKlineTtl(p), async () => {
     const url = `${CRYPTO_API.binance}/klines?symbol=${symbol}USDT&interval=${CRYPTO_INTERVAL[p]}&limit=${CRYPTO_KLINE_LIMIT[p]}`;
     const rows = await fetchJSON(url, { timeout: 15000 });
     const points = parseCryptoKlines(rows, isIntradayPeriod(p));

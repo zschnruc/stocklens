@@ -24,7 +24,7 @@ function emptyState({ icon = 'info', title, desc, links = [], action = '' }) {
   return `<div class="empty-state">
     <div class="empty-icon">${ico(icon, 'lg')}</div>
     <h3>${esc(title)}</h3>
-    <p>${desc || ''}</p>
+    <p>${esc(desc || '')}</p>
     ${action || ''}
     ${
       links.length

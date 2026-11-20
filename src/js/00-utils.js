@@ -189,7 +189,7 @@ function exchangeLabel(stock, quote) {
     if (/\.OQ$/i.test(raw)) return '纳斯达克';
     if (/\.N$/i.test(raw)) return '纽交所';
     if (/\.PS$/i.test(raw)) return 'OTC / ADR';
-    if (/\.A$/i.test(raw)) return 'NYSE American';
+    if (/\.(A|AM|AMEX)$/i.test(raw)) return 'NYSE American';
     return '美国市场';
   }
   const c = String(stock.code || '');
@@ -261,15 +261,51 @@ function readLocal(key) {
   }
 }
 let localWriteWarned = false;
-function writeLocal(key, value) {
+/* 配额溢出时按写入时间淘汰最旧的行情缓存，避免整个 localStorage 永久失效（FR-19.6） */
+function pruneLocalCache(keepRatio = 0.6) {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    const items = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('sl:c:')) continue;
+      let t = 0;
+      try {
+        t = (JSON.parse(localStorage.getItem(k)) || {}).t || 0;
+      } catch (e) {}
+      items.push([k, t]);
+    }
+    if (!items.length) return 0;
+    items.sort((a, b) => a[1] - b[1]);
+    const drop = Math.max(1, Math.floor(items.length * (1 - keepRatio)));
+    items.slice(0, drop).forEach(([k]) => localStorage.removeItem(k));
+    return drop;
   } catch (e) {
-    /* 配额溢出等场景：只告警一次，缓存自动降级为内存模式，不影响功能 */
+    return 0;
+  }
+}
+function writeLocal(key, value) {
+  let raw;
+  try {
+    raw = JSON.stringify(value);
+  } catch (e) {
+    return false;
+  }
+  try {
+    localStorage.setItem(key, raw);
+    return true;
+  } catch (e) {
+    /* 配额溢出：先淘汰最旧缓存再重试一次，仍失败才告警 */
+    if (pruneLocalCache()) {
+      try {
+        localStorage.setItem(key, raw);
+        return true;
+      } catch (e2) {}
+    }
     if (!localWriteWarned) {
       localWriteWarned = true;
       console.warn('[StockLens] 本地缓存写入失败（可能超出配额），数据缓存将仅在本次会话内存中生效');
     }
+    return false;
   }
 }
 const store = {
@@ -286,6 +322,14 @@ const store = {
     } catch (e) {}
   },
 };
+const MEM_CACHE_MAX = 120;
+function memSet(key, entry) {
+  memCache.set(key, entry);
+  if (memCache.size > MEM_CACHE_MAX) {
+    const oldest = memCache.keys().next().value;
+    if (oldest !== undefined) memCache.delete(oldest);
+  }
+}
 async function cached(key, ttl, loader, force = false) {
   const now = Date.now();
   if (!force) {
@@ -293,19 +337,22 @@ async function cached(key, ttl, loader, force = false) {
     if (mem && now - mem.t < ttl) return mem.d;
     const disk = readLocal('sl:c:' + key);
     if (disk && now - disk.t < ttl) {
-      memCache.set(key, disk);
+      memSet(key, disk);
       return disk.d;
     }
   }
-  if (inflight.has(key)) return inflight.get(key);
+  /* force 时不复用 inflight，保证手动刷新一定发起新请求（FR-19.6） */
+  if (!force && inflight.has(key)) return inflight.get(key);
   const p = loader()
     .then((d) => {
       const entry = { t: Date.now(), d };
-      memCache.set(key, entry);
+      memSet(key, entry);
       writeLocal('sl:c:' + key, entry);
       return d;
     })
-    .finally(() => inflight.delete(key));
+    .finally(() => {
+      if (inflight.get(key) === p) inflight.delete(key);
+    });
   inflight.set(key, p);
   return p;
 }

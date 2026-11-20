@@ -8,11 +8,13 @@
 const SCREENER_DEFAULT_SIZE = 40;
 const SCREENER_DEFAULT_THRESHOLD = 80;
 const SCREENER_CONCURRENCY = 4;
+/* 候选池时效：盘中名单变化快，5 分钟足够新；个股行情仍按各自 TTL 更新 */
+const SCREENER_POOL_TTL = 5 * 60 * 1000;
 
 /* 沪深 A 股（主板 / 创业板 / 科创板），按成交额排序取热门候选 */
 function getScreenerCandidates(size = SCREENER_DEFAULT_SIZE) {
   const n = clamp(Math.round(Number(size) || SCREENER_DEFAULT_SIZE), 10, 100);
-  return cached(`screener-candidates:${n}`, TTL.boards, async () => {
+  return cached(`screener-candidates:${n}`, SCREENER_POOL_TTL, async () => {
     const params = new URLSearchParams({
       pn: '1',
       pz: String(n),

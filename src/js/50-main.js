@@ -85,11 +85,12 @@ function normalizeStock(input) {
     if (!quoteKey) quoteKey = 'hk' + code;
     if (!klineCode) klineCode = 'hk' + code;
   } else {
-    rawCode = rawCode.toUpperCase();
-    code = rawCode.replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '').replace(/^US/i, '');
-    if (!quoteKey) quoteKey = 'us' + code;
-    if (!klineCode) klineCode = 'us' + rawCode;
+    const f = usStockFields(rawCode || code);
+    code = f.code;
+    rawCode = f.rawCode;
     name = s.name || code;
+    if (!quoteKey) quoteKey = f.quoteKey;
+    if (!klineCode) klineCode = f.klineCode;
   }
   return { market, code, name, quoteKey, klineCode, rawCode, kind };
 }
@@ -166,11 +167,10 @@ function stockFromHash() {
     if (known) return known;
     return normalizeStock({ market: 'HK', code, name: code });
   }
-  const upper = raw.toUpperCase();
-  const code = upper.replace(/\.(OQ|N|PS|A|AMEX|NYSE)$/i, '');
-  const known = lookupKnownStock('US', code);
-  if (known) return { ...known, rawCode: upper, klineCode: 'us' + upper };
-  return normalizeStock({ market: 'US', code, rawCode: upper, name: code });
+  const fields = usStockFields(raw);
+  const known = lookupKnownStock('US', fields.code);
+  if (known) return normalizeStock({ ...known, rawCode: fields.rawCode });
+  return normalizeStock(fields);
 }
 
 function goStock(input) {
@@ -502,6 +502,8 @@ async function analyzeStock(inputStock, opts = {}) {
     if (token !== state.token) return;
     stock.name = quote.name || stock.name;
     stock.rawCode = quote.rawCode || stock.rawCode;
+    stock.quoteKey = quote.key || stock.quoteKey;
+    if (stock.market === 'US') stock.code = usBaseCode(quote.rawCode || stock.rawCode) || stock.code;
     state.stock = stock;
     state.quote = quote;
     addRecent(stock);
@@ -686,6 +688,8 @@ async function analyzeEtf(inputStock) {
     if (token !== state.token) return;
     stock.name = quote.name || stock.name;
     stock.rawCode = quote.rawCode || stock.rawCode;
+    stock.quoteKey = quote.key || stock.quoteKey;
+    if (stock.market === 'US') stock.code = usBaseCode(quote.rawCode || stock.rawCode) || stock.code;
     state.stock = stock;
     state.quote = quote;
     addRecent(stock);
