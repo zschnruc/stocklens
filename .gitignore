@@ -12,3 +12,7 @@ npm-debug.log*
 
 # WorkBuddy 项目记忆
 .workbuddy/
+
+# 本地凭据文件（含第三方 API Key 明文，禁止入库）
+.env
+.env.local
