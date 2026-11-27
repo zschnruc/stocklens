@@ -103,8 +103,8 @@ function techDimCard(dim) {
 }
 
 /* ---------- 择时状态卡（方案 A）：消费已缓存 K 线，零新增请求 ----------
-   阶段 / 方向 / 共振 / 事件全部来自 29-timing.js 的纯函数输出；
-   文案为状态描述，不产出买入卖出类建议（FR-14.7）。 */
+   阶段 / 方向 / 共振 / 事件 / 操作观点全部来自 29-timing.js 的纯函数输出；
+   操作观点仅自用参考（FR-14.7 例外），不含收益承诺或目标价。 */
 /* 阶段徽章配色：仅趋势延续携带方向色，动能转换/震荡整理为中性状态（金色） */
 function timingPhaseClass(phase, dir) {
   if (phase !== 'trend') return 'neutral';
@@ -121,7 +121,8 @@ function timingStatusCard(periodKlines) {
     month: pointsOf(src.month),
   });
   const score = timingScore(state, align);
-  const kicker = `<div class="card-kicker">${ico('compass')}择时状态 <span class="tech-source">日线信号 · 日/周/月共振</span></div>`;
+  const advice = timingAdvice(score, state);
+  const kicker = `<div class="card-kicker">${ico('compass')}择时状态 <span class="tech-source">日线信号 · 日/周/月共振 · 自用参考</span></div>`;
 
   if (!state.available) {
     return `<article class="card timing-card">
@@ -143,6 +144,10 @@ function timingStatusCard(periodKlines) {
     ? `<div class="timing-event"><span class="timing-event-tag ${SIGNAL_META[latest.dir].cls}">${esc(latest.label)}</span><span>强度 ${latest.strength} · 距今 ${latest.barsAgo} 根日 K（${esc(latest.at)}）</span></div>`
     : '<div class="timing-event"><span class="timing-event-tag">暂无事件</span><span>当前窗口未检测到交叉或突破</span></div>';
   const phaseCls = timingPhaseClass(state.phase, dir);
+  const adviceHtml = `<div class="timing-advice ${advice.cls}">
+    <span class="timing-advice-label">${ico(advice.cls === 'bullish' ? 'trendUp' : advice.cls === 'bearish' ? 'trendDown' : 'shield', 'sm')}${esc(advice.label)}</span>
+    <span class="timing-advice-note">${esc(advice.note)}</span>
+  </div>`;
 
   return `<article class="card timing-card">
     ${kicker}
@@ -156,8 +161,9 @@ function timingStatusCard(periodKlines) {
       ${metric('跨周期共振', alignScore, alignCls)}
       ${metric('方向一致度', agreement, agreementCls)}
     </div>
+    ${adviceHtml}
     ${eventHtml}
-    <p class="timing-note">${align.available ? esc(align.note) : '周线 / 月线尚未加载，跨周期共振暂不可用。'} 以上为基于历史价格的机械化状态描述，存在滞后与钝化可能，不构成买卖建议。</p>
+    <p class="timing-note">${align.available ? esc(align.note) : '周线 / 月线尚未加载，跨周期共振暂不可用。'} 操作观点仅供自用参考，为基于历史价格的机械化分档，存在滞后与钝化可能，不含收益承诺或目标价，不构成投资建议。</p>
   </article>`;
 }
 

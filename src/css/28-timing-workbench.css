@@ -1,0 +1,109 @@
+/* ============================================================
+   Timing Workbench — 择时工作台（方案 C）
+   ============================================================ */
+.tw-page{max-width:1180px;margin:0 auto;padding:34px 20px 64px}
+
+/* Hero */
+.tw-hero{padding:24px 0 22px}
+.tw-hero .eyebrow{display:inline-flex;align-items:center;gap:7px;color:var(--gold);font-size:11px;letter-spacing:.13em;text-transform:uppercase;font-weight:700}
+.tw-hero .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 4px rgba(231,180,92,.13)}
+.tw-hero h1{margin:12px 0 10px;font:600 38px/1.22 var(--serif);letter-spacing:.02em;color:var(--text)}
+.tw-hero h1 span{color:var(--gold)}
+.tw-hero .lede{max-width:760px;margin:0;color:var(--text-2);font-size:14px;line-height:1.85}
+.tw-hero-note{display:flex;align-items:flex-start;gap:8px;margin-top:14px;padding:10px 13px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--muted);font-size:12px;line-height:1.7}
+.tw-hero-note .ico{flex:0 0 auto;width:15px;height:15px;margin-top:1px;color:var(--gold)}
+
+/* Controls */
+.tw-controls{padding:16px 18px;margin:8px 0 18px}
+.tw-control-main{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.tw-pool-info{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-right:auto}
+.tw-pool-label{color:var(--muted);font-size:12px}
+.tw-pool-info b{color:var(--text);font-size:15px}
+.tw-pool-hint{color:var(--faint);font-size:11px}
+.tw-progress{display:flex;align-items:center;gap:12px;margin-top:13px}
+.tw-progress-track{flex:1;height:5px;border-radius:99px;background:var(--line-2);overflow:hidden}
+.tw-progress-track i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--orange));transition:width .25s}
+.tw-progress>span{color:var(--muted);font-size:11px;white-space:nowrap;min-width:190px;text-align:right}
+
+/* Summary */
+.tw-summary{margin-bottom:18px}
+.tw-summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.tw-sum-cell{display:flex;flex-direction:column;gap:6px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2)}
+.tw-sum-cell span{color:var(--muted);font-size:11px}
+.tw-sum-cell b{font-size:22px;font-weight:700;color:var(--text)}
+.tw-sum-cell b.unavailable{color:var(--faint)}
+.tw-summary-note{margin:9px 2px 0;color:var(--muted);font-size:11.5px}
+
+/* Table */
+.tw-table-card{padding:0;overflow:hidden}
+.tw-table-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line)}
+.tw-table-head b{color:var(--text);font-size:14px}
+.tw-table-head span{color:var(--faint);font-size:11px}
+.tw-table-wrap{overflow-x:auto}
+.tw-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.tw-table th{padding:10px 12px;text-align:left;color:var(--muted);font-size:11px;font-weight:600;white-space:nowrap;border-bottom:1px solid var(--line-2)}
+.tw-table td{padding:11px 12px;border-bottom:1px solid var(--line);color:var(--text-2);white-space:nowrap}
+.tw-table tbody tr:last-child td{border-bottom:none}
+.tw-table tbody tr:hover{background:var(--panel-2)}
+.tw-row-muted{opacity:.68}
+.tw-rank{color:var(--gold)!important;font-weight:700;width:42px}
+.tw-name a{color:var(--text);font-weight:600;text-decoration:none}
+.tw-name a:hover{color:var(--gold)}
+.tw-name small{display:block;margin-top:2px;color:var(--faint);font-size:10.5px}
+.tw-table td.bullish,.tw-table td.bearish,.tw-table td.neutral{font-weight:700}
+.tw-advice-cell b{display:inline-block;padding:3px 9px;border-radius:6px;border:1px solid var(--line-2);font-size:11.5px;white-space:nowrap}
+.tw-advice-cell.bullish b{color:var(--up);border-color:rgba(240,112,112,.3);background:rgba(240,112,112,.08)}
+.tw-advice-cell.bearish b{color:var(--down);border-color:rgba(67,197,158,.3);background:rgba(67,197,158,.08)}
+.tw-advice-cell.neutral b{color:var(--gold);border-color:rgba(231,180,92,.3);background:rgba(231,180,92,.08)}
+.tw-advice-cell.unavailable b{color:var(--muted)}
+.tw-table td.bullish{color:var(--up)}
+.tw-table td.bearish{color:var(--down)}
+.tw-table td.neutral{color:var(--gold)}
+.tw-table td.unavailable{color:var(--faint)}
+.tw-event-cell{color:var(--muted)!important;font-size:11.5px}
+
+/* Events */
+.tw-events{margin-top:22px}
+.tw-events-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.tw-events-head b{color:var(--text);font-size:14px}
+.tw-events-head span{color:var(--faint);font-size:11px}
+.tw-event-list{display:flex;flex-direction:column;gap:7px}
+.tw-event-row{display:flex;align-items:center;gap:12px;padding:10px 13px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2)}
+.tw-event-tag{flex:0 0 auto;min-width:112px;text-align:center;padding:3px 8px;border-radius:6px;border:1px solid var(--line-2);color:var(--muted);font-size:11.5px;font-weight:600}
+.tw-event-tag.bullish{color:var(--up);border-color:rgba(240,112,112,.3);background:rgba(240,112,112,.08)}
+.tw-event-tag.bearish{color:var(--down);border-color:rgba(67,197,158,.3);background:rgba(67,197,158,.08)}
+.tw-event-stock{color:var(--text);font-size:12.5px;font-weight:600}
+.tw-event-stock small{margin-left:5px;color:var(--faint);font-size:10.5px;font-weight:400}
+.tw-event-meta{margin-left:auto;color:var(--muted);font-size:11px;white-space:nowrap}
+.tw-events-empty{padding:6px}
+.tw-empty{padding:12px}
+.tw-disclaimer{margin-top:20px}
+
+/* Light theme */
+html[data-theme="light"] .tw-event-tag.bullish{background:rgba(201,74,74,.07)}
+html[data-theme="light"] .tw-event-tag.bearish{background:rgba(30,146,114,.07)}
+html[data-theme="light"] .tw-advice-cell.bullish b{background:rgba(201,74,74,.07)}
+html[data-theme="light"] .tw-advice-cell.bearish b{background:rgba(30,146,114,.07)}
+html[data-theme="light"] .tw-advice-cell.neutral b{background:rgba(169,118,35,.07)}
+html[data-theme="light"] .tw-hero-note{background:rgba(255,255,255,.5)}
+
+/* Responsive */
+@media (max-width:900px){
+  .tw-summary-grid{grid-template-columns:repeat(2,1fr)}
+  .tw-hero h1{font-size:30px}
+}
+@media (max-width:560px){
+  .tw-page{padding:22px 14px 48px}
+  .tw-hero h1{font-size:26px}
+  .tw-summary-grid{grid-template-columns:repeat(2,1fr)}
+  .tw-progress>span{min-width:0;text-align:left}
+  .tw-event-row{flex-wrap:wrap;gap:7px}
+  .tw-event-meta{margin-left:0;width:100%}
+}
+
+/* Print */
+@media print{
+  .tw-controls,.tw-hero-note{display:none!important}
+  .tw-page{padding:0}
+  .tw-table-wrap{overflow:visible}
+}

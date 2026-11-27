@@ -48,6 +48,17 @@ const state = {
     progressPct: 0,
     progressText: '准备中…',
   },
+  timingWorkbench: {
+    pool: [],
+    rows: [],
+    running: false,
+    token: 0,
+    progressPct: 0,
+    progressText: '准备中…',
+    ranAt: null,
+    stopped: false,
+    error: '',
+  },
   search: { items: [], active: -1, query: '', seq: 0 },
   etf: null,
   crypto: null,
@@ -224,10 +235,12 @@ function syncTopbar(route) {
   const printBtn = $('#printBtn');
   const screenerBtn = $('#topScreenerBtn');
   const etfScreenerBtn = $('#topEtfScreenerBtn');
+  const timingBtn = $('#topTimingBtn');
   if (topSearch) topSearch.hidden = route !== 'analysis';
   if (printBtn) printBtn.hidden = route !== 'analysis';
   if (screenerBtn) screenerBtn.classList.toggle('active', route === 'screener');
   if (etfScreenerBtn) etfScreenerBtn.classList.toggle('active', route === 'etf-screener');
+  if (timingBtn) timingBtn.classList.toggle('active', route === 'timing');
   document.body.dataset.route = route;
 }
 
@@ -271,6 +284,12 @@ function addRecent(stock) {
 
 /* ---------------- routing ---------------- */
 function routeFromHash() {
+  if ((location.hash || '').startsWith('#/timing')) {
+    state.pendingStock = null;
+    ++state.token;
+    enterTimingWorkbench();
+    return;
+  }
   if ((location.hash || '').startsWith('#/etf-screener')) {
     state.pendingStock = null;
     ++state.token;
@@ -409,6 +428,118 @@ function syncScreenerButtons(running) {
   }
   if (stopBtn) stopBtn.hidden = !running;
   if (prog) prog.hidden = !running;
+}
+
+/* ---------------- 择时工作台（方案 C：自选股批量共振）编排 ---------------- */
+function goTimingWorkbench() {
+  if ((location.hash || '') === '#/timing') {
+    enterTimingWorkbench();
+  } else {
+    location.hash = '#/timing';
+  }
+}
+
+function enterTimingWorkbench() {
+  const w = state.timingWorkbench;
+  ++w.token;
+  w.running = false;
+  w.rows = [];
+  w.ranAt = null;
+  w.stopped = false;
+  w.error = '';
+  w.progressPct = 0;
+  w.progressText = '准备中…';
+  w.pool = watchlistGet().filter((s) => s && s.market && s.market !== 'CRYPTO' && s.market !== 'COMMODITY');
+  renderTimingWorkbenchPage();
+  if (w.pool.length) startTimingWorkbench();
+}
+
+/* 单只标的：批量行情已取到 quote，逐周期取 K 线（失败降级为 null，不阻断） */
+async function fetchTimingKlines(stock, quote) {
+  const [day, week, month] = await Promise.all([
+    getKline(stock, quote, 'day').catch(() => null),
+    getKline(stock, quote, 'week').catch(() => null),
+    getKline(stock, quote, 'month').catch(() => null),
+  ]);
+  return { day, week, month };
+}
+
+async function runTimingWorkbenchFlow() {
+  const w = state.timingWorkbench;
+  const token = ++w.token;
+  w.running = true;
+  w.rows = [];
+  w.stopped = false;
+  w.error = '';
+  w.progressPct = 0;
+  w.progressText = '正在获取自选股行情…';
+  syncTimingWorkbenchButtons(true);
+  refreshTimingWorkbench();
+  try {
+    const keys = w.pool.map((s) => s.quoteKey).filter(Boolean);
+    const quoteMap = keys.length ? await getQuoteBatch(keys) : new Map();
+    const usable = w.pool.map((s) => ({ stock: s, quote: quoteMap.get(s.quoteKey) || null }));
+    if (!usable.length) throw new Error('自选股池暂不可用，请稍后重试');
+    const rows = [];
+    let cursor = 0;
+    let done = 0;
+    const worker = async () => {
+      while (cursor < usable.length) {
+        if (token !== w.token) return;
+        const item = usable[cursor++];
+        let row;
+        try {
+          const klines = await fetchTimingKlines(item.stock, item.quote);
+          row = buildTimingRow(item.stock, klines);
+        } catch (e) {
+          row = buildTimingRow(item.stock, null);
+        }
+        if (token !== w.token) return;
+        rows.push(row);
+        w.rows = rows.slice();
+        done += 1;
+        updateTimingWorkbenchProgress(done, usable.length, row);
+        refreshTimingWorkbench();
+      }
+    };
+    await Promise.all(Array.from({ length: 3 }, worker));
+    if (token !== w.token) return;
+    w.rows = rankTimingRows(rows);
+    w.ranAt = new Date();
+    w.stopped = false;
+    refreshTimingWorkbench();
+  } catch (err) {
+    if (token !== w.token) return;
+    w.error = err && err.message ? err.message : '研判失败，请稍后重试';
+    w.rows = [];
+    refreshTimingWorkbench();
+    toast(w.error, 'error');
+  } finally {
+    if (token !== w.token) return;
+    w.running = false;
+    syncTimingWorkbenchButtons(false);
+  }
+}
+
+function startTimingWorkbench() {
+  const w = state.timingWorkbench;
+  if (w.running) return;
+  if (!w.pool.length) {
+    toast('自选股池为空，请先在个股研判页加自选', 'info');
+    return;
+  }
+  runTimingWorkbenchFlow();
+}
+
+function stopTimingWorkbench() {
+  const w = state.timingWorkbench;
+  if (!w.running) return;
+  ++w.token;
+  w.running = false;
+  w.stopped = true;
+  syncTimingWorkbenchButtons(false);
+  refreshTimingWorkbench();
+  toast('研判已停止，已完成的结果保留在表中', 'info');
 }
 
 /* ---------------- ETF 高分榜（ETF 五维反向选股）编排 ---------------- */
@@ -1581,6 +1712,21 @@ function handleClick(e) {
       goStock(HOT_STOCKS[0]);
       return;
     }
+    if (action === 'timing-workbench') {
+      e.preventDefault();
+      goTimingWorkbench();
+      return;
+    }
+    if (action === 'timing-workbench-run') {
+      e.preventDefault();
+      startTimingWorkbench();
+      return;
+    }
+    if (action === 'timing-workbench-stop') {
+      e.preventDefault();
+      stopTimingWorkbench();
+      return;
+    }
     if (action === 'screener') {
       e.preventDefault();
       goScreener();
@@ -1704,6 +1850,10 @@ function init() {
   hydrateIcons(document);
   syncThemeButton();
   initEvents();
+  if ((location.hash || '').startsWith('#/timing')) {
+    enterTimingWorkbench();
+    return;
+  }
   if ((location.hash || '').startsWith('#/etf-screener')) {
     enterEtfScreener();
     return;

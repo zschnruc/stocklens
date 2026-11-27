@@ -280,3 +280,196 @@ function timingScore(state, alignment) {
     reasons,
   };
 }
+
+/* ---------- 5. 操作观点（自用放宽）：基于状态分与覆盖度的分档 ----------
+   自用工具可给出买入/卖出等操作倾向，但仍须守住两条：
+   ① 低覆盖（coverage<100，不可比）一律降级为「观望待确认」，不用折算分包装强建议；
+   ② 不承诺收益、不设目标价、不给仓位比例，仅输出机械化分档与依据。 */
+const TIMING_ADVICE_META = {
+  strongBuy: { label: '买入', cls: 'bullish', tone: 2 },
+  buy: { label: '增持', cls: 'bullish', tone: 1 },
+  hold: { label: '持有 / 观望', cls: 'neutral', tone: 0 },
+  reduce: { label: '减持', cls: 'bearish', tone: -1 },
+  sell: { label: '卖出', cls: 'bearish', tone: -2 },
+  watch: { label: '观望待确认', cls: 'unavailable', tone: 0 },
+};
+
+function timingAdvice(score, state) {
+  const s = score && score.available && Number.isFinite(score.total) ? score : null;
+  const meta = TIMING_ADVICE_META;
+  if (!s) {
+    return {
+      action: 'watch',
+      label: meta.watch.label,
+      cls: meta.watch.cls,
+      tone: 0,
+      available: false,
+      total: null,
+      coverage: 0,
+      comparable: false,
+      note: '择时数据不足，暂不给出操作观点。',
+      reasons: [],
+    };
+  }
+  /* 低覆盖：折算分不与满覆盖可比，不给操作档位 */
+  if (!s.comparable) {
+    return {
+      action: 'watch',
+      label: meta.watch.label,
+      cls: meta.watch.cls,
+      tone: 0,
+      available: true,
+      total: s.total,
+      coverage: s.coverage,
+      comparable: false,
+      note: `当前覆盖 ${s.coverage}%，折算分不可比，待日 / 周 / 月数据齐全后再给操作观点。`,
+      reasons: [
+        `状态分 ${s.total}（${SIGNAL_META[s.dir].label}），但仅覆盖 ${s.coverage}%。`,
+        '低覆盖标的按降级口径处理，不与满覆盖直接比较。',
+      ],
+    };
+  }
+  const t = s.total;
+  let action;
+  if (t >= 78 && s.dir === 'bullish') action = 'strongBuy';
+  else if (t >= 62 && s.dir === 'bullish') action = 'buy';
+  else if (t <= 22 && s.dir === 'bearish') action = 'sell';
+  else if (t <= 38 && s.dir === 'bearish') action = 'reduce';
+  else action = 'hold';
+
+  const reasons = [
+    `满覆盖状态分 ${t}（${SIGNAL_META[s.dir].label}），按 ≥78 买入 / ≥62 增持 / 38–61 持有 / ≤38 减持 / ≤22 卖出分档。`,
+  ];
+  const latest = state && state.available ? state.latest : null;
+  if (latest) {
+    reasons.push(`最近事件 ${latest.label}（${SIGNAL_META[latest.dir].label}，强度 ${latest.strength}），距今 ${latest.barsAgo} 根，作为分档辅助依据。`);
+  }
+  reasons.push('以上为基于历史价格的机械化分档，仅供自用参考，不构成投资建议。');
+  return {
+    action,
+    label: meta[action].label,
+    cls: meta[action].cls,
+    tone: meta[action].tone,
+    available: true,
+    total: t,
+    coverage: s.coverage,
+    comparable: true,
+    note: `${meta[action].label} · 满覆盖状态分 ${t}（${SIGNAL_META[s.dir].label}）`,
+    reasons,
+  };
+}
+
+/* ---------- 6. 工作台批量计算（纯函数，零请求 / 零 DOM） ---------- */
+/* 把 kline 映射（{day,week,month} → kline 对象）转为 points 映射；分钟线按 FR-17.4 不读取 */
+function timingPointsOf(klines) {
+  const src = klines && typeof klines === 'object' && !Array.isArray(klines) ? klines : {};
+  const out = {};
+  TIMING_PERIODS.forEach((meta) => {
+    const k = src[meta.key];
+    out[meta.key] = k && Array.isArray(k.points) ? k.points : null;
+  });
+  return out;
+}
+
+/* 单只标的的择时行：消费已缓存的 K 线，不发起请求 */
+function buildTimingRow(stock, klines) {
+  const points = timingPointsOf(klines);
+  const ts = timingState(points.day);
+  const align = multiPeriodAlignment(points);
+  const score = timingScore(ts, align);
+  const advice = timingAdvice(score, ts);
+  return {
+    stock: stock || {},
+    state: ts,
+    align,
+    score,
+    advice,
+    available: score.available,
+    comparable: !!score.comparable,
+    total: score.total,
+    coverage: score.coverage,
+    dir: score.dir,
+    phase: ts.phase,
+    phaseLabel: ts.phaseLabel,
+    agreement: align.available ? align.agreement : null,
+    latest: ts.latest,
+    note: score.note,
+  };
+}
+
+/* 排名：满覆盖可比优先 → 分数降序 → 覆盖度降序 → 代码序；无分者置末 */
+function rankTimingRows(rows) {
+  const list = Array.isArray(rows) ? rows.slice() : [];
+  const code = (r) => String((r && r.stock && r.stock.code) || '');
+  const info = (r) => (r && r.available && Number.isFinite(r.total)
+    ? { comparable: !!r.comparable, total: r.total, coverage: Number(r.coverage) || 0 }
+    : null);
+  list.sort((a, b) => {
+    const ka = info(a), kb = info(b);
+    if (!ka && !kb) return code(a).localeCompare(code(b));
+    if (!ka) return 1;
+    if (!kb) return -1;
+    if (ka.comparable !== kb.comparable) return ka.comparable ? -1 : 1;
+    if (ka.comparable && ka.total !== kb.total) return kb.total - ka.total;
+    if (ka.coverage !== kb.coverage) return kb.coverage - ka.coverage;
+    return code(a).localeCompare(code(b));
+  });
+  list.forEach((r, i) => { if (r) r.rank = i + 1; });
+  return list;
+}
+
+/* 信号事件流：汇总各标的事件，按距今根数升序（越近越前），最多 limit 条 */
+function collectTimingEvents(rows, limit) {
+  const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 12;
+  const out = [];
+  (Array.isArray(rows) ? rows : []).forEach((r) => {
+    if (!r || !r.available) return;
+    const events = r.state && Array.isArray(r.state.events) ? r.state.events : [];
+    events.forEach((e) => {
+      out.push({
+        market: String((r.stock && r.stock.market) || ''),
+        code: String((r.stock && r.stock.code) || ''),
+        name: String((r.stock && r.stock.name) || r.stock && r.stock.code || ''),
+        type: e.type,
+        label: e.label,
+        dir: e.dir,
+        at: e.at,
+        barsAgo: e.barsAgo,
+        strength: e.strength,
+      });
+    });
+  });
+  out.sort((a, b) => a.barsAgo - b.barsAgo || String(b.at).localeCompare(String(a.at)) || a.code.localeCompare(b.code));
+  return out.slice(0, cap);
+}
+
+/* 汇总统计：仅满覆盖标的参与均分与方向统计 */
+function timingSummary(rows) {
+  const list = (Array.isArray(rows) ? rows : []).filter((r) => r && r.available);
+  const comparable = list.filter((r) => r.comparable);
+  const bulls = comparable.filter((r) => r.dir === 'bullish').length;
+  const bears = comparable.filter((r) => r.dir === 'bearish').length;
+  const neutrals = comparable.filter((r) => r.dir === 'neutral').length;
+  const turns = list.filter((r) => r.phase === 'turn').length;
+  const avg = comparable.length
+    ? Math.round(comparable.reduce((a, r) => a + r.total, 0) / comparable.length)
+    : null;
+  const adviceCounts = { strongBuy: 0, buy: 0, hold: 0, reduce: 0, sell: 0, watch: 0 };
+  list.forEach((r) => {
+    const action = r.advice && r.advice.action ? r.advice.action : 'watch';
+    if (Object.prototype.hasOwnProperty.call(adviceCounts, action)) adviceCounts[action] += 1;
+  });
+  return {
+    total: list.length,
+    comparable: comparable.length,
+    bulls,
+    bears,
+    neutrals,
+    turns,
+    avg,
+    adviceCounts,
+    note: comparable.length
+      ? `${comparable.length} 只可比 · 偏多 ${bulls} / 偏空 ${bears} / 中性 ${neutrals} · 动能转换 ${turns}`
+      : '暂无满覆盖可比标的（需日 / 周 / 月三周期齐全）',
+  };
+}

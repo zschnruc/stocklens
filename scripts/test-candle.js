@@ -43,6 +43,8 @@ vm.runInThisContext(fs.readFileSync(path.join(src, '28-commodity.js'), 'utf8'), 
 vm.runInThisContext(fs.readFileSync(path.join(src, '29-timing.js'), 'utf8'), { filename: '29-timing.js' });
 /* 技术研判渲染层：择时状态卡为纯字符串渲染，可离线校验 HTML 结构 */
 vm.runInThisContext(fs.readFileSync(path.join(src, '32-render-technical.js'), 'utf8'), { filename: '32-render-technical.js' });
+/* 择时工作台渲染层：页面 / 表格 / 事件流为纯字符串渲染，可离线校验（50-main.js 因 init() 副作用不加载） */
+vm.runInThisContext(fs.readFileSync(path.join(src, '38-render-timing-workbench.js'), 'utf8'), { filename: '38-render-timing-workbench.js' });
 
 const enc = encodeURIComponent;
 let failures = 0;
@@ -874,7 +876,24 @@ function auditCandlestick(html, expectBars) {
   check('综合状态分：无数据降级', !tEmpty.available && tEmpty.total === null && tEmpty.coverage === 0);
 
   const tText = [tState.note, ...tState.reasons, tAlign.note, ...tAlign.reasons, tFull.note, ...tFull.reasons].join(' ');
-  check('择时输出仅含状态描述，无买卖/收益类交易建议词', !/买入|卖出|加仓|减仓|建议|目标价|收益率|胜率|回测/.test(tText));
+  check('择时状态描述无收益承诺类词（目标价/收益率/胜率/回测）', !/目标价|收益率|胜率|回测/.test(tText));
+
+  console.log('操作观点（自用放宽：FR-14.7 例外）');
+  const advFull = timingAdvice(tFull, tState);
+  const advPartial = timingAdvice(tSingle, tState);
+  const advEmpty = timingAdvice(tEmpty, null);
+  check('操作观点：满覆盖给出明确分档', advFull.comparable && advFull.available && ['strongBuy', 'buy', 'hold', 'reduce', 'sell'].includes(advFull.action) && TIMING_ADVICE_META[advFull.action]);
+  check('操作观点：低覆盖一律观望待确认，不用折算分包装', advPartial.action === 'watch' && !advPartial.comparable && advPartial.total === tSingle.total);
+  check('操作观点：无数据降级不臆造', advEmpty.action === 'watch' && !advEmpty.available && advEmpty.total === null);
+  check('操作观点：五档阈值边界正确', (() => {
+    const mk = (total, dir) => ({ available: true, total, dir, coverage: 100, comparable: true });
+    return timingAdvice(mk(85, 'bullish')).action === 'strongBuy'
+      && timingAdvice(mk(70, 'bullish')).action === 'buy'
+      && timingAdvice(mk(50, 'neutral')).action === 'hold'
+      && timingAdvice(mk(30, 'bearish')).action === 'reduce'
+      && timingAdvice(mk(15, 'bearish')).action === 'sell';
+  })());
+  check('操作观点：无收益承诺、目标价与仓位比例', !/目标价|收益率|胜率|回测|仓位|%收益|倍/.test(advFull.note + advFull.reasons.join('') + advFull.label));
 
   console.log('择时状态卡（方案 A，渲染层）');
   const tPeriods = { day: { points: tUp }, week: { points: tDown }, month: { points: tFlat }, '60m': { points: [{ bad: true }] } };
@@ -885,13 +904,62 @@ function auditCandlestick(html, expectBars) {
   check('阶段徽章配色：仅趋势延续用方向色，动能转换/震荡整理用中性金色',
     timingPhaseClass('trend', 'bullish') === 'bullish' && timingPhaseClass('trend', 'bearish') === 'bearish' &&
     timingPhaseClass('turn', 'bearish') === 'neutral' && timingPhaseClass('range', 'bullish') === 'neutral');
-  check('状态卡渲染：无固定买卖建议词且无 NaN/undefined', !/买入|卖出|加仓|减仓|目标价|收益率|胜率|回测/.test(tCard) && !/NaN|Infinity|undefined/.test(tCard));
+  const tAdviceSeg = (tCard.match(/<div class="timing-advice[\s\S]*?<\/div>/) || [''])[0];
+  check('状态卡渲染：含操作观点且建议段无收益承诺与 NaN/undefined',
+    /timing-advice/.test(tCard) && /买入|增持|持有|减持|卖出|观望待确认/.test(tAdviceSeg) &&
+    !/目标价|收益率|胜率|回测|NaN|Infinity|undefined/.test(tAdviceSeg) && !/NaN|Infinity|undefined/.test(tCard));
   const tCardNoAlign = timingStatusCard({ day: { points: tUp } });
   check('状态卡渲染：缺周/月线时提示共振不可用', /周线 \/ 月线尚未加载/.test(tCardNoAlign) && /cross|跨周期共振/.test(tCardNoAlign));
   const tCardEmpty = timingStatusCard({ day: null });
   check('状态卡渲染：无日线时降级且不臆造', /timing-empty/.test(tCardEmpty) && /有效技术数据不足/.test(tCardEmpty));
   check('状态卡渲染：分钟线数据被忽略', timingStatusCard(tPeriods) === tCard);
   check('状态卡挂载：技术研判章节包含择时卡', /timingStatusCard\(state\.periodKlines\)/.test(fs.readFileSync(path.join(src, '32-render-technical.js'), 'utf8')));
+
+  console.log('择时工作台（方案 C，离线纯函数与渲染）');
+  const twKlines = { day: { points: tUp }, week: { points: tDown }, month: { points: tFlat }, '60m': { points: [{ bad: true }] } };
+  const twStockA = { market: 'A', code: '000001', name: '测试A' };
+  const twStockB = { market: 'HK', code: '00700', name: '测试B' };
+  const twFull = buildTimingRow(twStockA, twKlines);
+  const twPartial = buildTimingRow(twStockB, { day: { points: tUp } });
+  const twEmpty = buildTimingRow(null, null);
+  check('工作台行：三周期齐全为满覆盖可比', twFull.available && twFull.comparable && twFull.coverage === 100 && Number.isFinite(twFull.total));
+  check('工作台行：仅日线降级为 40% 覆盖且不可比', twPartial.available && !twPartial.comparable && twPartial.coverage === 40);
+  check('工作台行：无数据降级不臆造', !twEmpty.available && twEmpty.total === null && twEmpty.coverage === 0);
+  check('工作台行：分钟线不参与共振', JSON.stringify(buildTimingRow(twStockA, twKlines)) === JSON.stringify(twFull));
+
+  const twRanked = rankTimingRows([twPartial, twEmpty, twFull]);
+  check('工作台排名：满覆盖优先、无分置末且 rank 连续', twRanked[0] === twFull && twRanked[2] === twEmpty && twRanked.every((r, i) => r.rank === i + 1));
+  check('工作台排名：不改变传入数组顺序', [twPartial, twEmpty, twFull][0] === twPartial);
+
+  const twEvents = collectTimingEvents([twFull, twPartial], 5);
+  check('工作台事件流：按距今根数升序且限量', twEvents.length > 0 && twEvents.length <= 5 && twEvents.every((e, i) => i === 0 || e.barsAgo >= twEvents[i - 1].barsAgo));
+  check('工作台事件流：携带标的与方向标签', twEvents.every((e) => e.code && /金叉|死叉|突破上轨|跌破下轨/.test(e.label) && ['bullish', 'bearish'].includes(e.dir)));
+  check('工作台汇总：仅满覆盖参与均分与方向统计', (() => {
+    const s = timingSummary([twFull, twPartial, twEmpty]);
+    return s.total === 2 && s.comparable === 1 && s.avg === twFull.total;
+  })());
+  check('工作台汇总：无可比标的时不臆造均分', timingSummary([twPartial]).avg === null && /暂无满覆盖/.test(timingSummary([twPartial]).note));
+
+  /* 渲染层断言：需要临时构造 state.timingWorkbench（全局 state 由 50-main.js 定义，测试中手工注入） */
+  const twStateBackup = global.state;
+  global.state = { timingWorkbench: { pool: [twStockA, twStockB], rows: [twFull, twPartial, twEmpty], running: false, progressPct: 0, progressText: '准备中…' } };
+  const twPage = timingWorkbenchPageHTML();
+  const twTable = timingWorkbenchResultsHTML([twFull, twPartial, twEmpty]);
+  const twEventsHTML = timingWorkbenchEventsHTML(twEvents);
+  check('工作台页面：含三区块与固定免责声明', /tw-hero/.test(twPage) && /tw-result/.test(twPage) && /tw-events/.test(twPage) && /不构成投资建议/.test(twPage));
+  check('工作台表格：三行齐备且低覆盖行标记', (twTable.match(/<tr class=/g) || []).length === 3 && /tw-row-muted/.test(twTable));
+  check('工作台事件流：标签含方向语义且无矛盾括号', /tw-event-tag/.test(twEventsHTML) && !/（偏多|偏空）/.test(twEventsHTML));
+  const twAdviceCells = (twTable.match(/<td class="tw-advice-cell[^>]*>[\s\S]*?<\/td>/g) || []).join('');
+  check('工作台渲染：含操作观点列与自用提示，建议单元格无收益承诺与 NaN/undefined',
+    /操作观点/.test(twPage + twTable) && /自用/.test(twPage) && /tw-advice-cell/.test(twAdviceCells) &&
+    !/目标价|收益率|胜率|回测/.test(twAdviceCells) && !/NaN|Infinity|undefined/.test(twPage + twTable + twEventsHTML));
+  global.state = twStateBackup;
+
+  check('工作台挂载：50-main.js 含路由、入口与编排函数', (() => {
+    const main = fs.readFileSync(path.join(src, '50-main.js'), 'utf8');
+    return /startsWith\('#\/timing'\)/.test(main) && /goTimingWorkbench/.test(main) && /runTimingWorkbenchFlow/.test(main) && /action === 'timing-workbench'/.test(main);
+  })());
+  check('工作台挂载：模板含顶栏入口', /data-action="timing-workbench"/.test(fs.readFileSync(path.join(root, 'src', 'template.html'), 'utf8')));
 
   console.log(failures ? `\n${failures} 项失败` : '\n全部通过');
   process.exit(failures ? 1 : 0);

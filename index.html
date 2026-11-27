@@ -1168,6 +1168,17 @@ html[data-theme="light"] .tech-sig.neutral{background:rgba(169,118,35,.07)}
 .timing-metric-value.bearish{color:var(--down)}
 .timing-metric-value.neutral{color:var(--gold)}
 .timing-metric-value.unavailable{color:var(--faint)}
+.timing-advice{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px;padding:11px 14px;
+  border-radius:10px;border:1px solid var(--line-2);background:var(--panel-2)
+}
+.timing-advice-label{display:inline-flex;align-items:center;gap:7px;font-size:15px;font-weight:700;white-space:nowrap}
+.timing-advice-label .ico{width:17px;height:17px}
+.timing-advice-note{font-size:10px;color:var(--muted);line-height:1.6}
+.timing-advice.bullish{color:var(--up);border-color:rgba(240,112,112,.3);background:rgba(240,112,112,.07)}
+.timing-advice.bearish{color:var(--down);border-color:rgba(67,197,158,.3);background:rgba(67,197,158,.07)}
+.timing-advice.neutral{color:var(--gold);border-color:rgba(231,180,92,.3);background:rgba(231,180,92,.07)}
+.timing-advice.unavailable{color:var(--muted)}
 .timing-event{
   display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:11px;
   border-top:1px dashed var(--line);font-size:10px;color:var(--muted);flex-wrap:wrap
@@ -1180,6 +1191,9 @@ html[data-theme="light"] .tech-sig.neutral{background:rgba(169,118,35,.07)}
 html[data-theme="light"] .timing-phase.bullish{background:rgba(201,74,74,.07)}
 html[data-theme="light"] .timing-phase.bearish{background:rgba(30,146,114,.07)}
 html[data-theme="light"] .timing-phase.neutral{background:rgba(169,118,35,.07)}
+html[data-theme="light"] .timing-advice.bullish{background:rgba(201,74,74,.06)}
+html[data-theme="light"] .timing-advice.bearish{background:rgba(30,146,114,.06)}
+html[data-theme="light"] .timing-advice.neutral{background:rgba(169,118,35,.06)}
 
 @media (max-width:980px){
   .tech-overview-grid{grid-template-columns:1fr}
@@ -1576,6 +1590,118 @@ html[data-theme="light"] .commodity-risk{background:rgba(169,118,35,.05)}
   .ct-price{font-size:22px}
 }
 
+
+/* ===== css/28-timing-workbench.css ===== */
+/* ============================================================
+   Timing Workbench — 择时工作台（方案 C）
+   ============================================================ */
+.tw-page{max-width:1180px;margin:0 auto;padding:34px 20px 64px}
+
+/* Hero */
+.tw-hero{padding:24px 0 22px}
+.tw-hero .eyebrow{display:inline-flex;align-items:center;gap:7px;color:var(--gold);font-size:11px;letter-spacing:.13em;text-transform:uppercase;font-weight:700}
+.tw-hero .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 4px rgba(231,180,92,.13)}
+.tw-hero h1{margin:12px 0 10px;font:600 38px/1.22 var(--serif);letter-spacing:.02em;color:var(--text)}
+.tw-hero h1 span{color:var(--gold)}
+.tw-hero .lede{max-width:760px;margin:0;color:var(--text-2);font-size:14px;line-height:1.85}
+.tw-hero-note{display:flex;align-items:flex-start;gap:8px;margin-top:14px;padding:10px 13px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--muted);font-size:12px;line-height:1.7}
+.tw-hero-note .ico{flex:0 0 auto;width:15px;height:15px;margin-top:1px;color:var(--gold)}
+
+/* Controls */
+.tw-controls{padding:16px 18px;margin:8px 0 18px}
+.tw-control-main{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.tw-pool-info{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-right:auto}
+.tw-pool-label{color:var(--muted);font-size:12px}
+.tw-pool-info b{color:var(--text);font-size:15px}
+.tw-pool-hint{color:var(--faint);font-size:11px}
+.tw-progress{display:flex;align-items:center;gap:12px;margin-top:13px}
+.tw-progress-track{flex:1;height:5px;border-radius:99px;background:var(--line-2);overflow:hidden}
+.tw-progress-track i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--orange));transition:width .25s}
+.tw-progress>span{color:var(--muted);font-size:11px;white-space:nowrap;min-width:190px;text-align:right}
+
+/* Summary */
+.tw-summary{margin-bottom:18px}
+.tw-summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.tw-sum-cell{display:flex;flex-direction:column;gap:6px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2)}
+.tw-sum-cell span{color:var(--muted);font-size:11px}
+.tw-sum-cell b{font-size:22px;font-weight:700;color:var(--text)}
+.tw-sum-cell b.unavailable{color:var(--faint)}
+.tw-summary-note{margin:9px 2px 0;color:var(--muted);font-size:11.5px}
+
+/* Table */
+.tw-table-card{padding:0;overflow:hidden}
+.tw-table-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line)}
+.tw-table-head b{color:var(--text);font-size:14px}
+.tw-table-head span{color:var(--faint);font-size:11px}
+.tw-table-wrap{overflow-x:auto}
+.tw-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.tw-table th{padding:10px 12px;text-align:left;color:var(--muted);font-size:11px;font-weight:600;white-space:nowrap;border-bottom:1px solid var(--line-2)}
+.tw-table td{padding:11px 12px;border-bottom:1px solid var(--line);color:var(--text-2);white-space:nowrap}
+.tw-table tbody tr:last-child td{border-bottom:none}
+.tw-table tbody tr:hover{background:var(--panel-2)}
+.tw-row-muted{opacity:.68}
+.tw-rank{color:var(--gold)!important;font-weight:700;width:42px}
+.tw-name a{color:var(--text);font-weight:600;text-decoration:none}
+.tw-name a:hover{color:var(--gold)}
+.tw-name small{display:block;margin-top:2px;color:var(--faint);font-size:10.5px}
+.tw-table td.bullish,.tw-table td.bearish,.tw-table td.neutral{font-weight:700}
+.tw-advice-cell b{display:inline-block;padding:3px 9px;border-radius:6px;border:1px solid var(--line-2);font-size:11.5px;white-space:nowrap}
+.tw-advice-cell.bullish b{color:var(--up);border-color:rgba(240,112,112,.3);background:rgba(240,112,112,.08)}
+.tw-advice-cell.bearish b{color:var(--down);border-color:rgba(67,197,158,.3);background:rgba(67,197,158,.08)}
+.tw-advice-cell.neutral b{color:var(--gold);border-color:rgba(231,180,92,.3);background:rgba(231,180,92,.08)}
+.tw-advice-cell.unavailable b{color:var(--muted)}
+.tw-table td.bullish{color:var(--up)}
+.tw-table td.bearish{color:var(--down)}
+.tw-table td.neutral{color:var(--gold)}
+.tw-table td.unavailable{color:var(--faint)}
+.tw-event-cell{color:var(--muted)!important;font-size:11.5px}
+
+/* Events */
+.tw-events{margin-top:22px}
+.tw-events-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.tw-events-head b{color:var(--text);font-size:14px}
+.tw-events-head span{color:var(--faint);font-size:11px}
+.tw-event-list{display:flex;flex-direction:column;gap:7px}
+.tw-event-row{display:flex;align-items:center;gap:12px;padding:10px 13px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2)}
+.tw-event-tag{flex:0 0 auto;min-width:112px;text-align:center;padding:3px 8px;border-radius:6px;border:1px solid var(--line-2);color:var(--muted);font-size:11.5px;font-weight:600}
+.tw-event-tag.bullish{color:var(--up);border-color:rgba(240,112,112,.3);background:rgba(240,112,112,.08)}
+.tw-event-tag.bearish{color:var(--down);border-color:rgba(67,197,158,.3);background:rgba(67,197,158,.08)}
+.tw-event-stock{color:var(--text);font-size:12.5px;font-weight:600}
+.tw-event-stock small{margin-left:5px;color:var(--faint);font-size:10.5px;font-weight:400}
+.tw-event-meta{margin-left:auto;color:var(--muted);font-size:11px;white-space:nowrap}
+.tw-events-empty{padding:6px}
+.tw-empty{padding:12px}
+.tw-disclaimer{margin-top:20px}
+
+/* Light theme */
+html[data-theme="light"] .tw-event-tag.bullish{background:rgba(201,74,74,.07)}
+html[data-theme="light"] .tw-event-tag.bearish{background:rgba(30,146,114,.07)}
+html[data-theme="light"] .tw-advice-cell.bullish b{background:rgba(201,74,74,.07)}
+html[data-theme="light"] .tw-advice-cell.bearish b{background:rgba(30,146,114,.07)}
+html[data-theme="light"] .tw-advice-cell.neutral b{background:rgba(169,118,35,.07)}
+html[data-theme="light"] .tw-hero-note{background:rgba(255,255,255,.5)}
+
+/* Responsive */
+@media (max-width:900px){
+  .tw-summary-grid{grid-template-columns:repeat(2,1fr)}
+  .tw-hero h1{font-size:30px}
+}
+@media (max-width:560px){
+  .tw-page{padding:22px 14px 48px}
+  .tw-hero h1{font-size:26px}
+  .tw-summary-grid{grid-template-columns:repeat(2,1fr)}
+  .tw-progress>span{min-width:0;text-align:left}
+  .tw-event-row{flex-wrap:wrap;gap:7px}
+  .tw-event-meta{margin-left:0;width:100%}
+}
+
+/* Print */
+@media print{
+  .tw-controls,.tw-hero-note{display:none!important}
+  .tw-page{padding:0}
+  .tw-table-wrap{overflow:visible}
+}
+
 </style>
 </head>
 <body>
@@ -1599,6 +1725,9 @@ html[data-theme="light"] .commodity-risk{background:rgba(169,118,35,.05)}
     </button>
 
     <div class="top-actions">
+      <button class="top-nav-btn" type="button" data-action="timing-workbench" id="topTimingBtn" title="择时工作台 · 自选股跨周期共振">
+        <span class="ico" data-icon="compass"></span><span class="top-nav-label">择时台</span>
+      </button>
       <button class="top-nav-btn" type="button" data-action="screener" id="topScreenerBtn" title="高分榜 · 80 分以上 A 股">
         <span class="ico" data-icon="filter"></span><span class="top-nav-label">高分榜</span>
       </button>
@@ -1631,7 +1760,7 @@ html[data-theme="light"] .commodity-risk{background:rgba(169,118,35,.05)}
     </div>
     <div class="footer-meta">
       <p>数据来源：腾讯财经 · 东方财富公开接口</p>
-      <p>研值 StockLens v2.6.0 · 构建于 2026/11/27 09:12:26</p>
+      <p>研值 StockLens v2.6.0 · 构建于 2026/11/27 09:29:52</p>
       <p>本工具仅供研究学习，评分不构成投资建议。市场有风险，投资需谨慎。</p>
     </div>
   </div>
@@ -7754,6 +7883,199 @@ function timingScore(state, alignment) {
   };
 }
 
+/* ---------- 5. 操作观点（自用放宽）：基于状态分与覆盖度的分档 ----------
+   自用工具可给出买入/卖出等操作倾向，但仍须守住两条：
+   ① 低覆盖（coverage<100，不可比）一律降级为「观望待确认」，不用折算分包装强建议；
+   ② 不承诺收益、不设目标价、不给仓位比例，仅输出机械化分档与依据。 */
+const TIMING_ADVICE_META = {
+  strongBuy: { label: '买入', cls: 'bullish', tone: 2 },
+  buy: { label: '增持', cls: 'bullish', tone: 1 },
+  hold: { label: '持有 / 观望', cls: 'neutral', tone: 0 },
+  reduce: { label: '减持', cls: 'bearish', tone: -1 },
+  sell: { label: '卖出', cls: 'bearish', tone: -2 },
+  watch: { label: '观望待确认', cls: 'unavailable', tone: 0 },
+};
+
+function timingAdvice(score, state) {
+  const s = score && score.available && Number.isFinite(score.total) ? score : null;
+  const meta = TIMING_ADVICE_META;
+  if (!s) {
+    return {
+      action: 'watch',
+      label: meta.watch.label,
+      cls: meta.watch.cls,
+      tone: 0,
+      available: false,
+      total: null,
+      coverage: 0,
+      comparable: false,
+      note: '择时数据不足，暂不给出操作观点。',
+      reasons: [],
+    };
+  }
+  /* 低覆盖：折算分不与满覆盖可比，不给操作档位 */
+  if (!s.comparable) {
+    return {
+      action: 'watch',
+      label: meta.watch.label,
+      cls: meta.watch.cls,
+      tone: 0,
+      available: true,
+      total: s.total,
+      coverage: s.coverage,
+      comparable: false,
+      note: `当前覆盖 ${s.coverage}%，折算分不可比，待日 / 周 / 月数据齐全后再给操作观点。`,
+      reasons: [
+        `状态分 ${s.total}（${SIGNAL_META[s.dir].label}），但仅覆盖 ${s.coverage}%。`,
+        '低覆盖标的按降级口径处理，不与满覆盖直接比较。',
+      ],
+    };
+  }
+  const t = s.total;
+  let action;
+  if (t >= 78 && s.dir === 'bullish') action = 'strongBuy';
+  else if (t >= 62 && s.dir === 'bullish') action = 'buy';
+  else if (t <= 22 && s.dir === 'bearish') action = 'sell';
+  else if (t <= 38 && s.dir === 'bearish') action = 'reduce';
+  else action = 'hold';
+
+  const reasons = [
+    `满覆盖状态分 ${t}（${SIGNAL_META[s.dir].label}），按 ≥78 买入 / ≥62 增持 / 38–61 持有 / ≤38 减持 / ≤22 卖出分档。`,
+  ];
+  const latest = state && state.available ? state.latest : null;
+  if (latest) {
+    reasons.push(`最近事件 ${latest.label}（${SIGNAL_META[latest.dir].label}，强度 ${latest.strength}），距今 ${latest.barsAgo} 根，作为分档辅助依据。`);
+  }
+  reasons.push('以上为基于历史价格的机械化分档，仅供自用参考，不构成投资建议。');
+  return {
+    action,
+    label: meta[action].label,
+    cls: meta[action].cls,
+    tone: meta[action].tone,
+    available: true,
+    total: t,
+    coverage: s.coverage,
+    comparable: true,
+    note: `${meta[action].label} · 满覆盖状态分 ${t}（${SIGNAL_META[s.dir].label}）`,
+    reasons,
+  };
+}
+
+/* ---------- 6. 工作台批量计算（纯函数，零请求 / 零 DOM） ---------- */
+/* 把 kline 映射（{day,week,month} → kline 对象）转为 points 映射；分钟线按 FR-17.4 不读取 */
+function timingPointsOf(klines) {
+  const src = klines && typeof klines === 'object' && !Array.isArray(klines) ? klines : {};
+  const out = {};
+  TIMING_PERIODS.forEach((meta) => {
+    const k = src[meta.key];
+    out[meta.key] = k && Array.isArray(k.points) ? k.points : null;
+  });
+  return out;
+}
+
+/* 单只标的的择时行：消费已缓存的 K 线，不发起请求 */
+function buildTimingRow(stock, klines) {
+  const points = timingPointsOf(klines);
+  const ts = timingState(points.day);
+  const align = multiPeriodAlignment(points);
+  const score = timingScore(ts, align);
+  const advice = timingAdvice(score, ts);
+  return {
+    stock: stock || {},
+    state: ts,
+    align,
+    score,
+    advice,
+    available: score.available,
+    comparable: !!score.comparable,
+    total: score.total,
+    coverage: score.coverage,
+    dir: score.dir,
+    phase: ts.phase,
+    phaseLabel: ts.phaseLabel,
+    agreement: align.available ? align.agreement : null,
+    latest: ts.latest,
+    note: score.note,
+  };
+}
+
+/* 排名：满覆盖可比优先 → 分数降序 → 覆盖度降序 → 代码序；无分者置末 */
+function rankTimingRows(rows) {
+  const list = Array.isArray(rows) ? rows.slice() : [];
+  const code = (r) => String((r && r.stock && r.stock.code) || '');
+  const info = (r) => (r && r.available && Number.isFinite(r.total)
+    ? { comparable: !!r.comparable, total: r.total, coverage: Number(r.coverage) || 0 }
+    : null);
+  list.sort((a, b) => {
+    const ka = info(a), kb = info(b);
+    if (!ka && !kb) return code(a).localeCompare(code(b));
+    if (!ka) return 1;
+    if (!kb) return -1;
+    if (ka.comparable !== kb.comparable) return ka.comparable ? -1 : 1;
+    if (ka.comparable && ka.total !== kb.total) return kb.total - ka.total;
+    if (ka.coverage !== kb.coverage) return kb.coverage - ka.coverage;
+    return code(a).localeCompare(code(b));
+  });
+  list.forEach((r, i) => { if (r) r.rank = i + 1; });
+  return list;
+}
+
+/* 信号事件流：汇总各标的事件，按距今根数升序（越近越前），最多 limit 条 */
+function collectTimingEvents(rows, limit) {
+  const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 12;
+  const out = [];
+  (Array.isArray(rows) ? rows : []).forEach((r) => {
+    if (!r || !r.available) return;
+    const events = r.state && Array.isArray(r.state.events) ? r.state.events : [];
+    events.forEach((e) => {
+      out.push({
+        market: String((r.stock && r.stock.market) || ''),
+        code: String((r.stock && r.stock.code) || ''),
+        name: String((r.stock && r.stock.name) || r.stock && r.stock.code || ''),
+        type: e.type,
+        label: e.label,
+        dir: e.dir,
+        at: e.at,
+        barsAgo: e.barsAgo,
+        strength: e.strength,
+      });
+    });
+  });
+  out.sort((a, b) => a.barsAgo - b.barsAgo || String(b.at).localeCompare(String(a.at)) || a.code.localeCompare(b.code));
+  return out.slice(0, cap);
+}
+
+/* 汇总统计：仅满覆盖标的参与均分与方向统计 */
+function timingSummary(rows) {
+  const list = (Array.isArray(rows) ? rows : []).filter((r) => r && r.available);
+  const comparable = list.filter((r) => r.comparable);
+  const bulls = comparable.filter((r) => r.dir === 'bullish').length;
+  const bears = comparable.filter((r) => r.dir === 'bearish').length;
+  const neutrals = comparable.filter((r) => r.dir === 'neutral').length;
+  const turns = list.filter((r) => r.phase === 'turn').length;
+  const avg = comparable.length
+    ? Math.round(comparable.reduce((a, r) => a + r.total, 0) / comparable.length)
+    : null;
+  const adviceCounts = { strongBuy: 0, buy: 0, hold: 0, reduce: 0, sell: 0, watch: 0 };
+  list.forEach((r) => {
+    const action = r.advice && r.advice.action ? r.advice.action : 'watch';
+    if (Object.prototype.hasOwnProperty.call(adviceCounts, action)) adviceCounts[action] += 1;
+  });
+  return {
+    total: list.length,
+    comparable: comparable.length,
+    bulls,
+    bears,
+    neutrals,
+    turns,
+    avg,
+    adviceCounts,
+    note: comparable.length
+      ? `${comparable.length} 只可比 · 偏多 ${bulls} / 偏空 ${bears} / 中性 ${neutrals} · 动能转换 ${turns}`
+      : '暂无满覆盖可比标的（需日 / 周 / 月三周期齐全）',
+  };
+}
+
 
 /* ===== js/30-render-home.js ===== */
 /* ============================================================
@@ -9412,8 +9734,8 @@ function techDimCard(dim) {
 }
 
 /* ---------- 择时状态卡（方案 A）：消费已缓存 K 线，零新增请求 ----------
-   阶段 / 方向 / 共振 / 事件全部来自 29-timing.js 的纯函数输出；
-   文案为状态描述，不产出买入卖出类建议（FR-14.7）。 */
+   阶段 / 方向 / 共振 / 事件 / 操作观点全部来自 29-timing.js 的纯函数输出；
+   操作观点仅自用参考（FR-14.7 例外），不含收益承诺或目标价。 */
 /* 阶段徽章配色：仅趋势延续携带方向色，动能转换/震荡整理为中性状态（金色） */
 function timingPhaseClass(phase, dir) {
   if (phase !== 'trend') return 'neutral';
@@ -9430,7 +9752,8 @@ function timingStatusCard(periodKlines) {
     month: pointsOf(src.month),
   });
   const score = timingScore(state, align);
-  const kicker = `<div class="card-kicker">${ico('compass')}择时状态 <span class="tech-source">日线信号 · 日/周/月共振</span></div>`;
+  const advice = timingAdvice(score, state);
+  const kicker = `<div class="card-kicker">${ico('compass')}择时状态 <span class="tech-source">日线信号 · 日/周/月共振 · 自用参考</span></div>`;
 
   if (!state.available) {
     return `<article class="card timing-card">
@@ -9452,6 +9775,10 @@ function timingStatusCard(periodKlines) {
     ? `<div class="timing-event"><span class="timing-event-tag ${SIGNAL_META[latest.dir].cls}">${esc(latest.label)}</span><span>强度 ${latest.strength} · 距今 ${latest.barsAgo} 根日 K（${esc(latest.at)}）</span></div>`
     : '<div class="timing-event"><span class="timing-event-tag">暂无事件</span><span>当前窗口未检测到交叉或突破</span></div>';
   const phaseCls = timingPhaseClass(state.phase, dir);
+  const adviceHtml = `<div class="timing-advice ${advice.cls}">
+    <span class="timing-advice-label">${ico(advice.cls === 'bullish' ? 'trendUp' : advice.cls === 'bearish' ? 'trendDown' : 'shield', 'sm')}${esc(advice.label)}</span>
+    <span class="timing-advice-note">${esc(advice.note)}</span>
+  </div>`;
 
   return `<article class="card timing-card">
     ${kicker}
@@ -9465,8 +9792,9 @@ function timingStatusCard(periodKlines) {
       ${metric('跨周期共振', alignScore, alignCls)}
       ${metric('方向一致度', agreement, agreementCls)}
     </div>
+    ${adviceHtml}
     ${eventHtml}
-    <p class="timing-note">${align.available ? esc(align.note) : '周线 / 月线尚未加载，跨周期共振暂不可用。'} 以上为基于历史价格的机械化状态描述，存在滞后与钝化可能，不构成买卖建议。</p>
+    <p class="timing-note">${align.available ? esc(align.note) : '周线 / 月线尚未加载，跨周期共振暂不可用。'} 操作观点仅供自用参考，为基于历史价格的机械化分档，存在滞后与钝化可能，不含收益承诺或目标价，不构成投资建议。</p>
   </article>`;
 }
 
@@ -10614,6 +10942,224 @@ async function loadCommodityHotQuotes() {
 }
 
 
+/* ===== js/38-render-timing-workbench.js ===== */
+/* ============================================================
+   Timing Workbench renderer — 择时工作台（方案 C）
+   输入：自选股池（sl:watchlist）+ 已缓存的日/周/月 K 线
+   输出：跨周期共振排名 + 信号事件流。全部为状态描述，不含交易建议。
+   ============================================================ */
+'use strict';
+
+function timingWorkbenchControlHTML() {
+  const w = state.timingWorkbench;
+  return `
+  <div class="tw-controls card">
+    <div class="tw-control-main">
+      <div class="tw-pool-info">
+        <span class="tw-pool-label">研判范围</span>
+        <b id="twPoolCount">${w.pool.length} 只自选股</b>
+        <span class="tw-pool-hint">日 / 周 / 月三周期 · 分钟线不参与</span>
+      </div>
+      <button class="btn primary" type="button" data-action="timing-workbench-run" id="twRunBtn">
+        ${ico('compass', 'sm')}<span>${w.running ? '研判中…' : '开始研判'}</span>
+      </button>
+      <button class="btn ghost" type="button" data-action="timing-workbench-stop" id="twStopBtn" ${w.running ? '' : 'hidden'}>
+        ${ico('x', 'sm')}<span>停止</span>
+      </button>
+    </div>
+    <div class="tw-progress" id="twProgress" ${w.running ? '' : 'hidden'}>
+      <div class="tw-progress-track"><i id="twProgressBar" style="width:${w.progressPct}%"></i></div>
+      <span id="twProgressText">${esc(w.progressText)}</span>
+    </div>
+  </div>`;
+}
+
+function timingWorkbenchPageHTML() {
+  return `
+  <div class="tw-page">
+    <section class="tw-hero">
+      <span class="eyebrow"><i class="dot"></i>择时工作台 · 自选股批量共振</span>
+      <h1>把自选股放在<br><span>同一张择时表上。</span></h1>
+      <p class="lede">对自选股池逐只取日 / 周 / 月 K 线，运行与技术研判页相同的择时信号层，按跨周期共振度排名，给出机械化操作观点，并汇总近期交叉与突破事件。仅供自用参考。</p>
+      <div class="tw-hero-note">${ico('info', 'sm')}三周期接口逐只获取，受公开行情接口限流约束；已缓存数据直接复用。低覆盖标的一律「观望待确认」，排在满覆盖之后，不与满覆盖分数混排。</div>
+    </section>
+
+    ${timingWorkbenchControlHTML()}
+
+    <section class="tw-summary" id="twSummary">
+      ${timingWorkbenchSummaryHTML([])}
+    </section>
+
+    <section class="tw-result" id="twResult">
+      ${timingWorkbenchIdleHTML()}
+    </section>
+
+    <section class="tw-events" id="twEvents">
+      ${timingWorkbenchEventsHTML([])}
+    </section>
+
+    <div class="source-note tw-disclaimer">
+      口径：单周期状态 40% + 跨周期共振 60%，缺维按覆盖度折算；仅日 / 周 / 月三周期齐全者可比，低覆盖一律观望待确认。操作观点为基于历史价格的机械化分档（≥78 买入 / ≥62 增持 / 38–61 持有 / ≤38 减持 / ≤22 卖出），仅供自用参考，不含收益承诺或目标价，不构成投资建议。市场有风险，投资需谨慎。
+    </div>
+  </div>`;
+}
+
+function timingWorkbenchIdleHTML() {
+  const w = state.timingWorkbench;
+  if (!w.pool.length) {
+    return `<div class="card tw-empty">${emptyState({
+      icon: 'star',
+      title: '自选股池为空',
+      desc: '请先在个股研判页点击「加自选」，再回到本页运行批量择时。自选股上限 20 只。',
+    })}</div>`;
+  }
+  return `<div class="card tw-empty">${emptyState({
+    icon: 'compass',
+    title: '点击「开始研判」生成共振排名',
+    desc: '将对池内每只标的获取日 / 周 / 月 K 线，逐只计算择时状态与事件，结果按共振度排序。',
+  })}</div>`;
+}
+
+function timingWorkbenchSummaryHTML(rows) {
+  const s = timingSummary(rows);
+  if (!s.total) {
+    return `<div class="tw-summary-grid">
+      <div class="tw-sum-cell"><span>已研判</span><b>—</b></div>
+      <div class="tw-sum-cell"><span>满覆盖可比</span><b>—</b></div>
+      <div class="tw-sum-cell"><span>买入 / 增持</span><b>—</b></div>
+      <div class="tw-sum-cell"><span>减持 / 卖出</span><b>—</b></div>
+    </div>`;
+  }
+  const c = s.adviceCounts;
+  return `<div class="tw-summary-grid">
+    <div class="tw-sum-cell"><span>已研判</span><b>${s.total}</b></div>
+    <div class="tw-sum-cell"><span>满覆盖可比</span><b>${s.comparable}</b></div>
+    <div class="tw-sum-cell"><span>买入 / 增持</span><b class="bullish">${c.strongBuy + c.buy}</b></div>
+    <div class="tw-sum-cell"><span>减持 / 卖出</span><b class="bearish">${c.reduce + c.sell}</b></div>
+  </div><p class="tw-summary-note">${esc(s.note)} · 观望待确认 ${c.watch} · 持有/观望 ${c.hold} · 平均状态分 ${s.avg === null ? '—' : s.avg} · 动能转换 ${s.turns}</p>`;
+}
+
+/* 排名表：一行一只标的，低覆盖行加 muted 标记 */
+function timingWorkbenchRowHTML(row) {
+  const stock = row.stock || {};
+  const dirCls = row.available ? (SIGNAL_META[row.dir] || SIGNAL_META.unavailable).cls : 'unavailable';
+  const phaseCls = row.available ? timingPhaseClass(row.phase, row.dir) : 'unavailable';
+  const scoreText = row.available ? row.total : '—';
+  const alignText = row.available
+    ? (row.align && row.align.available ? `${row.align.score} · ${row.align.agreement}%` : '—')
+    : '—';
+  const latest = row.latest;
+  const eventText = latest ? `${latest.label} · ${latest.barsAgo} 根前` : '暂无事件';
+  const covText = row.available ? `${row.coverage}%${row.comparable ? '' : '（不可比）'}` : '—';
+  const advice = row.advice || timingAdvice(row.score, row.state);
+  return `<tr class="${row.comparable ? '' : 'tw-row-muted'}">
+    <td class="tw-rank">${row.rank || '—'}</td>
+    <td class="tw-name">
+      <a href="#/stock/${esc(stock.market)}/${esc(stock.code)}" title="打开个股研判">${esc(stock.name || stock.code)}</a>
+      <small>${esc(stock.market)} · ${esc(stock.code)}</small>
+    </td>
+    <td class="tw-advice-cell ${advice.cls}"><b>${esc(advice.label)}</b></td>
+    <td class="${dirCls}"><b>${scoreText}</b></td>
+    <td>${esc(covText)}</td>
+    <td class="${phaseCls}">${esc(row.phaseLabel || '数据不足')}</td>
+    <td>${esc(alignText)}</td>
+    <td class="tw-event-cell">${esc(eventText)}</td>
+  </tr>`;
+}
+
+function timingWorkbenchResultsHTML(rows) {
+  const ranked = rankTimingRows(rows);
+  return `<div class="card tw-table-card">
+    <div class="tw-table-head"><b>跨周期共振排名</b><span>${ranked.length} 只 · 满覆盖优先</span></div>
+    <div class="tw-table-wrap">
+      <table class="tw-table">
+        <thead><tr><th>#</th><th>标的</th><th>操作观点</th><th>状态分</th><th>覆盖</th><th>阶段</th><th>共振 · 一致度</th><th>最近事件</th></tr></thead>
+        <tbody>${ranked.map(timingWorkbenchRowHTML).join('')}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+/* 信号事件流：按距今根数升序，跨标的汇总 */
+function timingWorkbenchEventsHTML(events) {
+  const list = Array.isArray(events) ? events : [];
+  if (!list.length) {
+    return `<div class="tw-events-head"><b>信号事件流</b><span>按距今根数排序</span></div>
+      <div class="card tw-events-empty">${emptyState({
+        icon: 'activity',
+        title: '暂无可展示的事件',
+        desc: '运行研判后，将汇总各标的近期的 MACD / KDJ 交叉与 BOLL 突破事件。',
+      })}</div>`;
+  }
+  return `<div class="tw-events-head"><b>信号事件流</b><span>最近 ${list.length} 条 · 按距今根数排序</span></div>
+    <div class="tw-event-list">${list.map((e) => `
+      <div class="tw-event-row">
+        <span class="tw-event-tag ${(SIGNAL_META[e.dir] || SIGNAL_META.unavailable).cls}">${esc(e.label)}</span>
+        <span class="tw-event-stock">${esc(e.name)} <small>${esc(e.market)} · ${esc(e.code)}</small></span>
+        <span class="tw-event-meta">强度 ${e.strength} · 距今 ${e.barsAgo} 根 · ${esc(e.at)}</span>
+      </div>`).join('')}</div>`;
+}
+
+/* 渲染整页（路由进入时） */
+function renderTimingWorkbenchPage() {
+  setViewHTML(timingWorkbenchPageHTML());
+  document.title = '择时工作台 · 自选股共振排名 · 研值 StockLens';
+  syncTopbar('timing');
+  scrollTopSmooth();
+}
+
+/* 更新进度条与文字 */
+function updateTimingWorkbenchProgress(done, total, row) {
+  const w = state.timingWorkbench;
+  const bar = $('#twProgressBar');
+  const text = $('#twProgressText');
+  const wrap = $('#twProgress');
+  if (wrap) wrap.hidden = false;
+  const pct = Math.round((done / Math.max(total, 1)) * 100);
+  if (bar) bar.style.width = `${pct}%`;
+  w.progressPct = pct;
+  w.progressText = `已完成 ${done} / ${total} 只${row && row.stock ? ` · 最近：${row.stock.name}` : ''}`;
+  if (text) text.textContent = w.progressText;
+}
+
+/* 增量刷新结果 / 汇总 / 事件流 */
+function refreshTimingWorkbench() {
+  const w = state.timingWorkbench;
+  const resultBox = $('#twResult');
+  if (resultBox) {
+    resultBox.innerHTML = w.rows.length
+      ? timingWorkbenchResultsHTML(w.rows)
+      : (w.running ? loadingCard('正在获取三周期 K 线并计算择时状态…', 4) : timingWorkbenchIdleHTML());
+    hydrateIcons(resultBox);
+  }
+  const sumBox = $('#twSummary');
+  if (sumBox) {
+    sumBox.innerHTML = timingWorkbenchSummaryHTML(w.rows);
+    hydrateIcons(sumBox);
+  }
+  const eventBox = $('#twEvents');
+  if (eventBox) {
+    eventBox.innerHTML = timingWorkbenchEventsHTML(collectTimingEvents(w.rows, 12));
+    hydrateIcons(eventBox);
+  }
+  const pool = $('#twPoolCount');
+  if (pool) pool.textContent = `${w.pool.length} 只自选股`;
+}
+
+function syncTimingWorkbenchButtons(running) {
+  const runBtn = $('#twRunBtn');
+  const stopBtn = $('#twStopBtn');
+  const prog = $('#twProgress');
+  if (runBtn) {
+    runBtn.disabled = running;
+    const label = runBtn.querySelector('span:last-child');
+    if (label) label.textContent = running ? '研判中…' : '开始研判';
+  }
+  if (stopBtn) stopBtn.hidden = !running;
+  if (prog) prog.hidden = !running;
+}
+
+
 /* ===== js/50-main.js ===== */
 /* ============================================================
    App shell — routing, search, orchestration, interactions
@@ -10664,6 +11210,17 @@ const state = {
     token: 0,
     progressPct: 0,
     progressText: '准备中…',
+  },
+  timingWorkbench: {
+    pool: [],
+    rows: [],
+    running: false,
+    token: 0,
+    progressPct: 0,
+    progressText: '准备中…',
+    ranAt: null,
+    stopped: false,
+    error: '',
   },
   search: { items: [], active: -1, query: '', seq: 0 },
   etf: null,
@@ -10841,10 +11398,12 @@ function syncTopbar(route) {
   const printBtn = $('#printBtn');
   const screenerBtn = $('#topScreenerBtn');
   const etfScreenerBtn = $('#topEtfScreenerBtn');
+  const timingBtn = $('#topTimingBtn');
   if (topSearch) topSearch.hidden = route !== 'analysis';
   if (printBtn) printBtn.hidden = route !== 'analysis';
   if (screenerBtn) screenerBtn.classList.toggle('active', route === 'screener');
   if (etfScreenerBtn) etfScreenerBtn.classList.toggle('active', route === 'etf-screener');
+  if (timingBtn) timingBtn.classList.toggle('active', route === 'timing');
   document.body.dataset.route = route;
 }
 
@@ -10888,6 +11447,12 @@ function addRecent(stock) {
 
 /* ---------------- routing ---------------- */
 function routeFromHash() {
+  if ((location.hash || '').startsWith('#/timing')) {
+    state.pendingStock = null;
+    ++state.token;
+    enterTimingWorkbench();
+    return;
+  }
   if ((location.hash || '').startsWith('#/etf-screener')) {
     state.pendingStock = null;
     ++state.token;
@@ -11026,6 +11591,118 @@ function syncScreenerButtons(running) {
   }
   if (stopBtn) stopBtn.hidden = !running;
   if (prog) prog.hidden = !running;
+}
+
+/* ---------------- 择时工作台（方案 C：自选股批量共振）编排 ---------------- */
+function goTimingWorkbench() {
+  if ((location.hash || '') === '#/timing') {
+    enterTimingWorkbench();
+  } else {
+    location.hash = '#/timing';
+  }
+}
+
+function enterTimingWorkbench() {
+  const w = state.timingWorkbench;
+  ++w.token;
+  w.running = false;
+  w.rows = [];
+  w.ranAt = null;
+  w.stopped = false;
+  w.error = '';
+  w.progressPct = 0;
+  w.progressText = '准备中…';
+  w.pool = watchlistGet().filter((s) => s && s.market && s.market !== 'CRYPTO' && s.market !== 'COMMODITY');
+  renderTimingWorkbenchPage();
+  if (w.pool.length) startTimingWorkbench();
+}
+
+/* 单只标的：批量行情已取到 quote，逐周期取 K 线（失败降级为 null，不阻断） */
+async function fetchTimingKlines(stock, quote) {
+  const [day, week, month] = await Promise.all([
+    getKline(stock, quote, 'day').catch(() => null),
+    getKline(stock, quote, 'week').catch(() => null),
+    getKline(stock, quote, 'month').catch(() => null),
+  ]);
+  return { day, week, month };
+}
+
+async function runTimingWorkbenchFlow() {
+  const w = state.timingWorkbench;
+  const token = ++w.token;
+  w.running = true;
+  w.rows = [];
+  w.stopped = false;
+  w.error = '';
+  w.progressPct = 0;
+  w.progressText = '正在获取自选股行情…';
+  syncTimingWorkbenchButtons(true);
+  refreshTimingWorkbench();
+  try {
+    const keys = w.pool.map((s) => s.quoteKey).filter(Boolean);
+    const quoteMap = keys.length ? await getQuoteBatch(keys) : new Map();
+    const usable = w.pool.map((s) => ({ stock: s, quote: quoteMap.get(s.quoteKey) || null }));
+    if (!usable.length) throw new Error('自选股池暂不可用，请稍后重试');
+    const rows = [];
+    let cursor = 0;
+    let done = 0;
+    const worker = async () => {
+      while (cursor < usable.length) {
+        if (token !== w.token) return;
+        const item = usable[cursor++];
+        let row;
+        try {
+          const klines = await fetchTimingKlines(item.stock, item.quote);
+          row = buildTimingRow(item.stock, klines);
+        } catch (e) {
+          row = buildTimingRow(item.stock, null);
+        }
+        if (token !== w.token) return;
+        rows.push(row);
+        w.rows = rows.slice();
+        done += 1;
+        updateTimingWorkbenchProgress(done, usable.length, row);
+        refreshTimingWorkbench();
+      }
+    };
+    await Promise.all(Array.from({ length: 3 }, worker));
+    if (token !== w.token) return;
+    w.rows = rankTimingRows(rows);
+    w.ranAt = new Date();
+    w.stopped = false;
+    refreshTimingWorkbench();
+  } catch (err) {
+    if (token !== w.token) return;
+    w.error = err && err.message ? err.message : '研判失败，请稍后重试';
+    w.rows = [];
+    refreshTimingWorkbench();
+    toast(w.error, 'error');
+  } finally {
+    if (token !== w.token) return;
+    w.running = false;
+    syncTimingWorkbenchButtons(false);
+  }
+}
+
+function startTimingWorkbench() {
+  const w = state.timingWorkbench;
+  if (w.running) return;
+  if (!w.pool.length) {
+    toast('自选股池为空，请先在个股研判页加自选', 'info');
+    return;
+  }
+  runTimingWorkbenchFlow();
+}
+
+function stopTimingWorkbench() {
+  const w = state.timingWorkbench;
+  if (!w.running) return;
+  ++w.token;
+  w.running = false;
+  w.stopped = true;
+  syncTimingWorkbenchButtons(false);
+  refreshTimingWorkbench();
+  toast('研判已停止，已完成的结果保留在表中', 'info');
 }
 
 /* ---------------- ETF 高分榜（ETF 五维反向选股）编排 ---------------- */
@@ -12198,6 +12875,21 @@ function handleClick(e) {
       goStock(HOT_STOCKS[0]);
       return;
     }
+    if (action === 'timing-workbench') {
+      e.preventDefault();
+      goTimingWorkbench();
+      return;
+    }
+    if (action === 'timing-workbench-run') {
+      e.preventDefault();
+      startTimingWorkbench();
+      return;
+    }
+    if (action === 'timing-workbench-stop') {
+      e.preventDefault();
+      stopTimingWorkbench();
+      return;
+    }
     if (action === 'screener') {
       e.preventDefault();
       goScreener();
@@ -12321,6 +13013,10 @@ function init() {
   hydrateIcons(document);
   syncThemeButton();
   initEvents();
+  if ((location.hash || '').startsWith('#/timing')) {
+    enterTimingWorkbench();
+    return;
+  }
   if ((location.hash || '').startsWith('#/etf-screener')) {
     enterEtfScreener();
     return;

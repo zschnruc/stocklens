@@ -133,6 +133,17 @@ html[data-theme="light"] .tech-sig.neutral{background:rgba(169,118,35,.07)}
 .timing-metric-value.bearish{color:var(--down)}
 .timing-metric-value.neutral{color:var(--gold)}
 .timing-metric-value.unavailable{color:var(--faint)}
+.timing-advice{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px;padding:11px 14px;
+  border-radius:10px;border:1px solid var(--line-2);background:var(--panel-2)
+}
+.timing-advice-label{display:inline-flex;align-items:center;gap:7px;font-size:15px;font-weight:700;white-space:nowrap}
+.timing-advice-label .ico{width:17px;height:17px}
+.timing-advice-note{font-size:10px;color:var(--muted);line-height:1.6}
+.timing-advice.bullish{color:var(--up);border-color:rgba(240,112,112,.3);background:rgba(240,112,112,.07)}
+.timing-advice.bearish{color:var(--down);border-color:rgba(67,197,158,.3);background:rgba(67,197,158,.07)}
+.timing-advice.neutral{color:var(--gold);border-color:rgba(231,180,92,.3);background:rgba(231,180,92,.07)}
+.timing-advice.unavailable{color:var(--muted)}
 .timing-event{
   display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:11px;
   border-top:1px dashed var(--line);font-size:10px;color:var(--muted);flex-wrap:wrap
@@ -145,6 +156,9 @@ html[data-theme="light"] .tech-sig.neutral{background:rgba(169,118,35,.07)}
 html[data-theme="light"] .timing-phase.bullish{background:rgba(201,74,74,.07)}
 html[data-theme="light"] .timing-phase.bearish{background:rgba(30,146,114,.07)}
 html[data-theme="light"] .timing-phase.neutral{background:rgba(169,118,35,.07)}
+html[data-theme="light"] .timing-advice.bullish{background:rgba(201,74,74,.06)}
+html[data-theme="light"] .timing-advice.bearish{background:rgba(30,146,114,.06)}
+html[data-theme="light"] .timing-advice.neutral{background:rgba(169,118,35,.06)}
 
 @media (max-width:980px){
   .tech-overview-grid{grid-template-columns:1fr}
