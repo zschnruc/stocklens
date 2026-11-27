@@ -39,6 +39,10 @@ vm.runInThisContext(fs.readFileSync(path.join(src, '26-etf.js'), 'utf8'), { file
 vm.runInThisContext(fs.readFileSync(path.join(src, '27-crypto.js'), 'utf8'), { filename: '27-crypto.js' });
 /* 大宗商品：品种映射、别名、行情解析与商品 K 线周期可离线验证（网络函数不在测试中调用） */
 vm.runInThisContext(fs.readFileSync(path.join(src, '28-commodity.js'), 'utf8'), { filename: '28-commodity.js' });
+/* 择时信号层：事件检测、阶段判定、多周期共振与覆盖度折算均为纯函数（零请求/零 DOM） */
+vm.runInThisContext(fs.readFileSync(path.join(src, '29-timing.js'), 'utf8'), { filename: '29-timing.js' });
+/* 技术研判渲染层：择时状态卡为纯字符串渲染，可离线校验 HTML 结构 */
+vm.runInThisContext(fs.readFileSync(path.join(src, '32-render-technical.js'), 'utf8'), { filename: '32-render-technical.js' });
 
 const enc = encodeURIComponent;
 let failures = 0;
@@ -795,6 +799,99 @@ function auditCandlestick(html, expectBars) {
   const redrawn = CANDLE_STORE.get(fakeSvg.dataset.candleId);
   check('就地重绘保留 SVG 节点并更新可见根数', !!redrawn && redrawn.geom.n === 30 && /candle-hover-layer/.test(fakeSvg.innerHTML));
   check('就地重绘按容器宽度重算 viewBox', redrawn.width === 800 && fakeSvg.innerHTML.includes('x2="742"'));
+
+  console.log('择时信号层（方案 A，离线纯函数）');
+  /* 合成 K 线：v 型反转 / 下跌反转 / 震荡，仅用于确定性断言，不发起任何请求 */
+  function timingKlines(n, mode) {
+    const out = [];
+    let price = 100;
+    for (let i = 0; i < n; i++) {
+      const half = Math.floor(n / 2);
+      const delta = mode === 'v' ? (i < half ? -0.6 : 1.4)
+        : mode === 'vdown' ? (i < half ? 0.6 : -1.4)
+        : (i % 2 ? 0.35 : -0.35);
+      price = Math.max(20, price + delta);
+      const open = price - delta * 0.3;
+      const high = Math.max(open, price) + Math.abs(delta) * 0.4 + 0.3;
+      const low = Math.min(open, price) - Math.abs(delta) * 0.4 - 0.3;
+      const d = new Date(2026, 0, 1 + i);
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      out.push({ date, open, close: price, high, low, volume: 1000 + i * 8 });
+    }
+    return out;
+  }
+  const tUp = timingKlines(140, 'v');
+  const tDown = timingKlines(140, 'vdown');
+  const tFlat = timingKlines(140, 'flat');
+
+  const tEvents = detectEvents(tUp);
+  check(
+    '择时事件类型、日期、方向、强度字段完整',
+    tEvents.length > 0 && tEvents.every((e) =>
+      ['macdCross', 'kdjCross', 'bollBreak'].includes(e.type) &&
+      /^\d{4}-\d{2}-\d{2}$/.test(e.at) && Number.isInteger(e.index) &&
+      Number.isInteger(e.barsAgo) && ['bullish', 'bearish'].includes(e.dir) &&
+      Number.isFinite(e.strength) && e.strength >= 0 && e.strength <= 100)
+  );
+  check('择时事件按时间正序且 barsAgo 单调递减', tEvents.every((e, i) => i === 0 || (e.index >= tEvents[i - 1].index && e.barsAgo <= tEvents[i - 1].barsAgo)));
+  check('V 型反转后段出现偏多事件、下跌段出现偏空事件', tEvents.some((e) => e.dir === 'bullish' && e.index > 70) && tEvents.some((e) => e.dir === 'bearish' && e.index < 70));
+  check('MACD 交叉与 BOLL 突破均被检测', tEvents.some((e) => e.type === 'macdCross') && tEvents.some((e) => e.type === 'bollBreak'));
+  check('无有效 K 线时事件列表为空', detectEvents([]).length === 0 && detectEvents(null).length === 0);
+  check('事件标签按方向细分且无语义冲突', tEvents.length > 0 && tEvents.every((e) =>
+    ['MACD 金叉', 'MACD 死叉', 'KDJ 金叉', 'KDJ 死叉', 'BOLL 突破上轨', 'BOLL 跌破下轨'].includes(e.label)) &&
+    !tEvents.some((e) => /（偏多|偏空）/.test(e.label)));
+  check('事件标签映射：三类事件双向标签正确', eventLabel('macdCross', 'bullish') === 'MACD 金叉' && eventLabel('macdCross', 'bearish') === 'MACD 死叉' &&
+    eventLabel('kdjCross', 'bullish') === 'KDJ 金叉' && eventLabel('kdjCross', 'bearish') === 'KDJ 死叉' &&
+    eventLabel('bollBreak', 'bullish') === 'BOLL 突破上轨' && eventLabel('bollBreak', 'bearish') === 'BOLL 跌破下轨');
+
+  const fakeC = (dir, div) => ({ available: true, dir, label: dir === 'bullish' ? '偏多' : '偏空', divergence: div });
+  const fakeE = (dir, barsAgo) => ({ type: 'macdCross', label: eventLabel('macdCross', dir), dir, barsAgo, index: 0, at: '2026-01-01', strength: 70 });
+  check('阶段判定：维度一致 → 趋势延续', timingPhase(fakeC('bullish', 0), [fakeE('bullish', 20)]).phase === 'trend');
+  check('阶段判定：近期方向切换 → 动能转换', timingPhase(fakeC('bullish', 2), [fakeE('bullish', 8), fakeE('bearish', 1)]).phase === 'turn');
+  check('阶段判定：高频反复 → 震荡噪音', timingPhase(fakeC('bullish', 2), Array.from({ length: 8 }, (_, i) => fakeE(i % 2 ? 'bullish' : 'bearish', i))).phase === 'range');
+  check('阶段判定：中性且分歧 → 震荡整理', timingPhase(fakeC('neutral', 3), []).phase === 'range');
+  check('阶段文案不再以括号重复方向', !/（偏多|偏空）/.test(timingPhase(fakeC('bullish', 2), [fakeE('bullish', 8), fakeE('bearish', 1)]).text));
+
+  const tState = timingState(tUp);
+  check('择时状态：完整数据可用且方向偏多', tState.available && tState.consensus.dir === 'bullish' && tState.consensus.score > 50 && tState.divergence >= 0);
+  check('择时状态：震荡行情不误标为转折', timingState(tFlat).phase === 'range');
+  const tShort = timingState([{ date: '2026-01-01', open: 1, close: 1, high: 1, low: 1, volume: 1 }]);
+  check('择时状态：数据不足时降级且不臆造', !tShort.available && tShort.phase === 'unavailable' && tShort.events.length === 0 && tShort.consensus.score === null);
+  check('择时状态：输出无 NaN / Infinity', !/NaN|Infinity/.test(JSON.stringify(tState)));
+
+  const tAlign = multiPeriodAlignment({ day: tUp, week: tDown, month: tFlat, '60m': [{ bad: true }], '15m': null, '5m': 'oops' });
+  const tCleanAlign = multiPeriodAlignment({ day: tUp, week: tDown, month: tFlat });
+  check('多周期共振：仅识别日/周/月三个周期', tAlign.available && tAlign.periods.length === 3 && tAlign.periods.every((p) => ['day', 'week', 'month'].includes(p.key)));
+  check('多周期共振：分钟线按 FR-17.4 排除，垃圾数据不污染结果', JSON.stringify(tAlign.periods) === JSON.stringify(tCleanAlign.periods));
+  check('多周期共振：方向一致度在 0-100 且分数有效', tAlign.agreement >= 0 && tAlign.agreement <= 100 && Number.isFinite(tAlign.score));
+  check('多周期共振：单周期或空输入降级', !multiPeriodAlignment({ day: tUp }).available && !multiPeriodAlignment(null).available);
+
+  const tFull = timingScore(tState, tAlign);
+  const tSingle = timingScore(tState, null);
+  const tEmpty = timingScore(null, null);
+  check('综合状态分：全覆盖可比且分数有效', tFull.available && tFull.coverage === 100 && tFull.comparable && Number.isFinite(tFull.total));
+  check('综合状态分：缺维按覆盖度折算且不可比', tSingle.available && tSingle.coverage === 40 && !tSingle.comparable && tSingle.total === Math.round(tState.consensus.score * 0.76));
+  check('综合状态分：无数据降级', !tEmpty.available && tEmpty.total === null && tEmpty.coverage === 0);
+
+  const tText = [tState.note, ...tState.reasons, tAlign.note, ...tAlign.reasons, tFull.note, ...tFull.reasons].join(' ');
+  check('择时输出仅含状态描述，无买卖/收益类交易建议词', !/买入|卖出|加仓|减仓|建议|目标价|收益率|胜率|回测/.test(tText));
+
+  console.log('择时状态卡（方案 A，渲染层）');
+  const tPeriods = { day: { points: tUp }, week: { points: tDown }, month: { points: tFlat }, '60m': { points: [{ bad: true }] } };
+  const tCard = timingStatusCard(tPeriods);
+  check('状态卡渲染：结构完整且含三格指标', /class="card timing-card"/.test(tCard) && /择时状态/.test(tCard) && (tCard.match(/class="timing-metric"/g) || []).length === 3);
+  check('状态卡渲染：展示阶段、方向与事件日期', /趋势延续|动能转换|震荡整理/.test(tCard) && /偏多|偏空|中性/.test(tCard) && /\d{4}-\d{2}-\d{2}/.test(tCard));
+  check('状态卡事件段无方向重复且标签含方向语义', !/（偏多|偏空）/.test(tCard) && /金叉|死叉|突破上轨|跌破下轨|暂无事件/.test(tCard));
+  check('阶段徽章配色：仅趋势延续用方向色，动能转换/震荡整理用中性金色',
+    timingPhaseClass('trend', 'bullish') === 'bullish' && timingPhaseClass('trend', 'bearish') === 'bearish' &&
+    timingPhaseClass('turn', 'bearish') === 'neutral' && timingPhaseClass('range', 'bullish') === 'neutral');
+  check('状态卡渲染：无固定买卖建议词且无 NaN/undefined', !/买入|卖出|加仓|减仓|目标价|收益率|胜率|回测/.test(tCard) && !/NaN|Infinity|undefined/.test(tCard));
+  const tCardNoAlign = timingStatusCard({ day: { points: tUp } });
+  check('状态卡渲染：缺周/月线时提示共振不可用', /周线 \/ 月线尚未加载/.test(tCardNoAlign) && /cross|跨周期共振/.test(tCardNoAlign));
+  const tCardEmpty = timingStatusCard({ day: null });
+  check('状态卡渲染：无日线时降级且不臆造', /timing-empty/.test(tCardEmpty) && /有效技术数据不足/.test(tCardEmpty));
+  check('状态卡渲染：分钟线数据被忽略', timingStatusCard(tPeriods) === tCard);
+  check('状态卡挂载：技术研判章节包含择时卡', /timingStatusCard\(state\.periodKlines\)/.test(fs.readFileSync(path.join(src, '32-render-technical.js'), 'utf8')));
 
   console.log(failures ? `\n${failures} 项失败` : '\n全部通过');
   process.exit(failures ? 1 : 0);

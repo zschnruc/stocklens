@@ -102,6 +102,65 @@ function techDimCard(dim) {
   </article>`;
 }
 
+/* ---------- 择时状态卡（方案 A）：消费已缓存 K 线，零新增请求 ----------
+   阶段 / 方向 / 共振 / 事件全部来自 29-timing.js 的纯函数输出；
+   文案为状态描述，不产出买入卖出类建议（FR-14.7）。 */
+/* 阶段徽章配色：仅趋势延续携带方向色，动能转换/震荡整理为中性状态（金色） */
+function timingPhaseClass(phase, dir) {
+  if (phase !== 'trend') return 'neutral';
+  return (SIGNAL_META[dir] || SIGNAL_META.unavailable).cls;
+}
+
+function timingStatusCard(periodKlines) {
+  const src = periodKlines && typeof periodKlines === 'object' ? periodKlines : {};
+  const pointsOf = (v) => (v && Array.isArray(v.points) ? v.points : null);
+  const state = timingState(pointsOf(src.day));
+  const align = multiPeriodAlignment({
+    day: pointsOf(src.day),
+    week: pointsOf(src.week),
+    month: pointsOf(src.month),
+  });
+  const score = timingScore(state, align);
+  const kicker = `<div class="card-kicker">${ico('compass')}择时状态 <span class="tech-source">日线信号 · 日/周/月共振</span></div>`;
+
+  if (!state.available) {
+    return `<article class="card timing-card">
+      ${kicker}
+      <div class="timing-empty">${esc(state.note)} 现有研判与行情模块不受影响。</div>
+    </article>`;
+  }
+
+  const dir = state.consensus.dir;
+  const meta = SIGNAL_META[dir] || SIGNAL_META.unavailable;
+  const phaseIcon = state.phase === 'trend' ? 'trendUp' : state.phase === 'turn' ? 'activity' : 'layers';
+  const metric = (label, value, cls) => `<div class="timing-metric"><div class="timing-metric-label">${label}</div><div class="timing-metric-value ${cls}">${value}</div></div>`;
+  const alignScore = align.available ? align.score : '—';
+  const alignCls = align.available ? SIGNAL_META[align.dir].cls : 'unavailable';
+  const agreement = align.available ? `${align.agreement}%` : '—';
+  const agreementCls = !align.available ? 'unavailable' : align.agreement >= 67 ? meta.cls : 'neutral';
+  const latest = state.latest;
+  const eventHtml = latest
+    ? `<div class="timing-event"><span class="timing-event-tag ${SIGNAL_META[latest.dir].cls}">${esc(latest.label)}</span><span>强度 ${latest.strength} · 距今 ${latest.barsAgo} 根日 K（${esc(latest.at)}）</span></div>`
+    : '<div class="timing-event"><span class="timing-event-tag">暂无事件</span><span>当前窗口未检测到交叉或突破</span></div>';
+  const phaseCls = timingPhaseClass(state.phase, dir);
+
+  return `<article class="card timing-card">
+    ${kicker}
+    <div class="timing-head">
+      <span class="timing-phase ${phaseCls}">${ico(phaseIcon, 'sm')}${esc(state.phaseLabel)}</span>
+      <span class="timing-dir">${esc(state.note)} · ${esc(score.available ? `状态分 ${score.total}（覆盖 ${score.coverage}%）` : '状态分暂不可用')}</span>
+    </div>
+    <p class="timing-summary">${esc(state.reasons[1] || state.reasons[0] || '')}</p>
+    <div class="timing-metrics">
+      ${metric('日线状态', state.consensus.score, meta.cls)}
+      ${metric('跨周期共振', alignScore, alignCls)}
+      ${metric('方向一致度', agreement, agreementCls)}
+    </div>
+    ${eventHtml}
+    <p class="timing-note">${align.available ? esc(align.note) : '周线 / 月线尚未加载，跨周期共振暂不可用。'} 以上为基于历史价格的机械化状态描述，存在滞后与钝化可能，不构成买卖建议。</p>
+  </article>`;
+}
+
 /* 更新已渲染章节（K 线到达后异步调用） */
 function updateTechnicalSection(result) {
   const slot = $('#technicalSlot');
@@ -123,6 +182,7 @@ function renderTechnicalSectionInner(result) {
     });
   }
   return `${techConsensusCard(result)}
+    ${timingStatusCard(state.periodKlines)}
     <div class="tech-overview-grid">
       ${techRadarSVG(result.dims) ? `<article class="card tech-radar-card"><div class="card-kicker">${ico('target')}信号雷达</div>${techRadarSVG(result.dims)}</article>` : ''}
       <article class="card tech-summary-card">
