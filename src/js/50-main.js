@@ -701,6 +701,31 @@ function markCoreSettled(key, value) {
   }
 }
 
+/* 择时状态卡跨周期共振：日线到达后并发补齐周/月 K 线（方案 A）。
+   - klineLoader(p) 由各市场入口注入，统一返回 Promise<K线对象>；
+   - 单一 token 校验贯穿始终，切股后旧数据不落库、不重绘；
+   - 周/月失败各自静默降级（不 toast、不阻断日线主流程），状态卡按可用周期显示；
+   - 全部 settled 后重绘研判卡，让择时状态从「仅日线」平滑升级为三周期共振。 */
+function prefetchTimingPeriods(token, klineLoader) {
+  const pending = timingPrefetchPlan(state.periodKlines);
+  if (!pending.length || token !== state.token) return;
+  Promise.all(
+    pending.map((p) =>
+      Promise.resolve()
+        .then(() => klineLoader(p))
+        .then((kline) => {
+          if (token === state.token) state.periodKlines[p] = kline;
+        })
+        .catch(() => {
+          /* 周/月降级：保留已有缓存，不改写、不提示 */
+        })
+    )
+  ).then(() => {
+    if (token !== state.token) return;
+    if (state.technical) updateTechnicalSection(state.technical);
+  });
+}
+
 function bindCoreData(token, quote) {
   const stock = state.stock;
 
@@ -714,6 +739,8 @@ function bindCoreData(token, quote) {
       const technical = analyzeTechnical(kline && kline.points);
       state.technical = technical;
       updateTechnicalSection(technical);
+      /* 择时共振：日线渲染完成后并发补齐周/月，到位后重绘状态卡 */
+      prefetchTimingPeriods(token, (p) => getKline(stock, quote, p));
     })
     .catch(() => {
       if (token !== state.token) return;
@@ -895,6 +922,7 @@ function bindEtfData(token, quote, stock) {
       const technical = analyzeTechnical(kline && kline.points);
       state.technical = technical;
       updateTechnicalSection(technical);
+      prefetchTimingPeriods(token, (p) => getKline(stock, quote, p));
       maybeRefreshEtfScore(token);
     })
     .catch(() => {
@@ -1013,6 +1041,7 @@ function bindCryptoData(token, stock, quote) {
       const technical = analyzeTechnical(kline && kline.points);
       state.technical = technical;
       updateTechnicalSection(technical);
+      prefetchTimingPeriods(token, (p) => getCryptoKline(stock, p));
       maybeRefreshCryptoScore(token);
     })
     .catch(() => {
@@ -1136,6 +1165,7 @@ function bindCommodityData(token, stock) {
       const technical = analyzeTechnical(kline && kline.points);
       state.technical = technical;
       updateTechnicalSection(technical);
+      prefetchTimingPeriods(token, (p) => getCommodityKline(stock, p));
     })
     .catch(() => {
       if (token !== state.token) return;
@@ -1219,6 +1249,8 @@ function switchKlinePeriod(period) {
       if (token !== state.token) return;
       state.periodKlines[p] = kline;
       updateChart(kline);
+      /* 手动切换补齐的周/月数据同样参与择时共振：重绘状态卡 */
+      if (state.technical) updateTechnicalSection(state.technical);
     })
     .catch(() => {
       /* FR-3.6：周/月获取失败降级回日K */

@@ -473,3 +473,15 @@ function timingSummary(rows) {
       : '暂无满覆盖可比标的（需日 / 周 / 月三周期齐全）',
   };
 }
+
+/* ---------- 7. 预取计划：共振所需但尚未缓存的周期（纯函数，零请求 / 零 DOM） ----------
+   日线由研判主链路负责加载，这里只挑周 / 月缺口；分钟线按 FR-17.4 不进入计划。
+   已被缓存的周期不再重复请求（getKline 自身亦有 TTL 缓存兜底）。 */
+function timingPrefetchPlan(periodKlines) {
+  const src = periodKlines && typeof periodKlines === 'object' && !Array.isArray(periodKlines) ? periodKlines : {};
+  return TIMING_PERIODS.map((m) => m.key).filter((key) => {
+    if (key === 'day') return false;
+    const k = src[key];
+    return !(k && Array.isArray(k.points) && k.points.length);
+  });
+}

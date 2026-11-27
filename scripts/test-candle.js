@@ -915,6 +915,24 @@ function auditCandlestick(html, expectBars) {
   check('状态卡渲染：分钟线数据被忽略', timingStatusCard(tPeriods) === tCard);
   check('状态卡挂载：技术研判章节包含择时卡', /timingStatusCard\(state\.periodKlines\)/.test(fs.readFileSync(path.join(src, '32-render-technical.js'), 'utf8')));
 
+  console.log('共振预取（方案 A，日线到位后补齐周/月）');
+  check('预取计划：空缓存返回周/月两期', JSON.stringify(timingPrefetchPlan({})) === JSON.stringify(['week', 'month']));
+  check('预取计划：已缓存周期不重复请求', JSON.stringify(timingPrefetchPlan({ week: { points: [1] } })) === JSON.stringify(['month']));
+  check('预取计划：三周期齐全返回空数组', timingPrefetchPlan(tPeriods).length === 0);
+  check('预取计划：分钟线不进入计划且脏缓存视为缺失',
+    JSON.stringify(timingPrefetchPlan({ '60m': { points: [1] } })) === JSON.stringify(['week', 'month']) &&
+    JSON.stringify(timingPrefetchPlan({ week: { points: [] }, month: null })) === JSON.stringify(['week', 'month']));
+  check('预取计划：null / 非对象输入安全降级', JSON.stringify(timingPrefetchPlan(null)) === JSON.stringify(['week', 'month']) && JSON.stringify(timingPrefetchPlan([])) === JSON.stringify(['week', 'month']));
+  check('预取挂载：四个研判入口均并发补齐周/月并重绘状态卡', (() => {
+    const main = fs.readFileSync(path.join(src, '50-main.js'), 'utf8');
+    const calls = (main.match(/prefetchTimingPeriods\(token, \(p\) =>/g) || []).length;
+    return calls === 4 && /function prefetchTimingPeriods\(token, klineLoader\)/.test(main) &&
+      /Promise\.all\(\s*pending\.map/.test(main) && /timingPrefetchPlan\(state\.periodKlines\)/.test(main) &&
+      /state\.technical\) updateTechnicalSection\(state\.technical\)/.test(main);
+  })());
+  check('预取挂载：切周期成功后重绘状态卡', /手动切换补齐的周\/月数据同样参与择时共振/.test(fs.readFileSync(path.join(src, '50-main.js'), 'utf8')));
+  check('预取降级：单周期失败静默且不阻断', /catch\(\(\) => \{[\s\S]{0,120}周\/月降级/.test(fs.readFileSync(path.join(src, '50-main.js'), 'utf8')));
+
   console.log('择时工作台（方案 C，离线纯函数与渲染）');
   const twKlines = { day: { points: tUp }, week: { points: tDown }, month: { points: tFlat }, '60m': { points: [{ bad: true }] } };
   const twStockA = { market: 'A', code: '000001', name: '测试A' };
